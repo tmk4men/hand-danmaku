@@ -126,6 +126,60 @@
   }
   #hud .boost.on { display: block; }
 
+  #pauseBtn {
+    position: absolute;
+    top: 10px; right: 10px;
+    width: 38px; height: 38px;
+    background: linear-gradient(180deg, rgba(15,18,46,0.85), rgba(8,10,28,0.85));
+    border: 2px solid #2a2f55;
+    box-shadow: 0 0 0 2px #06081a, 0 0 12px rgba(120,140,255,0.25);
+    color: #cfd2f0;
+    font-family: inherit;
+    font-size: 14px;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+    z-index: 5;
+    image-rendering: pixelated;
+  }
+  #pauseBtn:hover { border-color: #88a8ff; color: #ffffff; }
+  #pauseBtn .ico { display: inline-flex; gap: 3px; }
+  #pauseBtn .ico span { width: 4px; height: 14px; background: #cfd2f0; display: block; }
+  #pauseBtn.paused .ico {
+    width: 0; height: 0;
+    border-left: 12px solid #ffd066;
+    border-top: 8px solid transparent;
+    border-bottom: 8px solid transparent;
+    margin-left: 3px;
+  }
+  #pauseBtn.paused .ico span { display: none; }
+
+  #pauseOverlay {
+    position: absolute; inset: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    background: rgba(5, 6, 10, 0.55);
+    backdrop-filter: blur(2px);
+    z-index: 6;
+    text-align: center;
+    pointer-events: none;
+  }
+  #pauseOverlay.on { display: flex; }
+  #pauseOverlay .label {
+    color: #ffd066;
+    font-size: 28px;
+    letter-spacing: 0.3em;
+    text-shadow: 0 0 8px #000, 0 0 24px #ffd06688;
+    font-family: inherit;
+  }
+  #pauseOverlay .sub {
+    color: #cfd2f0;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    margin-top: 10px;
+  }
+
   #overlay {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
@@ -214,6 +268,14 @@
       <div class="boost" id="boostFlag">POWER UP!</div>
     </div>
 
+    <button id="pauseBtn" type="button" title="Pause (P)"><span class="ico"><span></span><span></span></span></button>
+    <div id="pauseOverlay">
+      <div>
+        <div class="label">PAUSED</div>
+        <div class="sub">PRESS P OR TAP ICON TO RESUME</div>
+      </div>
+    </div>
+
     <div id="status">model: loading…</div>
 
     <div id="overlay">
@@ -260,6 +322,8 @@
   const overlay   = document.getElementById('overlay');
   const startBtn  = document.getElementById('startBtn');
   const errMsg    = document.getElementById('errMsg');
+  const pauseBtn  = document.getElementById('pauseBtn');
+  const pauseOv   = document.getElementById('pauseOverlay');
   const hud = {
     score: document.getElementById('score'),
     hiscore: document.getElementById('hiscore'),
@@ -310,6 +374,7 @@
   // ---------- Game state ----------
   const state = {
     running: false,
+    paused: false,
     t: 0,             // frames
     score: 0,
     lives: 5,
@@ -824,7 +889,7 @@
   function loop(now) {
     const dt = Math.min(50, now - last); // ms
     last = now;
-    if (state.running) update(dt);
+    if (state.running && !state.paused) update(dt);
     draw();
     requestAnimationFrame(loop);
   }
@@ -1389,6 +1454,9 @@
     }
     // reset game
     state.running = true;
+    state.paused = false;
+    pauseOv.classList.remove('on');
+    pauseBtn.classList.remove('paused');
     state.t = 0;
     state.score = 0;
     state.lives = 5;
@@ -1419,6 +1487,22 @@
   }
 
   startBtn.addEventListener('click', start);
+
+  function setPaused(v) {
+    if (!state.running) { state.paused = false; pauseOv.classList.remove('on'); pauseBtn.classList.remove('paused'); return; }
+    state.paused = v;
+    pauseOv.classList.toggle('on', v);
+    pauseBtn.classList.toggle('paused', v);
+  }
+  function togglePause() { setPaused(!state.paused); }
+  pauseBtn.addEventListener('click', togglePause);
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'p' || e.key === 'P' || e.code === 'Escape') {
+      if (state.running) { e.preventDefault(); togglePause(); }
+    }
+  });
+  // Auto-pause when tab/window loses focus
+  window.addEventListener('blur', () => { if (state.running) setPaused(true); });
 
   // kick off render loop immediately so user sees menu animation
   requestAnimationFrame(loop);
