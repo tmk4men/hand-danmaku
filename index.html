@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HandDanmaku — MediaPipe Heavy 弾幕</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: #05060a; color: #e6e6ff;
+    font-family: "Segoe UI", "Hiragino Sans", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #app {
+    position: relative;
+    width: 100vw; height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100vh * 4 / 3));
+    height: min(100vh, calc(100vw * 3 / 4));
+    background: radial-gradient(ellipse at 50% 30%, #131638 0%, #05060a 75%);
+    border: 1px solid #2b2f55;
+    box-shadow: 0 0 60px rgba(80, 100, 255, 0.25) inset;
+    overflow: hidden;
+  }
+  canvas#game {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    display: block;
+  }
+  /* camera preview thumbnail */
+  #camWrap {
+    position: absolute;
+    right: 10px; bottom: 10px;
+    width: 22%; max-width: 220px; aspect-ratio: 4 / 3;
+    border: 1px solid #3a4080;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #000;
+    opacity: 0.85;
+    pointer-events: none;
+  }
+  #camWrap video, #camWrap canvas {
+    width: 100%; height: 100%;
+    display: block;
+    transform: scaleX(-1); /* mirror */
+    object-fit: cover;
+  }
+  #camWrap canvas { position: absolute; inset: 0; }
+
+  #hud {
+    position: absolute; top: 10px; left: 12px;
+    pointer-events: none;
+    font-size: 14px;
+    line-height: 1.5;
+    text-shadow: 0 0 6px #000;
+  }
+  #hud b { color: #9ad8ff; font-weight: 600; letter-spacing: 0.05em; }
+
+  #overlay {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(5, 6, 10, 0.7);
+    backdrop-filter: blur(4px);
+    text-align: center;
+    z-index: 10;
+  }
+  #overlay.hidden { display: none; }
+  #overlay .panel {
+    background: rgba(20, 25, 60, 0.85);
+    border: 1px solid #3a4080;
+    border-radius: 10px;
+    padding: 24px 32px;
+    max-width: 520px;
+  }
+  #overlay h1 {
+    margin: 0 0 8px;
+    font-size: 28px;
+    letter-spacing: 0.1em;
+    color: #aee0ff;
+  }
+  #overlay p { margin: 8px 0; font-size: 14px; color: #cfd2f0; }
+  #overlay button {
+    margin-top: 16px;
+    padding: 10px 22px;
+    font-size: 15px;
+    background: linear-gradient(180deg, #4a60d8, #2a3a9a);
+    border: 1px solid #88a8ff;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    letter-spacing: 0.1em;
+  }
+  #overlay button:hover { filter: brightness(1.15); }
+  #status {
+    position: absolute; left: 12px; bottom: 12px;
+    font-size: 12px; color: #7e83b8;
+    pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage">
+    <canvas id="game"></canvas>
+
+    <div id="camWrap">
+      <video id="cam" playsinline muted></video>
+      <canvas id="camOverlay"></canvas>
+    </div>
+
+    <div id="hud">
+      <div>SCORE <b id="score">0</b></div>
+      <div>LIVES <b id="lives">3</b></div>
+      <div>STAGE <b id="stage_no">1</b></div>
+      <div>BOMB <b id="bombs">2</b></div>
+    </div>
+
+    <div id="status">model: loading…</div>
+
+    <div id="overlay">
+      <div class="panel">
+        <h1>HAND DANMAKU</h1>
+        <p>人差し指で機体を操作。親指と人差し指でつまむ動作（ピンチ）でボム発動。</p>
+        <p>カメラの使用許可が必要です。MediaPipe Hands (modelComplexity=1 / Heavy) を使用します。</p>
+        <p style="color:#ffb3b3" id="errMsg"></p>
+        <button id="startBtn">START</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MediaPipe Hands (Solutions / Heavy model: modelComplexity=1) -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+
+<script>
+(() => {
+  // ---------- DOM ----------
+  const stage     = document.getElementById('stage');
+  const canvas    = document.getElementById('game');
+  const ctx       = canvas.getContext('2d');
+  const video     = document.getElementById('cam');
+  const camCanvas = document.getElementById('camOverlay');
+  const camCtx    = camCanvas.getContext('2d');
+  const statusEl  = document.getElementById('status');
+  const overlay   = document.getElementById('overlay');
+  const startBtn  = document.getElementById('startBtn');
+  const errMsg    = document.getElementById('errMsg');
+  const hud = {
+    score: document.getElementById('score'),
+    lives: document.getElementById('lives'),
+    stage: document.getElementById('stage_no'),
+    bombs: document.getElementById('bombs'),
+  };
+
+  // ---------- Canvas sizing ----------
+  const VW = 800, VH = 600; // virtual game resolution
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const rect = stage.getBoundingClientRect();
+    canvas.width  = Math.round(rect.width  * dpr);
+    canvas.height = Math.round(rect.height * dpr);
+    // We'll draw in virtual coords and scale via setTransform per-frame.
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  function setupCamCanvas() {
+    const rect = camCanvas.getBoundingClientRect();
+    camCanvas.width  = Math.round(rect.width);
+    camCanvas.height = Math.round(rect.height);
+  }
+  setupCamCanvas();
+  window.addEventListener('resize', setupCamCanvas);
+
+  // ---------- Game state ----------
+  const state = {
+    running: false,
+    t: 0,             // frames
+    score: 0,
+    lives: 3,
+    bombs: 2,
+    stageNo: 1,
+    stageTimer: 0,
+    bossFight: false,
+    boss: null,
+    player: {
+      x: VW * 0.5, y: VH * 0.78,
+      vx: 0, vy: 0,
+      tx: VW * 0.5, ty: VH * 0.78, // target from hand
+      radius: 18,        // visual
+      hitR: 4,           // tiny hitbox (弾幕の伝統)
+      fireCooldown: 0,
+      invuln: 0,
+      bombFx: 0,
+    },
+    bullets: [],         // enemy bullets
+    shots: [],           // player shots
+    enemies: [],
+    particles: [],
+    pinch: { active: false, lastUsed: -9999 },
+    handSeen: false,
+    smoothX: VW * 0.5, smoothY: VH * 0.78,
+  };
+
+  // ---------- Utility ----------
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const TAU = Math.PI * 2;
+  function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx*dx + dy*dy; }
+  function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  // ---------- Hand tracking (MediaPipe Hands — Heavy) ----------
+  let hands = null;
+  let camera = null;
+
+  async function initHands() {
+    hands = new Hands({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`,
+    });
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,       // 1 = Heavy (full) model
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.5,
+      selfieMode: true,
+    });
+    hands.onResults(onHandResults);
+    statusEl.textContent = 'model: MediaPipe Hands (Heavy, modelComplexity=1)';
+  }
+
+  function onHandResults(results) {
+    // draw camera + landmarks on small overlay
+    camCtx.save();
+    camCtx.clearRect(0, 0, camCanvas.width, camCanvas.height);
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length) {
+      const lm = results.multiHandLandmarks[0];
+      // landmark 8 = index tip, 4 = thumb tip
+      const tip   = lm[8];
+      const thumb = lm[4];
+
+      // Update player target. Note: selfieMode=true returns mirrored coords (right-hand =>
+      // visually on right). Map normalized x to game x directly.
+      // Expand the active region a bit so user reaches edges easily.
+      const nx = clamp((tip.x - 0.1) / 0.8, 0, 1);
+      const ny = clamp((tip.y - 0.1) / 0.8, 0, 1);
+      state.player.tx = nx * VW;
+      state.player.ty = ny * VH;
+      state.handSeen = true;
+
+      // Pinch detection
+      const pinchD = Math.hypot(tip.x - thumb.x, tip.y - thumb.y);
+      const isPinch = pinchD < 0.06;
+      if (isPinch && !state.pinch.active && state.running) {
+        triggerBomb();
+      }
+      state.pinch.active = isPinch;
+
+      // Draw landmarks
+      if (window.drawConnectors && window.HAND_CONNECTIONS) {
+        drawConnectors(camCtx, lm, HAND_CONNECTIONS,
+          { color: '#7fdcff', lineWidth: 2 });
+        drawLandmarks(camCtx, lm, { color: '#ffcc66', radius: 2 });
+      }
+    } else {
+      state.handSeen = false;
+    }
+    camCtx.restore();
+  }
+
+  async function initCamera() {
+    try {
+      // camera_utils.Camera handles video + onFrame ticking
+      camera = new Camera(video, {
+        onFrame: async () => {
+          if (hands) await hands.send({ image: video });
+        },
+        width: 640,
+        height: 480,
+      });
+      await camera.start();
+    } catch (err) {
+      throw new Error('カメラを起動できませんでした: ' + err.message);
+    }
+  }
+
+  // ---------- Gameplay: spawning ----------
+  function spawnEnemy(type, x, y, opts = {}) {
+    const e = {
+      type, x, y,
+      vx: opts.vx ?? 0, vy: opts.vy ?? 0,
+      hp: opts.hp ?? 6,
+      maxHp: opts.hp ?? 6,
+      radius: opts.radius ?? 16,
+      t: 0,
+      fireRate: opts.fireRate ?? 60,
+      fireOffset: opts.fireOffset ?? 0,
+      score: opts.score ?? 100,
+      pattern: opts.pattern ?? 'aim',
+      angle: 0,
+    };
+    state.enemies.push(e);
+    return e;
+  }
+
+  function spawnBoss() {
+    const hp = 280 + state.stageNo * 120;
+    state.boss = {
+      x: VW * 0.5, y: -60, tx: VW * 0.5, ty: 120,
+      hp, maxHp: hp,
+      radius: 38,
+      t: 0,
+      phase: 0,
+      pattern: 0,
+    };
+    state.enemies.push({ ...state.boss, isBoss: true, ref: state.boss });
+    state.bossFight = true;
+  }
+
+  // ---------- Bullet helpers ----------
+  function fireBullet(x, y, angle, speed, color = '#ff8aff', radius = 5, type = 'std') {
+    state.bullets.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: radius,
+      color, type,
+      life: 0,
+    });
+  }
+
+  function playerShot() {
+    const p = state.player;
+    state.shots.push({ x: p.x - 6, y: p.y - 10, vy: -10, r: 3 });
+    state.shots.push({ x: p.x + 6, y: p.y - 10, vy: -10, r: 3 });
+  }
+
+  function triggerBomb() {
+    if (state.bombs <= 0) return;
+    state.bombs--;
+    state.player.bombFx = 40;
+    state.player.invuln = Math.max(state.player.invuln, 60);
+    // clear all enemy bullets, give boss damage
+    for (const b of state.bullets) {
+      pushParticle(b.x, b.y, b.color);
+    }
+    state.bullets.length = 0;
+    for (const e of state.enemies) {
+      e.hp -= e.isBoss ? 35 : 30;
+    }
+    updateHud();
+  }
+
+  function pushParticle(x, y, color, n = 1) {
+    for (let i = 0; i < n; i++) {
+      state.particles.push({
+        x, y,
+        vx: rand(-2, 2),
+        vy: rand(-2, 2),
+        life: rand(20, 40),
+        color,
+      });
+    }
+  }
+
+  // ---------- Stage scripting ----------
+  function stageTick() {
+    state.stageTimer++;
+    if (state.bossFight) return;
+
+    const T = state.stageTimer;
+    const lvl = state.stageNo;
+
+    // periodic small enemy waves
+    if (T % Math.max(70 - lvl * 5, 30) === 0) {
+      const side = Math.random() < 0.5 ? 1 : -1;
+      const x = VW * 0.5 + side * rand(120, 280);
+      spawnEnemy('grunt', x, -20, {
+        vy: rand(0.8, 1.4),
+        vx: -side * rand(0.0, 0.4),
+        hp: 4 + lvl,
+        radius: 14,
+        fireRate: 110 - lvl * 6,
+        pattern: 'aim',
+        score: 100,
+      });
+    }
+    if (T % Math.max(220 - lvl * 10, 110) === 0) {
+      spawnEnemy('spinner', rand(120, VW - 120), -20, {
+        vy: 0.6,
+        hp: 18 + lvl * 3,
+        radius: 20,
+        fireRate: 8,
+        pattern: 'spin',
+        score: 600,
+      });
+    }
+    if (T % Math.max(340 - lvl * 12, 180) === 0) {
+      spawnEnemy('fan', rand(140, VW - 140), -20, {
+        vy: 0.9,
+        hp: 12 + lvl * 2,
+        radius: 18,
+        fireRate: 80,
+        pattern: 'fan',
+        score: 400,
+      });
+    }
+
+    // Boss after a while
+    const bossAt = 30 * 30 + lvl * 200; // ~30s baseline
+    if (T > bossAt && !state.bossFight && !state.boss) {
+      spawnBoss();
+    }
+  }
+
+  // ---------- Enemy AI / firing ----------
+  function updateEnemy(e) {
+    e.t++;
+    if (e.isBoss) {
+      const b = e.ref;
+      b.t++;
+      // entry
+      b.x += (b.tx - b.x) * 0.04;
+      b.y += (b.ty - b.y) * 0.04;
+      e.x = b.x; e.y = b.y;
+      e.hp = Math.min(e.hp, b.hp = e.hp); // sync
+
+      // Boss patterns rotate every 360 frames
+      const pat = Math.floor(b.t / 360) % 3;
+      const phase = b.t % 360;
+
+      if (pat === 0) {
+        // Wide aimed fan
+        if (phase % 20 === 0) {
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          for (let i = -3; i <= 3; i++) {
+            fireBullet(b.x, b.y + 20, aim + i * 0.16, 3.4, '#ff77c8', 6);
+          }
+        }
+      } else if (pat === 1) {
+        // Spiral
+        if (phase % 4 === 0) {
+          const base = b.t * 0.13;
+          for (let k = 0; k < 4; k++) {
+            fireBullet(b.x, b.y + 20, base + k * Math.PI / 2, 2.8, '#9bf2ff', 5);
+          }
+        }
+      } else {
+        // Ring bursts
+        if (phase % 60 === 0) {
+          const n = 26;
+          for (let i = 0; i < n; i++) {
+            fireBullet(b.x, b.y + 10, (i / n) * TAU + b.t * 0.02, 2.6, '#fff27a', 5);
+          }
+        }
+        // Plus aimed slow bullets
+        if (phase % 28 === 14) {
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          fireBullet(b.x, b.y + 10, aim, 4.2, '#ff5050', 7);
+        }
+      }
+      return;
+    }
+
+    e.x += e.vx; e.y += e.vy;
+    // gentle drift
+    if (e.pattern !== 'spin') e.vx *= 0.995;
+
+    if (e.t % e.fireRate === 0 && e.y > 0) {
+      if (e.pattern === 'aim') {
+        const aim = Math.atan2(state.player.y - e.y, state.player.x - e.x);
+        fireBullet(e.x, e.y, aim, 3.2, '#ff9be0', 5);
+      } else if (e.pattern === 'spin') {
+        const base = e.t * 0.09;
+        for (let k = 0; k < 5; k++) {
+          fireBullet(e.x, e.y, base + k * TAU / 5, 2.6, '#aef0ff', 5);
+        }
+      } else if (e.pattern === 'fan') {
+        const aim = Math.atan2(state.player.y - e.y, state.player.x - e.x);
+        for (let i = -2; i <= 2; i++) {
+          fireBullet(e.x, e.y, aim + i * 0.18, 3.0, '#ffd27a', 5);
+        }
+      }
+    }
+  }
+
+  // ---------- Main loop ----------
+  let last = performance.now();
+  function loop(now) {
+    const dt = Math.min(50, now - last); // ms
+    last = now;
+    if (state.running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+
+  function update(dt) {
+    state.t++;
+
+    // Smooth player to hand target
+    const p = state.player;
+    const k = 0.25;
+    state.smoothX += (p.tx - state.smoothX) * k;
+    state.smoothY += (p.ty - state.smoothY) * k;
+    p.x = clamp(state.smoothX, 12, VW - 12);
+    p.y = clamp(state.smoothY, 12, VH - 12);
+
+    if (p.invuln > 0) p.invuln--;
+    if (p.bombFx > 0) p.bombFx--;
+
+    // Auto-fire
+    p.fireCooldown--;
+    if (p.fireCooldown <= 0 && state.handSeen) {
+      playerShot();
+      p.fireCooldown = 6;
+    }
+
+    // Player shots
+    for (let i = state.shots.length - 1; i >= 0; i--) {
+      const s = state.shots[i];
+      s.y += s.vy;
+      if (s.y < -10) { state.shots.splice(i, 1); continue; }
+      // hit enemies
+      for (const e of state.enemies) {
+        if (dist2(s.x, s.y, e.x, e.y) < (e.radius + s.r) ** 2) {
+          e.hp -= 1;
+          pushParticle(s.x, s.y, '#ffffff');
+          state.shots.splice(i, 1);
+          break;
+        }
+      }
+    }
+
+    // Enemies
+    for (let i = state.enemies.length - 1; i >= 0; i--) {
+      const e = state.enemies[i];
+      updateEnemy(e);
+      // remove if dead or off-screen
+      if (e.hp <= 0) {
+        state.score += e.score || 100;
+        for (let k = 0; k < 18; k++) pushParticle(e.x, e.y, '#ffd27a');
+        state.enemies.splice(i, 1);
+        if (e.isBoss) {
+          state.bossFight = false;
+          state.boss = null;
+          state.stageNo++;
+          state.stageTimer = 0;
+          state.bombs = Math.min(state.bombs + 1, 5);
+        }
+        updateHud();
+        continue;
+      }
+      if (!e.isBoss && (e.y > VH + 40 || e.x < -60 || e.x > VW + 60)) {
+        state.enemies.splice(i, 1);
+      }
+    }
+
+    // Bullets
+    for (let i = state.bullets.length - 1; i >= 0; i--) {
+      const b = state.bullets[i];
+      b.x += b.vx; b.y += b.vy; b.life++;
+      if (b.x < -20 || b.x > VW + 20 || b.y < -20 || b.y > VH + 20) {
+        state.bullets.splice(i, 1); continue;
+      }
+      // collide with player hitbox
+      if (p.invuln <= 0 && dist2(b.x, b.y, p.x, p.y) < (b.r + p.hitR) ** 2) {
+        state.bullets.splice(i, 1);
+        playerHit();
+      }
+    }
+
+    // Particles
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const pa = state.particles[i];
+      pa.x += pa.vx; pa.y += pa.vy;
+      pa.vx *= 0.94; pa.vy *= 0.94;
+      pa.life--;
+      if (pa.life <= 0) state.particles.splice(i, 1);
+    }
+
+    stageTick();
+  }
+
+  function playerHit() {
+    if (state.player.invuln > 0) return;
+    state.lives--;
+    state.player.invuln = 120;
+    for (let i = 0; i < 40; i++)
+      pushParticle(state.player.x, state.player.y, '#ff6666');
+    updateHud();
+    if (state.lives <= 0) gameOver();
+  }
+
+  function gameOver() {
+    state.running = false;
+    overlay.classList.remove('hidden');
+    overlay.querySelector('h1').textContent = 'GAME OVER';
+    overlay.querySelector('p').textContent =
+      `スコア: ${state.score}   /   到達ステージ: ${state.stageNo}`;
+    startBtn.textContent = 'RETRY';
+  }
+
+  function updateHud() {
+    hud.score.textContent = state.score;
+    hud.lives.textContent = state.lives;
+    hud.stage.textContent = state.stageNo;
+    hud.bombs.textContent = state.bombs;
+  }
+
+  // ---------- Rendering ----------
+  function draw() {
+    // map virtual coords -> backing pixels
+    const sx = canvas.width / VW;
+    const sy = canvas.height / VH;
+    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+
+    // background
+    ctx.fillStyle = 'rgba(5,6,10,0.35)';
+    ctx.fillRect(0, 0, VW, VH);
+
+    // starfield (cheap)
+    drawStars();
+
+    // particles
+    ctx.save();
+    for (const pa of state.particles) {
+      ctx.globalAlpha = clamp(pa.life / 30, 0, 1);
+      ctx.fillStyle = pa.color;
+      ctx.fillRect(pa.x - 1, pa.y - 1, 2, 2);
+    }
+    ctx.restore();
+
+    // enemies
+    for (const e of state.enemies) {
+      drawEnemy(e);
+    }
+
+    // player shots
+    ctx.fillStyle = '#dfe9ff';
+    for (const s of state.shots) {
+      ctx.fillRect(s.x - 1.5, s.y - 5, 3, 10);
+    }
+
+    // bullets
+    for (const b of state.bullets) {
+      ctx.beginPath();
+      ctx.fillStyle = b.color;
+      ctx.shadowColor = b.color;
+      ctx.shadowBlur = 8;
+      ctx.arc(b.x, b.y, b.r, 0, TAU);
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+
+    // bomb fx
+    if (state.player.bombFx > 0) {
+      const r = (40 - state.player.bombFx) * 25;
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(180,220,255,${state.player.bombFx / 40})`;
+      ctx.lineWidth = 6;
+      ctx.arc(state.player.x, state.player.y, r, 0, TAU);
+      ctx.stroke();
+    }
+
+    // player
+    drawPlayer();
+
+    // boss HP bar
+    if (state.bossFight && state.boss) {
+      const b = state.boss;
+      const w = VW * 0.6, h = 6;
+      const x = (VW - w) / 2, y = 14;
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = '#ff77a8';
+      ctx.fillRect(x, y, w * clamp(b.hp / b.maxHp, 0, 1), h);
+      ctx.strokeStyle = '#ffffff66';
+      ctx.strokeRect(x, y, w, h);
+    }
+
+    // no-hand notice
+    if (state.running && !state.handSeen) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(VW/2 - 180, VH/2 - 24, 360, 48);
+      ctx.fillStyle = '#fff';
+      ctx.font = '16px system-ui';
+      ctx.textAlign = 'center';
+      ctx.fillText('手をカメラに映してください', VW/2, VH/2 + 6);
+    }
+  }
+
+  // Starfield
+  const stars = Array.from({ length: 90 }, () => ({
+    x: Math.random() * VW,
+    y: Math.random() * VH,
+    s: Math.random() * 1.6 + 0.3,
+    v: Math.random() * 0.6 + 0.2,
+  }));
+  function drawStars() {
+    ctx.fillStyle = '#9aa6ff';
+    for (const st of stars) {
+      st.y += st.v;
+      if (st.y > VH) { st.y = 0; st.x = Math.random() * VW; }
+      ctx.globalAlpha = 0.4 + st.s * 0.3;
+      ctx.fillRect(st.x, st.y, st.s, st.s);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPlayer() {
+    const p = state.player;
+    const blink = (p.invuln > 0 && Math.floor(p.invuln / 4) % 2 === 0);
+    ctx.save();
+    ctx.translate(p.x, p.y);
+
+    // ship body
+    if (!blink) {
+      ctx.fillStyle = '#7fc6ff';
+      ctx.strokeStyle = '#dff';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(0, -16);
+      ctx.lineTo(14, 12);
+      ctx.lineTo(0, 6);
+      ctx.lineTo(-14, 12);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // engine glow
+      ctx.fillStyle = '#aef';
+      ctx.beginPath();
+      ctx.arc(-6, 10, 2, 0, TAU);
+      ctx.arc(6, 10, 2, 0, TAU);
+      ctx.fill();
+    }
+
+    // hitbox marker
+    ctx.beginPath();
+    ctx.fillStyle = '#fff';
+    ctx.arc(0, 0, p.hitR, 0, TAU);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.strokeStyle = '#ff7575';
+    ctx.lineWidth = 1;
+    ctx.arc(0, 0, p.hitR + 2, 0, TAU);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
+  function drawEnemy(e) {
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    if (e.isBoss) {
+      ctx.rotate(e.t * 0.01);
+      ctx.fillStyle = '#ff77a8';
+      ctx.strokeStyle = '#ffd0e6';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      const R = e.radius, r = e.radius * 0.55;
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * TAU;
+        const rr = i % 2 ? R : r;
+        ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.fillStyle = '#fff';
+      ctx.arc(0, 0, 6, 0, TAU);
+      ctx.fill();
+    } else {
+      let col = '#ff9be0';
+      if (e.pattern === 'spin') col = '#aef0ff';
+      else if (e.pattern === 'fan') col = '#ffd27a';
+      ctx.fillStyle = col;
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, e.radius);
+      ctx.lineTo(e.radius, 0);
+      ctx.lineTo(0, -e.radius);
+      ctx.lineTo(-e.radius, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // hp pip
+      const w = e.radius * 1.6;
+      ctx.fillStyle = 'rgba(255,255,255,0.2)';
+      ctx.fillRect(-w/2, e.radius + 4, w, 2);
+      ctx.fillStyle = '#ffeb6e';
+      ctx.fillRect(-w/2, e.radius + 4, w * clamp(e.hp / e.maxHp, 0, 1), 2);
+    }
+    ctx.restore();
+  }
+
+  // ---------- Start / restart ----------
+  async function start() {
+    overlay.classList.add('hidden');
+    if (!hands) {
+      try {
+        statusEl.textContent = 'model: initializing…';
+        await initHands();
+        await initCamera();
+      } catch (err) {
+        errMsg.textContent = err.message;
+        overlay.classList.remove('hidden');
+        return;
+      }
+    }
+    // reset game
+    state.running = true;
+    state.t = 0;
+    state.score = 0;
+    state.lives = 3;
+    state.bombs = 2;
+    state.stageNo = 1;
+    state.stageTimer = 0;
+    state.bossFight = false;
+    state.boss = null;
+    state.bullets.length = 0;
+    state.shots.length = 0;
+    state.enemies.length = 0;
+    state.particles.length = 0;
+    state.player.invuln = 60;
+    overlay.querySelector('h1').textContent = 'HAND DANMAKU';
+    updateHud();
+  }
+
+  startBtn.addEventListener('click', start);
+
+  // kick off render loop immediately so user sees menu animation
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
