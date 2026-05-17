@@ -411,6 +411,11 @@
     focus: false,        // peace-sign focus mode
     graze: { value: 0, max: 100, boost: 0 },
     mod: { name: 'NORMAL', bulletSpeedMul: 1, fanRays: 0, spinnerExtra: 0 },
+    shake: 0,
+    bossWarning: 0,        // frames remaining before boss actually spawns
+    combo: { count: 0, timer: 0, best: 0 },
+    themeIndex: 0,
+    themeT: 0,             // for slow planet/nebula drift
   };
 
   // ---------- Utility ----------
@@ -805,10 +810,11 @@
       });
     }
 
-    // Boss after a while
+    // Boss after a while — warning flashes first, then actual spawn
     const bossAt = 45 * 30 + lvl * 200; // ~45s baseline
-    if (T > bossAt && !state.bossFight && !state.boss) {
-      spawnBoss();
+    if (T > bossAt && !state.bossFight && !state.boss && state.bossWarning === 0) {
+      state.bossWarning = 110;     // ~1.8s warning
+      state.shake = Math.max(state.shake, 6);
     }
   }
 
@@ -897,6 +903,18 @@
 
   function update(dt) {
     state.t++;
+    state.themeT++;
+    if (state.shake > 0) state.shake--;
+    if (state.combo.timer > 0) {
+      state.combo.timer--;
+      if (state.combo.timer === 0) state.combo.count = 0;
+    }
+    if (state.bossWarning > 0) {
+      state.bossWarning--;
+      if (state.bossWarning === 0 && !state.bossFight && !state.boss) {
+        spawnBoss();
+      }
+    }
 
     // Smooth player to hand target
     const p = state.player;
@@ -990,7 +1008,13 @@
       updateEnemy(e);
       // remove if dead or off-screen
       if (e.hp <= 0) {
-        state.score += e.score || 100;
+        // combo + score
+        state.combo.count++;
+        state.combo.timer = 120;
+        state.combo.best = Math.max(state.combo.best, state.combo.count);
+        const mult = 1 + Math.min(state.combo.count - 1, 19) * 0.1; // up to 3x
+        state.score += Math.round((e.score || 100) * mult);
+
         for (let k = 0; k < 18; k++) pushParticle(e.x, e.y, '#ffd27a');
         // item drops
         const cat = e.isBoss ? 'boss'
@@ -1005,7 +1029,12 @@
           state.stageNo++;
           state.stageTimer = 0;
           state.bombs = Math.min(state.bombs + 1, 6);
+          state.shake = 28;
+          state.themeIndex = (state.stageNo - 1) % STAGE_THEMES.length;
           pickStageMod();
+          for (let k = 0; k < 60; k++) pushParticle(e.x, e.y, '#ffffff');
+        } else {
+          state.shake = Math.max(state.shake, 4);
         }
         updateHud();
         continue;
@@ -1059,6 +1088,9 @@
     if (state.player.invuln > 0) return;
     state.lives--;
     state.player.invuln = 120;
+    state.shake = Math.max(state.shake, 20);
+    state.combo.count = 0;
+    state.combo.timer = 0;
     for (let i = 0; i < 40; i++)
       pushParticle(state.player.x, state.player.y, '#ff6666');
     updateHud();
@@ -1074,7 +1106,7 @@
     overlay.classList.remove('hidden');
     overlay.querySelector('h1').textContent = 'GAME OVER';
     overlay.querySelector('p').textContent =
-      `SCORE ${state.score}  /  HI ${state.hiScore}  /  STAGE ${state.stageNo}`;
+      `SCORE ${state.score}  /  HI ${state.hiScore}  /  STAGE ${state.stageNo}  /  MAX CHAIN ${state.combo.best}`;
     startBtn.textContent = 'RETRY';
   }
 
@@ -1099,15 +1131,15 @@
     // map virtual coords -> low-res pixel buffer (320x240 backing)
     const sx = canvas.width / VW;
     const sy = canvas.height / VH;
-    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+    // Camera shake offset (in VW coords)
+    const shake = state.shake;
+    const sxo = shake ? (Math.random() - 0.5) * shake * 0.8 : 0;
+    const syo = shake ? (Math.random() - 0.5) * shake * 0.8 : 0;
+    ctx.setTransform(sx, 0, 0, sy, sxo * sx, syo * sy);
     ctx.imageSmoothingEnabled = false;
 
-    // background — opaque clear for crisp pixels
-    ctx.fillStyle = '#06081a';
-    ctx.fillRect(0, 0, VW, VH);
-
-    // starfield (cheap)
-    drawStars();
+    // background — themed parallax
+    drawBackground();
 
     // particles (one chunky pixel each)
     ctx.save();
@@ -1233,8 +1265,45 @@
       ctx.fillText('BOSS', x, y - 12);
     }
 
-    // stage modifier banner (top-right inside canvas)
+    // stage modifier banner (top-center inside canvas)
     drawModBanner();
+
+    // Boss warning overlay (flashes before boss appears)
+    if (state.bossWarning > 0) {
+      const w = state.bossWarning;
+      const blink = (Math.floor(w / 6) % 2 === 0);
+      if (blink) {
+        ctx.fillStyle = '#ff3060';
+        ctx.fillRect(0, VH / 2 - 22, VW, 3);
+        ctx.fillRect(0, VH / 2 + 19, VW, 3);
+        ctx.fillStyle = 'rgba(180,16,40,0.20)';
+        ctx.fillRect(0, VH / 2 - 22, VW, 44);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '12px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('!! WARNING !!', VW / 2, VH / 2 - 4);
+        ctx.fillStyle = '#ffd066';
+        ctx.font = '8px monospace';
+        ctx.fillText('BOSS APPROACHING', VW / 2, VH / 2 + 8);
+      }
+    }
+
+    // Combo readout
+    if (state.combo.count >= 2) {
+      const c = state.combo.count;
+      const mult = 1 + Math.min(c - 1, 19) * 0.1;
+      ctx.font = '10px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const txt = `${c} CHAIN  x${mult.toFixed(1)}`;
+      const tw = ctx.measureText(txt).width;
+      const x = (VW - tw) / 2, y = 34;
+      ctx.fillStyle = '#0a0c20';
+      ctx.fillRect(x - 4, y - 2, tw + 8, 12);
+      ctx.fillStyle = '#ffd066';
+      ctx.fillText(txt, VW / 2, y);
+    }
 
     // no-hand notice
     if (state.running && !state.handSeen) {
@@ -1258,25 +1327,131 @@
       displayCanvas.width, displayCanvas.height);
   }
 
-  // Starfield
-  const stars = Array.from({ length: 90 }, () => ({
-    x: Math.random() * VW,
-    y: Math.random() * VH,
-    s: Math.random() * 1.6 + 0.3,
-    v: Math.random() * 0.6 + 0.2,
+  // ---------- Background: parallax + per-stage theme ----------
+  const STAGE_THEMES = [
+    { name: 'NEBULA',  sky: ['#06081a','#0b0e2e','#181b46'], planet: '#3b2078', planetHi: '#5a3aa8', accent: '#88a8ff', neb: '#243072' },
+    { name: 'CRIMSON', sky: ['#16070d','#280c1a','#421430'], planet: '#7a1f3a', planetHi: '#b03857', accent: '#ff77c8', neb: '#5a1638' },
+    { name: 'EMERALD', sky: ['#03140e','#06281e','#0d4636'], planet: '#0d5a3a', planetHi: '#28a070', accent: '#7fffd4', neb: '#0d4632' },
+    { name: 'AMBER',   sky: ['#1a1006','#2e1f0c','#46341a'], planet: '#7a4a14', planetHi: '#b87a2a', accent: '#ffd066', neb: '#5a3814' },
+    { name: 'COSMIC',  sky: ['#05102a','#0a2055','#1244a0'], planet: '#1244a8', planetHi: '#2a78d0', accent: '#88e0ff', neb: '#1a3a78' },
+  ];
+
+  // 3 parallax star layers — back/mid/front
+  function makeLayer(n, vMin, vMax, sz, alpha) {
+    return {
+      sz, alpha,
+      items: Array.from({ length: n }, () => ({
+        x: Math.random() * VW,
+        y: Math.random() * VH,
+        v: rand(vMin, vMax),
+      })),
+    };
+  }
+  const starLayers = [
+    makeLayer(80, 0.10, 0.25, 1.5, 0.55),  // far
+    makeLayer(45, 0.30, 0.60, 2.5, 0.85),  // mid
+    makeLayer(20, 0.80, 1.40, 3.5, 1.0),   // near
+  ];
+
+  // Stationary nebula patches that slowly drift
+  const nebulae = Array.from({ length: 6 }, () => ({
+    x: rand(0, VW),
+    y: rand(0, VH),
+    r: rand(70, 160),
+    vy: rand(0.05, 0.15),
   }));
-  function drawStars() {
-    for (const st of stars) {
-      st.y += st.v;
-      if (st.y > VH) { st.y = 0; st.x = Math.random() * VW; }
-      // 3 brightness tiers, all flat pixels
-      const tier = st.s > 1.2 ? 2 : st.s > 0.8 ? 1 : 0;
-      ctx.fillStyle = tier === 2 ? '#ffffff'
-                    : tier === 1 ? '#9aa6ff'
-                                 : '#4a4f7a';
-      const sz = tier === 2 ? 3 : 2.5;
-      ctx.fillRect(Math.floor(st.x), Math.floor(st.y), sz, sz);
+
+  function drawBackground() {
+    const theme = STAGE_THEMES[state.themeIndex];
+    // Sky bands (chunky gradient)
+    const bands = theme.sky;
+    const bh = VH / bands.length;
+    for (let i = 0; i < bands.length; i++) {
+      ctx.fillStyle = bands[i];
+      ctx.fillRect(0, i * bh, VW, bh + 1);
     }
+
+    // Nebula clouds — concentric squares of decreasing alpha, drift slowly
+    ctx.save();
+    for (const n of nebulae) {
+      n.y += n.vy;
+      if (n.y - n.r > VH) { n.y = -n.r; n.x = rand(0, VW); }
+      for (let k = 3; k >= 0; k--) {
+        const rr = n.r * (0.4 + k * 0.2);
+        ctx.globalAlpha = 0.06 + (3 - k) * 0.04;
+        ctx.fillStyle = theme.neb;
+        ctx.fillRect(n.x - rr, n.y - rr, rr * 2, rr * 2);
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.restore();
+
+    // Slow planet (drifts down across multiple stages)
+    drawPlanet(theme);
+
+    // Parallax stars
+    for (const layer of starLayers) {
+      ctx.globalAlpha = layer.alpha;
+      for (const st of layer.items) {
+        st.y += st.v;
+        if (st.y > VH) { st.y = -2; st.x = Math.random() * VW; }
+        ctx.fillStyle = layer === starLayers[2] ? '#ffffff'
+                       : layer === starLayers[1] ? '#cad0ff'
+                                                 : '#6a72a8';
+        ctx.fillRect(Math.floor(st.x), Math.floor(st.y), layer.sz, layer.sz);
+      }
+    }
+    ctx.globalAlpha = 1;
+
+    // Horizon haze line — gentle accent at lower third
+    ctx.fillStyle = theme.accent;
+    ctx.globalAlpha = 0.08;
+    ctx.fillRect(0, VH * 0.66, VW, 1);
+    ctx.globalAlpha = 0.04;
+    ctx.fillRect(0, VH * 0.68, VW, 2);
+    ctx.globalAlpha = 1;
+  }
+
+  function drawPlanet(theme) {
+    // A large pixelated disc that drifts diagonally. One per active theme.
+    const phase = (state.themeT * 0.04) % (VW + 300);
+    const cx = VW * 0.78 - phase * 0.1;
+    const cy = VH * 0.22 + Math.sin(state.themeT * 0.003) * 8;
+    const R = 56;
+    // Atmosphere ring
+    for (let dy = -R - 4; dy <= R + 4; dy += 2) {
+      const a = Math.abs(dy) / (R + 4);
+      const w = Math.sqrt(Math.max(0, (R + 4) * (R + 4) - dy * dy));
+      ctx.globalAlpha = 0.18 * (1 - a);
+      ctx.fillStyle = theme.accent;
+      ctx.fillRect(cx - w, cy + dy, w * 2, 2);
+    }
+    ctx.globalAlpha = 1;
+    // Body — pixel disc rendered row by row
+    for (let dy = -R; dy <= R; dy += 2) {
+      const w = Math.sqrt(R * R - dy * dy);
+      // light side on the upper-left
+      const shade = Math.max(0, 0.3 + dy / R * -0.5);
+      ctx.fillStyle = theme.planet;
+      ctx.fillRect(cx - w, cy + dy, w * 2, 2);
+      if (shade > 0.1) {
+        ctx.fillStyle = theme.planetHi;
+        ctx.globalAlpha = shade;
+        ctx.fillRect(cx - w, cy + dy, w * 1.0, 2);
+        ctx.globalAlpha = 1;
+      }
+    }
+    // Equatorial bands (a few dim horizontal stripes for texture)
+    ctx.fillStyle = '#000000';
+    ctx.globalAlpha = 0.15;
+    for (let k = -2; k <= 2; k++) {
+      const yy = cy + k * 14;
+      const dy = yy - cy;
+      if (Math.abs(dy) >= R) continue;
+      const w = Math.sqrt(R * R - dy * dy);
+      ctx.fillRect(cx - w, yy, w * 2, 2);
+    }
+    ctx.globalAlpha = 1;
   }
 
   // Pixel-art ship sprite. Each char = a pixel cell. Bottom row is engine.
@@ -1516,6 +1691,13 @@
     state.graze.boost = 0;
     state.focus = false;
     state.handPrev = null;
+    state.shake = 0;
+    state.bossWarning = 0;
+    state.combo.count = 0;
+    state.combo.timer = 0;
+    state.combo.best = 0;
+    state.themeIndex = 0;
+    state.themeT = 0;
     pickStageMod();
     overlay.querySelector('h1').textContent = 'HAND DANMAKU';
     updateHud();
