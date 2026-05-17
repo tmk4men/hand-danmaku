@@ -577,17 +577,16 @@
     const boosted = state.graze.boost > 0;
     const lv = state.power;
     if (state.focus) {
-      // Sparse, slow heavy bolt(s). Lower speed + fewer shots than normal.
-      const FS = -5;                 // slow speed
+      // Slow homing bolts. Few in number, gently track nearest enemy.
       const dmg = 2;
-      state.shots.push({ x: p.x, y: p.y - 14, vy: FS, r: 4, dmg, kind: 'focus' });
-      if (lv >= 2) {
-        state.shots.push({ x: p.x - 5, y: p.y - 10, vy: FS, r: 3, dmg, kind: 'focus' });
-        state.shots.push({ x: p.x + 5, y: p.y - 10, vy: FS, r: 3, dmg, kind: 'focus' });
-      }
-      if (lv >= 3) {
-        state.shots.push({ x: p.x, y: p.y - 18, vy: FS - 1, r: 4, dmg, kind: 'focus' });
-      }
+      const mk = (ox, oy, vx) => state.shots.push({
+        x: p.x + ox, y: p.y + oy,
+        vx, vy: -3, r: 4, dmg,
+        kind: 'homing', maxSp: 5, turn: 0.12, life: 0,
+      });
+      mk(0,  -14,  0);
+      if (lv >= 2) { mk(-7, -8, -1.2); mk(7, -8, 1.2); }
+      if (lv >= 3) { mk(0, -20, 0); }
     } else {
       // Standard fire scaled by power level
       const lanes = [];
@@ -944,9 +943,35 @@
     // Player shots
     for (let i = state.shots.length - 1; i >= 0; i--) {
       const s = state.shots[i];
+      // Homing steering toward nearest enemy
+      if (s.kind === 'homing') {
+        let nearest = null, nd2 = Infinity;
+        for (const e of state.enemies) {
+          const d = dist2(s.x, s.y, e.x, e.y);
+          if (d < nd2) { nd2 = d; nearest = e; }
+        }
+        if (nearest) {
+          const dx = nearest.x - s.x, dy = nearest.y - s.y;
+          const d = Math.hypot(dx, dy) || 1;
+          const tx = (dx / d) * s.maxSp, ty = (dy / d) * s.maxSp;
+          s.vx = s.vx * (1 - s.turn) + tx * s.turn;
+          s.vy = s.vy * (1 - s.turn) + ty * s.turn;
+          const sp = Math.hypot(s.vx, s.vy) || 1;
+          s.vx = (s.vx / sp) * s.maxSp;
+          s.vy = (s.vy / sp) * s.maxSp;
+        }
+        s.life++;
+        // trail
+        if (s.life % 2 === 0) pushParticle(s.x, s.y, '#88e0ff');
+      }
       s.x += s.vx || 0;
       s.y += s.vy;
-      if (s.y < -10 || s.x < -10 || s.x > VW + 10) { state.shots.splice(i, 1); continue; }
+      // remove if too old or off-screen
+      const offTop = s.y < -10 && (!s.kind || s.kind !== 'homing');
+      if (offTop || s.x < -20 || s.x > VW + 20 || s.y > VH + 20
+          || (s.kind === 'homing' && s.life > 240)) {
+        state.shots.splice(i, 1); continue;
+      }
       let consumed = false;
       for (const e of state.enemies) {
         if (dist2(s.x, s.y, e.x, e.y) < (e.radius + s.r) ** 2) {
@@ -1098,12 +1123,20 @@
       drawEnemy(e);
     }
 
-    // player shots — chunky 2-tone pellet
+    // player shots — chunky 2-tone pellet (homing = cyan diamond)
     for (const s of state.shots) {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(s.x - 2.5, s.y - 7.5, 5, 12.5);
-      ctx.fillStyle = '#7fd8ff';
-      ctx.fillRect(s.x - 2.5, s.y - 5, 5, 7.5);
+      if (s.kind === 'homing') {
+        ctx.fillStyle = '#88e0ff';
+        ctx.fillRect(s.x - 4, s.y - 1.5, 8, 3);
+        ctx.fillRect(s.x - 1.5, s.y - 4, 3, 8);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 2.5, s.y - 7.5, 5, 12.5);
+        ctx.fillStyle = '#7fd8ff';
+        ctx.fillRect(s.x - 2.5, s.y - 5, 5, 7.5);
+      }
     }
 
     // bullets — square pellets with a brighter inner core
