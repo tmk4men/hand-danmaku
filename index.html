@@ -59,13 +59,72 @@
   #camWrap canvas { position: absolute; inset: 0; }
 
   #hud {
-    position: absolute; top: 10px; left: 12px;
+    position: absolute; top: 10px; left: 10px;
     pointer-events: none;
-    font-size: 14px;
-    line-height: 1.5;
-    text-shadow: 0 0 6px #000;
+    display: flex; flex-direction: column; gap: 4px;
+    background: linear-gradient(180deg, rgba(15,18,46,0.85), rgba(8,10,28,0.85));
+    border: 2px solid #2a2f55;
+    box-shadow: 0 0 0 2px #06081a, 0 0 12px rgba(120,140,255,0.25);
+    padding: 8px 10px;
+    font-size: 10px;
+    color: #cfd2f0;
+    min-width: 144px;
+    line-height: 1.2;
+    image-rendering: pixelated;
   }
-  #hud b { color: #9ad8ff; font-weight: 600; letter-spacing: 0.05em; }
+  #hud .row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 8px;
+  }
+  #hud .lbl { color: #88a8ff; letter-spacing: 0.12em; }
+  #hud .val { color: #ffffff; font-weight: bold; }
+  #hud .val.warn { color: #ffd066; }
+  #hud .val.crit { color: #ff7c98; }
+  #hud .icons { display: flex; gap: 2px; }
+  #hud .pip {
+    width: 8px; height: 8px;
+    background: #2a2f55;
+    border: 1px solid #06081a;
+    image-rendering: pixelated;
+  }
+  #hud .pip.on { background: #ffd066; box-shadow: 0 0 4px #ffd066; }
+  #hud .pip.life { background: #7fc6ff; }
+  #hud .pip.bomb { background: #ff7c98; }
+  #hud .meter {
+    height: 6px;
+    background: #1a1d3a;
+    border: 1px solid #06081a;
+    position: relative;
+    overflow: hidden;
+  }
+  #hud .meter .fill {
+    height: 100%;
+    background: linear-gradient(90deg, #88e0ff, #ffd066);
+    transition: width 0.1s linear;
+  }
+  #hud .meter.guard .fill { background: linear-gradient(90deg, #7fffd4, #88e0ff); }
+  #hud .divider {
+    height: 1px;
+    background: #2a2f55;
+    margin: 2px 0;
+  }
+  #hud .score {
+    font-size: 14px;
+    color: #ffd066;
+    letter-spacing: 0.18em;
+    text-shadow: 0 0 6px #00000088;
+  }
+  #hud .hi { color: #88a8ff; font-size: 9px; letter-spacing: 0.18em; }
+  #hud .boost {
+    color: #06081a;
+    background: #ffd066;
+    padding: 2px 4px;
+    text-align: center;
+    font-weight: bold;
+    letter-spacing: 0.15em;
+    display: none;
+  }
+  #hud .boost.on { display: block; }
 
   #overlay {
     position: absolute; inset: 0;
@@ -120,11 +179,39 @@
     </div>
 
     <div id="hud">
-      <div>SCORE <b id="score">0</b></div>
-      <div>LIVES <b id="lives">3</b></div>
-      <div>STAGE <b id="stage_no">1</b></div>
-      <div>BOMB <b id="bombs">2</b></div>
-      <div>GUARD <b id="guard">10.0s</b></div>
+      <div class="row">
+        <span class="lbl">SCORE</span>
+        <span class="score" id="score">0</span>
+      </div>
+      <div class="row">
+        <span class="hi">HI</span>
+        <span class="hi" id="hiscore">0</span>
+      </div>
+      <div class="divider"></div>
+      <div class="row">
+        <span class="lbl">LIVES</span>
+        <span class="icons" id="livesIcons"></span>
+      </div>
+      <div class="row">
+        <span class="lbl">BOMB</span>
+        <span class="icons" id="bombIcons"></span>
+      </div>
+      <div class="row">
+        <span class="lbl">PWR</span>
+        <span class="icons" id="powerIcons"></span>
+      </div>
+      <div class="divider"></div>
+      <div class="row">
+        <span class="lbl">GUARD</span>
+        <span class="val" id="guard">10.0s</span>
+      </div>
+      <div class="meter guard"><div class="fill" id="guardBar" style="width:100%"></div></div>
+      <div class="row">
+        <span class="lbl">GRAZE</span>
+        <span class="val" id="grazeText">0</span>
+      </div>
+      <div class="meter"><div class="fill" id="grazeBar" style="width:0%"></div></div>
+      <div class="boost" id="boostFlag">POWER UP!</div>
     </div>
 
     <div id="status">model: loading…</div>
@@ -132,7 +219,15 @@
     <div id="overlay">
       <div class="panel">
         <h1>HAND DANMAKU</h1>
-        <p>人差し指で機体を操作。<br>ピンチ（親指＋人差し指）でボム発動。<br>グー（握り拳）で周囲の弾を弾くガード（合計10秒まで）。</p>
+        <p style="text-align:left;line-height:1.7">
+          <b style="color:#88e0ff">MOVE</b> 人差し指で機体を操作<br>
+          <b style="color:#ff7c98">BOMB</b> 親指＋人差し指でピンチ → 全弾消去<br>
+          <b style="color:#7fffd4">GUARD</b> グー（握り拳）で防御シールド（最大10秒／回復P）<br>
+          <b style="color:#88e0ff">FOCUS</b> ピース✌で低速・狙撃・小ヒットボックス<br>
+          <b style="color:#aef4ff">DASH</b> 指先を素早く振ると短距離回避＋弾消し<br>
+          <b style="color:#ffd066">GRAZE</b> 弾スレスレを通す → 満タンでPOWER UP（一定時間強化）<br>
+          <b style="color:#ffd066">ITEM</b> P=武器UP / B=ボム+1 / G=ガード回復 / 1=1UP
+        </p>
         <p>カメラの使用許可が必要です。MediaPipe Hands (modelComplexity=1 / Heavy) を使用します。</p>
         <p style="color:#ffb3b3" id="errMsg"></p>
         <button id="startBtn">START</button>
@@ -167,11 +262,30 @@
   const errMsg    = document.getElementById('errMsg');
   const hud = {
     score: document.getElementById('score'),
-    lives: document.getElementById('lives'),
-    stage: document.getElementById('stage_no'),
-    bombs: document.getElementById('bombs'),
+    hiscore: document.getElementById('hiscore'),
+    livesIcons: document.getElementById('livesIcons'),
+    bombIcons: document.getElementById('bombIcons'),
+    powerIcons: document.getElementById('powerIcons'),
     guard: document.getElementById('guard'),
+    guardBar: document.getElementById('guardBar'),
+    grazeText: document.getElementById('grazeText'),
+    grazeBar: document.getElementById('grazeBar'),
+    boostFlag: document.getElementById('boostFlag'),
   };
+  function renderPips(el, count, maxCount, className) {
+    if (el.children.length !== maxCount) {
+      el.innerHTML = '';
+      for (let i = 0; i < maxCount; i++) {
+        const d = document.createElement('div');
+        d.className = 'pip';
+        el.appendChild(d);
+      }
+    }
+    for (let i = 0; i < maxCount; i++) {
+      const p = el.children[i];
+      p.className = 'pip' + (i < count ? ' on ' + className : '');
+    }
+  }
 
   // ---------- Canvas sizing ----------
   const VW = 800, VH = 600; // virtual game resolution
@@ -213,15 +327,25 @@
       fireCooldown: 0,
       invuln: 0,
       bombFx: 0,
+      dashCd: 0,
+      dashTrail: [],     // {x,y,life}
     },
     bullets: [],         // enemy bullets
     shots: [],           // player shots
     enemies: [],
+    items: [],           // pickups
     particles: [],
+    power: 1,            // weapon level 1..3
+    powerFlash: 0,
+    hiScore: parseInt(localStorage.getItem('hd_hi') || '0', 10),
     pinch: { active: false, lastUsed: -9999 },
     guard: { active: false, remaining: 600 }, // up to 10 seconds (60fps)
     handSeen: false,
+    handPrev: null,      // previous normalized tip pos for swipe detection
     smoothX: VW * 0.5, smoothY: VH * 0.78,
+    focus: false,        // peace-sign focus mode
+    graze: { value: 0, max: 100, boost: 0 },
+    mod: { name: 'NORMAL', bulletSpeedMul: 1, fanRays: 0, spinnerExtra: 0 },
   };
 
   // ---------- Utility ----------
@@ -273,25 +397,40 @@
       const pinchD = Math.hypot(tip.x - thumb.x, tip.y - thumb.y);
       const isPinch = pinchD < 0.06;
 
-      // Fist detection: index/middle/ring/pinky tips closer to wrist than PIP joints
-      // (= fingers curled). Pairs: tip-pip = (8,6), (12,10), (16,14), (20,18). Wrist = 0.
+      // Per-finger curl: tip closer to wrist than PIP = curled.
       const wrist = lm[0];
       const fingerPairs = [[8, 6], [12, 10], [16, 14], [20, 18]];
-      let curled = 0;
-      for (const [tipI, pipI] of fingerPairs) {
+      const curlBits = fingerPairs.map(([tipI, pipI]) => {
         const t = lm[tipI], p = lm[pipI];
         const dt = Math.hypot(t.x - wrist.x, t.y - wrist.y);
         const dp = Math.hypot(p.x - wrist.x, p.y - wrist.y);
-        if (dt < dp * 1.05) curled++;
-      }
-      const isFist = curled >= 3 && !isPinch;
-      // Fist gates guard only while still has remaining budget
+        return dt < dp * 1.05;
+      });
+      const curled = curlBits.filter(Boolean).length;
+      const isFist  = curled >= 3 && !isPinch;
+      // Peace sign: index + middle extended, ring + pinky curled
+      const isPeace = !isPinch && !isFist
+        && !curlBits[0] && !curlBits[1] && curlBits[2] && curlBits[3];
+
+      state.focus = isPeace && state.running;
       state.guard.active = isFist && state.guard.remaining > 0 && state.running;
 
       if (isPinch && !state.pinch.active && state.running) {
         triggerBomb();
       }
       state.pinch.active = isPinch;
+
+      // Swipe-dash detection from fingertip velocity
+      if (state.handPrev && state.running && state.player.dashCd <= 0
+          && !isFist && !isPinch) {
+        const dx = tip.x - state.handPrev.x;
+        const dy = tip.y - state.handPrev.y;
+        const sp = Math.hypot(dx, dy);
+        if (sp > 0.085) {
+          triggerDash(dx / sp, dy / sp);
+        }
+      }
+      state.handPrev = { x: tip.x, y: tip.y };
 
       // Draw landmarks
       if (window.drawConnectors && window.HAND_CONNECTIONS) {
@@ -356,20 +495,177 @@
 
   // ---------- Bullet helpers ----------
   function fireBullet(x, y, angle, speed, color = '#ff8aff', radius = 5, type = 'std') {
+    const s = speed * state.mod.bulletSpeedMul;
     state.bullets.push({
       x, y,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
+      vx: Math.cos(angle) * s,
+      vy: Math.sin(angle) * s,
       r: radius,
       color, type,
       life: 0,
+      grazed: false,
     });
   }
 
   function playerShot() {
     const p = state.player;
-    state.shots.push({ x: p.x - 6, y: p.y - 10, vy: -10, r: 3 });
-    state.shots.push({ x: p.x + 6, y: p.y - 10, vy: -10, r: 3 });
+    const boosted = state.graze.boost > 0;
+    const lv = state.power;
+    if (state.focus) {
+      // narrow, hard-hitting single bolt; gains side bolts at higher levels
+      state.shots.push({ x: p.x, y: p.y - 14, vy: -14, r: 3, dmg: 2 + (lv - 1), kind: 'focus' });
+      if (lv >= 2 || boosted) {
+        state.shots.push({ x: p.x - 8, y: p.y - 4, vy: -12, vx: -0.6, r: 3, dmg: 1, kind: 'focus' });
+        state.shots.push({ x: p.x + 8, y: p.y - 4, vy: -12, vx:  0.6, r: 3, dmg: 1, kind: 'focus' });
+      }
+      if (lv >= 3) {
+        state.shots.push({ x: p.x, y: p.y - 18, vy: -16, r: 4, dmg: 1, kind: 'focus' });
+      }
+    } else {
+      // Standard fire scaled by power level
+      const lanes = [];
+      if (lv === 1) lanes.push([-6, 0], [6, 0]);
+      else if (lv === 2) lanes.push([-8, 0], [0, -2], [8, 0]);
+      else lanes.push([-10, 0], [-4, -2], [4, -2], [10, 0]);
+      for (const [ox, oy] of lanes) {
+        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
+      }
+      if (boosted) {
+        // graze-boost adds a 3-way spread on top of normal fire
+        state.shots.push({ x: p.x - 4, y: p.y - 12, vy: -11, vx: -1.6, r: 3, dmg: 1, kind: 'boost' });
+        state.shots.push({ x: p.x + 4, y: p.y - 12, vy: -11, vx:  1.6, r: 3, dmg: 1, kind: 'boost' });
+      }
+    }
+  }
+
+  function triggerDash(nx, ny) {
+    const p = state.player;
+    const DIST = 70;
+    const x0 = p.x, y0 = p.y;
+    const x1 = clamp(p.x + nx * DIST, 12, VW - 12);
+    const y1 = clamp(p.y + ny * DIST, 12, VH - 12);
+    // teleport target so smoothing snaps; also nudge actual pos to halfway
+    p.tx = x1; p.ty = y1;
+    state.smoothX = (x0 + x1) * 0.5;
+    state.smoothY = (y0 + y1) * 0.5;
+    p.invuln = Math.max(p.invuln, 28);
+    p.dashCd = 50;
+    // Clear bullets near the dash segment
+    const R2 = 28 * 28;
+    const dx = x1 - x0, dy = y1 - y0;
+    const len2 = dx * dx + dy * dy || 1;
+    for (let i = state.bullets.length - 1; i >= 0; i--) {
+      const b = state.bullets[i];
+      let t = ((b.x - x0) * dx + (b.y - y0) * dy) / len2;
+      t = clamp(t, 0, 1);
+      const px = x0 + dx * t, py = y0 + dy * t;
+      if (dist2(b.x, b.y, px, py) < R2) {
+        pushParticle(b.x, b.y, b.color);
+        state.bullets.splice(i, 1);
+      }
+    }
+    // visual trail samples
+    for (let k = 0; k <= 6; k++) {
+      const t = k / 6;
+      p.dashTrail.push({ x: x0 + dx * t, y: y0 + dy * t, life: 18 - k });
+    }
+  }
+
+  // ---------- Items ----------
+  const ITEM_DEFS = {
+    power: { color: '#ffd066', edge: '#7a4400', glyph: 'P' },
+    bomb:  { color: '#ff7c98', edge: '#73122d', glyph: 'B' },
+    guard: { color: '#7fffd4', edge: '#0d6e57', glyph: 'G' },
+    life:  { color: '#ffffff', edge: '#444466', glyph: '1' },
+  };
+
+  function dropItems(x, y, list) {
+    for (const t of list) {
+      state.items.push({
+        type: t, x, y,
+        vx: rand(-1.2, 1.2),
+        vy: rand(-2.6, -1.2),
+        gravity: 0.06,
+        life: 0,
+      });
+    }
+  }
+
+  function rollDrop(category) {
+    // category: 'grunt' | 'spinner' | 'fan' | 'boss'
+    if (category === 'boss') return ['power', 'bomb', 'guard', 'life'];
+    if (category === 'spinner') {
+      const r = Math.random();
+      return [r < 0.45 ? 'power' : r < 0.75 ? 'bomb' : 'guard'];
+    }
+    if (category === 'fan') {
+      if (Math.random() < 0.6) {
+        const r = Math.random();
+        return [r < 0.5 ? 'power' : r < 0.85 ? 'guard' : 'bomb'];
+      }
+      return [];
+    }
+    // grunt
+    if (Math.random() < 0.08) {
+      const r = Math.random();
+      return [r < 0.55 ? 'power' : r < 0.8 ? 'guard' : r < 0.97 ? 'bomb' : 'life'];
+    }
+    return [];
+  }
+
+  function updateItems() {
+    const p = state.player;
+    for (let i = state.items.length - 1; i >= 0; i--) {
+      const it = state.items[i];
+      it.life++;
+      it.vy += it.gravity;
+      // magnet when close, or when near bottom
+      const dx = p.x - it.x, dy = p.y - it.y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 90 * 90 || it.y > VH * 0.65) {
+        const d = Math.sqrt(d2) || 1;
+        const pull = it.y > VH * 0.65 ? 0.6 : 0.35;
+        it.vx += (dx / d) * pull;
+        it.vy += (dy / d) * pull;
+        it.vx *= 0.9; it.vy *= 0.9;
+      }
+      it.x += it.vx; it.y += it.vy;
+      if (it.y > VH + 24) { state.items.splice(i, 1); continue; }
+      // pickup
+      if (d2 < 18 * 18) {
+        applyItem(it.type);
+        for (let k = 0; k < 10; k++) pushParticle(it.x, it.y, ITEM_DEFS[it.type].color);
+        state.items.splice(i, 1);
+      }
+    }
+  }
+
+  function applyItem(type) {
+    if (type === 'power') {
+      if (state.power < 3) { state.power++; state.powerFlash = 36; state.score += 200; }
+      else { state.score += 500; } // overflow bonus
+    } else if (type === 'bomb') {
+      state.bombs = Math.min(state.bombs + 1, 6);
+      state.score += 200;
+    } else if (type === 'guard') {
+      state.guard.remaining = Math.min(600, state.guard.remaining + 180); // +3s
+      state.score += 200;
+    } else if (type === 'life') {
+      state.lives = Math.min(state.lives + 1, 7);
+      state.score += 1000;
+    }
+    updateHud();
+  }
+
+  function pickStageMod() {
+    const mods = [
+      { name: 'NORMAL',       bulletSpeedMul: 1.0, fanRays: 0, spinnerExtra: 0 },
+      { name: 'SPEED RUSH',   bulletSpeedMul: 1.3, fanRays: 0, spinnerExtra: 0 },
+      { name: 'WIDE FAN',     bulletSpeedMul: 1.0, fanRays: 2, spinnerExtra: 0 },
+      { name: 'TWIN SPIN',    bulletSpeedMul: 1.0, fanRays: 0, spinnerExtra: 2 },
+      { name: 'SLOW DENSE',   bulletSpeedMul: 0.75,fanRays: 1, spinnerExtra: 1 },
+    ];
+    state.mod = mods[Math.floor(Math.random() * mods.length)];
   }
 
   function triggerBomb() {
@@ -509,12 +805,14 @@
         fireBullet(e.x, e.y, aim, 2.2, '#ff9be0', 5);
       } else if (e.pattern === 'spin') {
         const base = e.t * 0.09;
-        for (let k = 0; k < 4; k++) {
-          fireBullet(e.x, e.y, base + k * TAU / 4, 1.8, '#aef0ff', 5);
+        const spokes = 4 + state.mod.spinnerExtra;
+        for (let k = 0; k < spokes; k++) {
+          fireBullet(e.x, e.y, base + k * TAU / spokes, 1.8, '#aef0ff', 5);
         }
       } else if (e.pattern === 'fan') {
         const aim = Math.atan2(state.player.y - e.y, state.player.x - e.x);
-        for (let i = -1; i <= 1; i++) {
+        const wings = 1 + state.mod.fanRays;
+        for (let i = -wings; i <= wings; i++) {
           fireBullet(e.x, e.y, aim + i * 0.22, 2.1, '#ffd27a', 5);
         }
       }
@@ -536,14 +834,20 @@
 
     // Smooth player to hand target
     const p = state.player;
-    const k = 0.25;
+    const k = state.focus ? 0.12 : 0.25;
     state.smoothX += (p.tx - state.smoothX) * k;
     state.smoothY += (p.ty - state.smoothY) * k;
     p.x = clamp(state.smoothX, 12, VW - 12);
     p.y = clamp(state.smoothY, 12, VH - 12);
+    p.hitR = state.focus ? 2 : 4;
 
     if (p.invuln > 0) p.invuln--;
     if (p.bombFx > 0) p.bombFx--;
+    if (p.dashCd > 0) p.dashCd--;
+    if (state.graze.boost > 0) state.graze.boost--;
+    for (let i = p.dashTrail.length - 1; i >= 0; i--) {
+      if (--p.dashTrail[i].life <= 0) p.dashTrail.splice(i, 1);
+    }
 
     // Guard: while fist + budget remains, consume time and block hits
     if (state.guard.active && state.guard.remaining > 0) {
@@ -563,27 +867,29 @@
     }
     if (state.t % 6 === 0) updateHud();
 
-    // Auto-fire
+    // Auto-fire (focus mode fires faster, single bolt; graze boost = faster too)
     p.fireCooldown--;
     if (p.fireCooldown <= 0 && state.handSeen) {
       playerShot();
-      p.fireCooldown = 6;
+      p.fireCooldown = state.focus ? 5 : (state.graze.boost > 0 ? 4 : 6);
     }
 
     // Player shots
     for (let i = state.shots.length - 1; i >= 0; i--) {
       const s = state.shots[i];
+      s.x += s.vx || 0;
       s.y += s.vy;
-      if (s.y < -10) { state.shots.splice(i, 1); continue; }
-      // hit enemies
+      if (s.y < -10 || s.x < -10 || s.x > VW + 10) { state.shots.splice(i, 1); continue; }
+      let consumed = false;
       for (const e of state.enemies) {
         if (dist2(s.x, s.y, e.x, e.y) < (e.radius + s.r) ** 2) {
-          e.hp -= 1;
+          e.hp -= (s.dmg || 1);
           pushParticle(s.x, s.y, '#ffffff');
-          state.shots.splice(i, 1);
+          consumed = true;
           break;
         }
       }
+      if (consumed) state.shots.splice(i, 1);
     }
 
     // Enemies
@@ -594,13 +900,20 @@
       if (e.hp <= 0) {
         state.score += e.score || 100;
         for (let k = 0; k < 18; k++) pushParticle(e.x, e.y, '#ffd27a');
+        // item drops
+        const cat = e.isBoss ? 'boss'
+                  : e.pattern === 'spin' ? 'spinner'
+                  : e.pattern === 'fan'  ? 'fan'
+                  : 'grunt';
+        dropItems(e.x, e.y, rollDrop(cat));
         state.enemies.splice(i, 1);
         if (e.isBoss) {
           state.bossFight = false;
           state.boss = null;
           state.stageNo++;
           state.stageTimer = 0;
-          state.bombs = Math.min(state.bombs + 1, 5);
+          state.bombs = Math.min(state.bombs + 1, 6);
+          pickStageMod();
         }
         updateHud();
         continue;
@@ -611,14 +924,26 @@
     }
 
     // Bullets
+    const GRAZE_R = 22;
     for (let i = state.bullets.length - 1; i >= 0; i--) {
       const b = state.bullets[i];
       b.x += b.vx; b.y += b.vy; b.life++;
       if (b.x < -20 || b.x > VW + 20 || b.y < -20 || b.y > VH + 20) {
         state.bullets.splice(i, 1); continue;
       }
+      const d2p = dist2(b.x, b.y, p.x, p.y);
+      // Graze: close call but not hit
+      if (!b.grazed && d2p < (GRAZE_R + b.r) ** 2 && d2p > (p.hitR + b.r + 2) ** 2) {
+        b.grazed = true;
+        state.graze.value = Math.min(state.graze.max, state.graze.value + 4);
+        state.score += 30;
+        if (state.graze.value >= state.graze.max) {
+          state.graze.value = 0;
+          state.graze.boost = 300; // 5s
+        }
+      }
       // collide with player hitbox (guard also blocks)
-      if (p.invuln <= 0 && !state.guard.active && dist2(b.x, b.y, p.x, p.y) < (b.r + p.hitR) ** 2) {
+      if (p.invuln <= 0 && !state.guard.active && d2p < (b.r + p.hitR) ** 2) {
         state.bullets.splice(i, 1);
         playerHit();
       }
@@ -633,6 +958,8 @@
       if (pa.life <= 0) state.particles.splice(i, 1);
     }
 
+    if (state.powerFlash > 0) state.powerFlash--;
+    updateItems();
     stageTick();
   }
 
@@ -648,23 +975,31 @@
 
   function gameOver() {
     state.running = false;
+    if (state.score > state.hiScore) {
+      state.hiScore = state.score;
+      try { localStorage.setItem('hd_hi', String(state.hiScore)); } catch {}
+    }
     overlay.classList.remove('hidden');
     overlay.querySelector('h1').textContent = 'GAME OVER';
     overlay.querySelector('p').textContent =
-      `スコア: ${state.score}   /   到達ステージ: ${state.stageNo}`;
+      `SCORE ${state.score}  /  HI ${state.hiScore}  /  STAGE ${state.stageNo}`;
     startBtn.textContent = 'RETRY';
   }
 
   function updateHud() {
-    hud.score.textContent = state.score;
-    hud.lives.textContent = state.lives;
-    hud.stage.textContent = state.stageNo;
-    hud.bombs.textContent = state.bombs;
+    hud.score.textContent = String(state.score).padStart(7, '0');
+    hud.hiscore.textContent = String(state.hiScore).padStart(7, '0');
+    renderPips(hud.livesIcons, state.lives, 7, 'life');
+    renderPips(hud.bombIcons, state.bombs, 6, 'bomb');
+    renderPips(hud.powerIcons, state.power, 3, '');
     const sec = (state.guard.remaining / 60).toFixed(1);
     hud.guard.textContent = sec + 's';
-    hud.guard.style.color = state.guard.active ? '#7fffd4'
-                          : state.guard.remaining <= 0 ? '#888'
-                          : '#9ad8ff';
+    hud.guard.className = 'val' + (state.guard.active ? ' warn'
+                                  : state.guard.remaining <= 60 ? ' crit' : '');
+    hud.guardBar.style.width = (state.guard.remaining / 600 * 100) + '%';
+    hud.grazeText.textContent = state.graze.boost > 0 ? 'MAX!' : state.graze.value;
+    hud.grazeBar.style.width = (state.graze.value / state.graze.max * 100) + '%';
+    hud.boostFlag.classList.toggle('on', state.graze.boost > 0);
   }
 
   // ---------- Rendering ----------
@@ -725,6 +1060,33 @@
       }
     }
 
+    // dash trail
+    for (const t of state.player.dashTrail) {
+      ctx.globalAlpha = clamp(t.life / 18, 0, 1) * 0.7;
+      ctx.fillStyle = '#aef4ff';
+      ctx.fillRect(t.x - 3, t.y - 3, 6, 6);
+    }
+    ctx.globalAlpha = 1;
+
+    // items
+    for (const it of state.items) {
+      const d = ITEM_DEFS[it.type];
+      const bob = Math.sin((it.life + it.x) * 0.2) * 1.5;
+      const x = it.x, y = it.y + bob;
+      // shadow
+      ctx.fillStyle = d.edge;
+      ctx.fillRect(x - 8, y - 8, 16, 16);
+      ctx.fillStyle = d.color;
+      ctx.fillRect(x - 6, y - 6, 12, 12);
+      // glyph
+      ctx.fillStyle = d.edge;
+      ctx.fillRect(x - 1.5, y - 4, 3, 8);
+      ctx.fillRect(x - 4, y - 1.5, 8, 3);
+      // letter (drawn at higher resolution via canvas text on display? keep pixel-ish here)
+      // simple pixel letter via overlay rect pattern based on glyph
+      drawItemGlyph(d.glyph, x, y, d.edge);
+    }
+
     // guard shield — pixely ring of cyan squares
     if (state.guard.active) {
       const p = state.player;
@@ -744,18 +1106,35 @@
     // player
     drawPlayer();
 
-    // boss HP bar
+    // boss HP bar with frame + end caps
     if (state.bossFight && state.boss) {
       const b = state.boss;
-      const w = VW * 0.6, h = 6;
-      const x = (VW - w) / 2, y = 14;
-      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      const w = VW * 0.62, h = 10;
+      const x = (VW - w) / 2, y = 38;
+      ctx.fillStyle = '#0a0c20';
+      ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
+      ctx.fillStyle = '#3a3f6e';
       ctx.fillRect(x, y, w, h);
+      const filled = w * clamp(b.hp / b.maxHp, 0, 1);
       ctx.fillStyle = '#ff77a8';
-      ctx.fillRect(x, y, w * clamp(b.hp / b.maxHp, 0, 1), h);
-      ctx.strokeStyle = '#ffffff66';
-      ctx.strokeRect(x, y, w, h);
+      ctx.fillRect(x, y, filled, h);
+      ctx.fillStyle = '#ffd2e6';
+      ctx.fillRect(x, y, filled, 2);
+      // tick marks
+      for (let i = 1; i < 4; i++) {
+        ctx.fillStyle = '#22243a';
+        ctx.fillRect(x + (w / 4) * i, y, 1, h);
+      }
+      // BOSS label
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '8px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillText('BOSS', x, y - 12);
     }
+
+    // stage modifier banner (top-right inside canvas)
+    drawModBanner();
 
     // no-hand notice
     if (state.running && !state.handSeen) {
@@ -835,10 +1214,81 @@
     }
   }
 
+  // Tiny pixel glyphs for item letters (3x5 grids)
+  const GLYPHS = {
+    'P': ['###','#.#','###','#..','#..'],
+    'B': ['##.','#.#','##.','#.#','##.'],
+    'G': ['###','#..','#.#','#.#','###'],
+    '1': ['.#.','##.','.#.','.#.','###'],
+  };
+  function drawItemGlyph(g, cx, cy, color) {
+    const grid = GLYPHS[g]; if (!grid) return;
+    const cell = 1.6;
+    const x0 = cx - 1.5 * cell, y0 = cy - 2.5 * cell;
+    ctx.fillStyle = color;
+    for (let y = 0; y < 5; y++) for (let x = 0; x < 3; x++) {
+      if (grid[y][x] === '#') ctx.fillRect(x0 + x * cell, y0 + y * cell, cell, cell);
+    }
+  }
+
   function drawPlayer() {
     const p = state.player;
     const blink = (p.invuln > 0 && Math.floor(p.invuln / 4) % 2 === 0);
+
+    // power-level flash ring (after pickup)
+    if (state.powerFlash > 0) {
+      const r = (36 - state.powerFlash) * 1.2;
+      const segs = 18;
+      ctx.fillStyle = '#ffd066';
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * TAU;
+        ctx.fillRect(p.x + Math.cos(a) * r - 2, p.y + Math.sin(a) * r - 2, 4, 4);
+      }
+    }
+
+    // graze boost halo (when boost is active)
+    if (state.graze.boost > 0) {
+      const pulse = 0.6 + 0.4 * Math.sin(state.t * 0.5);
+      ctx.fillStyle = `rgba(255,208,102,${0.8 * pulse})`;
+      const segs = 24;
+      const R = 30;
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * TAU + state.t * 0.06;
+        ctx.fillRect(p.x + Math.cos(a) * R - 1.5, p.y + Math.sin(a) * R - 1.5, 3, 3);
+      }
+    }
+
     if (!blink) drawSprite(SHIP_SPRITE, SHIP_PAL, p.x, p.y, 3.5);
+
+    // focus indicator: narrow ring of dim cyan dots
+    if (state.focus) {
+      ctx.fillStyle = '#88e0ff';
+      const segs = 16;
+      const R = 16;
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * TAU + state.t * 0.04;
+        ctx.fillRect(p.x + Math.cos(a) * R - 1, p.y + Math.sin(a) * R - 1, 2, 2);
+      }
+    }
+
+    // power level dots (above ship)
+    for (let i = 0; i < 3; i++) {
+      ctx.fillStyle = i < state.power ? '#ffd066' : '#2a2f55';
+      ctx.fillRect(p.x - 9 + i * 7, p.y - 26, 4, 4);
+    }
+
+    // graze meter arc above ship — only when no boost
+    if (state.graze.boost <= 0 && state.graze.value > 0) {
+      const segs = 12;
+      const filled = Math.round(segs * state.graze.value / state.graze.max);
+      const R = 20;
+      for (let i = 0; i < segs; i++) {
+        const a = -Math.PI - 0.4 + (i / (segs - 1)) * 0.8;
+        ctx.fillStyle = i < filled ? '#ffd066' : '#33375a';
+        ctx.fillRect(p.x + Math.cos(a) * R - 1, p.y + Math.sin(a) * R - 1, 2, 2);
+      }
+    }
+
     // hitbox marker — a single chunky pixel
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(p.x - 1.25, p.y - 1.25, 2.5, 2.5);
@@ -882,6 +1332,27 @@
     '......######......',
   ];
   const BOSS_PAL = { '#': '#d6457b', 'E': '#ffe066', 'W': '#ffffff' };
+
+  function drawModBanner() {
+    const label = `STAGE ${state.stageNo}  ${state.mod.name}`;
+    ctx.font = '8px monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'top';
+    const tw = ctx.measureText(label).width;
+    const padX = 8, padY = 4;
+    const x = (VW - tw - padX * 2) / 2;
+    const y = 4;
+    // shadow + body
+    ctx.fillStyle = '#0a0c20';
+    ctx.fillRect(x - 2, y - 2, tw + padX * 2 + 4, 18 + 4);
+    ctx.fillStyle = '#1f234a';
+    ctx.fillRect(x, y, tw + padX * 2, 18);
+    // top trim
+    ctx.fillStyle = state.mod.name === 'NORMAL' ? '#88b0ff' : '#ffd066';
+    ctx.fillRect(x, y, tw + padX * 2, 2);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(label, x + tw + padX, y + 5);
+  }
 
   function drawEnemy(e) {
     if (e.isBoss) {
@@ -931,8 +1402,18 @@
     state.bullets.length = 0;
     state.shots.length = 0;
     state.enemies.length = 0;
+    state.items.length = 0;
     state.particles.length = 0;
     state.player.invuln = 60;
+    state.player.dashCd = 0;
+    state.player.dashTrail.length = 0;
+    state.power = 1;
+    state.powerFlash = 0;
+    state.graze.value = 0;
+    state.graze.boost = 0;
+    state.focus = false;
+    state.handPrev = null;
+    pickStageMod();
     overlay.querySelector('h1').textContent = 'HAND DANMAKU';
     updateHud();
   }
