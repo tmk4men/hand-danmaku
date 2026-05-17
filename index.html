@@ -577,14 +577,16 @@
     const boosted = state.graze.boost > 0;
     const lv = state.power;
     if (state.focus) {
-      // narrow, hard-hitting single bolt; gains side bolts at higher levels
-      state.shots.push({ x: p.x, y: p.y - 14, vy: -14, r: 3, dmg: 2 + (lv - 1), kind: 'focus' });
-      if (lv >= 2 || boosted) {
-        state.shots.push({ x: p.x - 8, y: p.y - 4, vy: -12, vx: -0.6, r: 3, dmg: 1, kind: 'focus' });
-        state.shots.push({ x: p.x + 8, y: p.y - 4, vy: -12, vx:  0.6, r: 3, dmg: 1, kind: 'focus' });
+      // Sparse, slow heavy bolt(s). Lower speed + fewer shots than normal.
+      const FS = -5;                 // slow speed
+      const dmg = 2;
+      state.shots.push({ x: p.x, y: p.y - 14, vy: FS, r: 4, dmg, kind: 'focus' });
+      if (lv >= 2) {
+        state.shots.push({ x: p.x - 5, y: p.y - 10, vy: FS, r: 3, dmg, kind: 'focus' });
+        state.shots.push({ x: p.x + 5, y: p.y - 10, vy: FS, r: 3, dmg, kind: 'focus' });
       }
       if (lv >= 3) {
-        state.shots.push({ x: p.x, y: p.y - 18, vy: -16, r: 4, dmg: 1, kind: 'focus' });
+        state.shots.push({ x: p.x, y: p.y - 18, vy: FS - 1, r: 4, dmg, kind: 'focus' });
       }
     } else {
       // Standard fire scaled by power level
@@ -936,7 +938,7 @@
     p.fireCooldown--;
     if (p.fireCooldown <= 0 && state.handSeen) {
       playerShot();
-      p.fireCooldown = state.focus ? 5 : (state.graze.boost > 0 ? 4 : 6);
+      p.fireCooldown = state.focus ? 22 : (state.graze.boost > 0 ? 4 : 6);
     }
 
     // Player shots
