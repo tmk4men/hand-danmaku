@@ -30,6 +30,13 @@
     position: absolute; inset: 0;
     width: 100%; height: 100%;
     display: block;
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+  }
+  #hud, #overlay, #status {
+    font-family: "Press Start 2P", "Courier New", ui-monospace, monospace;
+    letter-spacing: 0.05em;
   }
   /* camera preview thumbnail */
   #camWrap {
@@ -142,9 +149,15 @@
 <script>
 (() => {
   // ---------- DOM ----------
-  const stage     = document.getElementById('stage');
-  const canvas    = document.getElementById('game');
-  const ctx       = canvas.getContext('2d');
+  const stage        = document.getElementById('stage');
+  const displayCanvas = document.getElementById('game');
+  const displayCtx    = displayCanvas.getContext('2d');
+  // Offscreen low-resolution pixel buffer (rendered chunky and blitted up)
+  const canvas = document.createElement('canvas');
+  canvas.width = 320; canvas.height = 240;
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  displayCtx.imageSmoothingEnabled = false;
   const video     = document.getElementById('cam');
   const camCanvas = document.getElementById('camOverlay');
   const camCtx    = camCanvas.getContext('2d');
@@ -165,9 +178,9 @@
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     const rect = stage.getBoundingClientRect();
-    canvas.width  = Math.round(rect.width  * dpr);
-    canvas.height = Math.round(rect.height * dpr);
-    // We'll draw in virtual coords and scale via setTransform per-frame.
+    displayCanvas.width  = Math.round(rect.width  * dpr);
+    displayCanvas.height = Math.round(rect.height * dpr);
+    displayCtx.imageSmoothingEnabled = false;
   }
   window.addEventListener('resize', resize);
   resize();
@@ -656,24 +669,25 @@
 
   // ---------- Rendering ----------
   function draw() {
-    // map virtual coords -> backing pixels
+    // map virtual coords -> low-res pixel buffer (320x240 backing)
     const sx = canvas.width / VW;
     const sy = canvas.height / VH;
     ctx.setTransform(sx, 0, 0, sy, 0, 0);
+    ctx.imageSmoothingEnabled = false;
 
-    // background
-    ctx.fillStyle = 'rgba(5,6,10,0.35)';
+    // background — opaque clear for crisp pixels
+    ctx.fillStyle = '#06081a';
     ctx.fillRect(0, 0, VW, VH);
 
     // starfield (cheap)
     drawStars();
 
-    // particles
+    // particles (one chunky pixel each)
     ctx.save();
     for (const pa of state.particles) {
       ctx.globalAlpha = clamp(pa.life / 30, 0, 1);
       ctx.fillStyle = pa.color;
-      ctx.fillRect(pa.x - 1, pa.y - 1, 2, 2);
+      ctx.fillRect(pa.x - 1.25, pa.y - 1.25, 2.5, 2.5);
     }
     ctx.restore();
 
@@ -682,50 +696,48 @@
       drawEnemy(e);
     }
 
-    // player shots
-    ctx.fillStyle = '#dfe9ff';
+    // player shots — chunky 2-tone pellet
     for (const s of state.shots) {
-      ctx.fillRect(s.x - 1.5, s.y - 5, 3, 10);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(s.x - 2.5, s.y - 7.5, 5, 12.5);
+      ctx.fillStyle = '#7fd8ff';
+      ctx.fillRect(s.x - 2.5, s.y - 5, 5, 7.5);
     }
 
-    // bullets
+    // bullets — square pellets with a brighter inner core
     for (const b of state.bullets) {
-      ctx.beginPath();
+      const sz = Math.max(4, Math.floor(b.r * 1.6 / 2.5) * 2.5);
       ctx.fillStyle = b.color;
-      ctx.shadowColor = b.color;
-      ctx.shadowBlur = 8;
-      ctx.arc(b.x, b.y, b.r, 0, TAU);
-      ctx.fill();
+      ctx.fillRect(b.x - sz / 2, b.y - sz / 2, sz, sz);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(b.x - sz / 4, b.y - sz / 4, sz / 2, sz / 2);
     }
-    ctx.shadowBlur = 0;
 
-    // bomb fx
+    // bomb fx — expanding pixel ring (drawn as a polygon of squares)
     if (state.player.bombFx > 0) {
-      const r = (40 - state.player.bombFx) * 25;
-      ctx.beginPath();
-      ctx.strokeStyle = `rgba(180,220,255,${state.player.bombFx / 40})`;
-      ctx.lineWidth = 6;
-      ctx.arc(state.player.x, state.player.y, r, 0, TAU);
-      ctx.stroke();
+      const r = (40 - state.player.bombFx) * 22;
+      const segs = 32;
+      ctx.fillStyle = `rgba(180,220,255,${state.player.bombFx / 40})`;
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * TAU;
+        ctx.fillRect(state.player.x + Math.cos(a) * r - 4,
+                     state.player.y + Math.sin(a) * r - 4, 8, 8);
+      }
     }
 
-    // guard shield
+    // guard shield — pixely ring of cyan squares
     if (state.guard.active) {
       const p = state.player;
       const pulse = 0.6 + 0.4 * Math.sin(state.t * 0.25);
       ctx.save();
-      ctx.beginPath();
-      ctx.strokeStyle = `rgba(127,255,212,${0.7 * pulse})`;
-      ctx.lineWidth = 3;
-      ctx.shadowColor = '#7fffd4';
-      ctx.shadowBlur = 16;
-      ctx.arc(p.x, p.y, 46, 0, TAU);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.strokeStyle = `rgba(127,255,212,${0.25 * pulse})`;
-      ctx.lineWidth = 1;
-      ctx.arc(p.x, p.y, 38, 0, TAU);
-      ctx.stroke();
+      ctx.fillStyle = `rgba(127,255,212,${0.85 * pulse})`;
+      const segs = 28;
+      const R = 46 + Math.sin(state.t * 0.4) * 2;
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * TAU + state.t * 0.04;
+        ctx.fillRect(p.x + Math.cos(a) * R - 2.5,
+                     p.y + Math.sin(a) * R - 2.5, 5, 5);
+      }
       ctx.restore();
     }
 
@@ -747,13 +759,24 @@
 
     // no-hand notice
     if (state.running && !state.handSeen) {
-      ctx.fillStyle = 'rgba(0,0,0,0.5)';
-      ctx.fillRect(VW/2 - 180, VH/2 - 24, 360, 48);
-      ctx.fillStyle = '#fff';
-      ctx.font = '16px system-ui';
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(VW/2 - 200, VH/2 - 28, 400, 56);
+      ctx.fillStyle = '#ffeb6e';
+      ctx.fillRect(VW/2 - 200, VH/2 - 28, 400, 4);
+      ctx.fillRect(VW/2 - 200, VH/2 + 24, 400, 4);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '14px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText('手をカメラに映してください', VW/2, VH/2 + 6);
+      ctx.textBaseline = 'middle';
+      ctx.fillText('SHOW YOUR HAND', VW/2, VH/2);
     }
+
+    // ---- Blit low-res buffer to display canvas (nearest neighbor) ----
+    displayCtx.imageSmoothingEnabled = false;
+    displayCtx.setTransform(1, 0, 0, 1, 0, 0);
+    displayCtx.clearRect(0, 0, displayCanvas.width, displayCanvas.height);
+    displayCtx.drawImage(canvas, 0, 0,
+      displayCanvas.width, displayCanvas.height);
   }
 
   // Starfield
@@ -764,102 +787,119 @@
     v: Math.random() * 0.6 + 0.2,
   }));
   function drawStars() {
-    ctx.fillStyle = '#9aa6ff';
     for (const st of stars) {
       st.y += st.v;
       if (st.y > VH) { st.y = 0; st.x = Math.random() * VW; }
-      ctx.globalAlpha = 0.4 + st.s * 0.3;
-      ctx.fillRect(st.x, st.y, st.s, st.s);
+      // 3 brightness tiers, all flat pixels
+      const tier = st.s > 1.2 ? 2 : st.s > 0.8 ? 1 : 0;
+      ctx.fillStyle = tier === 2 ? '#ffffff'
+                    : tier === 1 ? '#9aa6ff'
+                                 : '#4a4f7a';
+      const sz = tier === 2 ? 3 : 2.5;
+      ctx.fillRect(Math.floor(st.x), Math.floor(st.y), sz, sz);
     }
-    ctx.globalAlpha = 1;
+  }
+
+  // Pixel-art ship sprite. Each char = a pixel cell. Bottom row is engine.
+  const SHIP_SPRITE = [
+    '.....##.....',
+    '....####....',
+    '....#WW#....',
+    '...##WW##...',
+    '..##BWWB##..',
+    '.###BCCB###.',
+    '###BCWWCB###',
+    '#B#BCWWCB#B#',
+    '#.BBCCCCBB.#',
+    '...##EE##...',
+    '....#EE#....',
+    '.....EE.....',
+  ];
+  const SHIP_PAL = {
+    '#': '#3563d6', 'B': '#1a2a78', 'C': '#9ad8ff',
+    'W': '#ffffff', 'E': '#ffd066',
+  };
+  function drawSprite(grid, palette, cx, cy, cell) {
+    const w = grid[0].length, h = grid.length;
+    const x0 = cx - (w / 2) * cell;
+    const y0 = cy - (h / 2) * cell;
+    for (let y = 0; y < h; y++) {
+      const row = grid[y];
+      for (let x = 0; x < w; x++) {
+        const c = row[x];
+        if (c === '.' || c === ' ') continue;
+        const col = palette[c]; if (!col) continue;
+        ctx.fillStyle = col;
+        ctx.fillRect(x0 + x * cell, y0 + y * cell, cell, cell);
+      }
+    }
   }
 
   function drawPlayer() {
     const p = state.player;
     const blink = (p.invuln > 0 && Math.floor(p.invuln / 4) % 2 === 0);
-    ctx.save();
-    ctx.translate(p.x, p.y);
-
-    // ship body
-    if (!blink) {
-      ctx.fillStyle = '#7fc6ff';
-      ctx.strokeStyle = '#dff';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.moveTo(0, -16);
-      ctx.lineTo(14, 12);
-      ctx.lineTo(0, 6);
-      ctx.lineTo(-14, 12);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      // engine glow
-      ctx.fillStyle = '#aef';
-      ctx.beginPath();
-      ctx.arc(-6, 10, 2, 0, TAU);
-      ctx.arc(6, 10, 2, 0, TAU);
-      ctx.fill();
-    }
-
-    // hitbox marker
-    ctx.beginPath();
-    ctx.fillStyle = '#fff';
-    ctx.arc(0, 0, p.hitR, 0, TAU);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.strokeStyle = '#ff7575';
-    ctx.lineWidth = 1;
-    ctx.arc(0, 0, p.hitR + 2, 0, TAU);
-    ctx.stroke();
-
-    ctx.restore();
+    if (!blink) drawSprite(SHIP_SPRITE, SHIP_PAL, p.x, p.y, 3.5);
+    // hitbox marker — a single chunky pixel
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(p.x - 1.25, p.y - 1.25, 2.5, 2.5);
+    ctx.fillStyle = '#ff5050';
+    ctx.fillRect(p.x - 2.5, p.y - 2.5, 5, 1.25);
+    ctx.fillRect(p.x - 2.5, p.y + 1.25, 5, 1.25);
+    ctx.fillRect(p.x - 2.5, p.y - 2.5, 1.25, 5);
+    ctx.fillRect(p.x + 1.25, p.y - 2.5, 1.25, 5);
   }
 
+  const GRUNT_SPRITE = [
+    '..####..',
+    '.######.',
+    '##E##E##',
+    '##E##E##',
+    '########',
+    '.##WW##.',
+    '..####..',
+    '...##...',
+  ];
+  const GRUNT_PAL_AIM  = { '#': '#c845a8', 'E': '#ffffff', 'W': '#ffd2f0' };
+  const GRUNT_PAL_SPIN = { '#': '#3aa6c8', 'E': '#ffffff', 'W': '#cdf3ff' };
+  const GRUNT_PAL_FAN  = { '#': '#c89a3a', 'E': '#ffffff', 'W': '#ffe9b8' };
+
+  const BOSS_SPRITE = [
+    '......######......',
+    '....##########....',
+    '..##############..',
+    '.################.',
+    '##E##########E##.#',
+    '##E##WWWWWW##E##.#',
+    '##############W###',
+    '#####WWWWWW#######',
+    '#####WWWWWW#######',
+    '##############W###',
+    '##E##WWWWWW##E##.#',
+    '##E##########E##.#',
+    '.################.',
+    '..##############..',
+    '....##########....',
+    '......######......',
+  ];
+  const BOSS_PAL = { '#': '#d6457b', 'E': '#ffe066', 'W': '#ffffff' };
+
   function drawEnemy(e) {
-    ctx.save();
-    ctx.translate(e.x, e.y);
     if (e.isBoss) {
-      ctx.rotate(e.t * 0.01);
-      ctx.fillStyle = '#ff77a8';
-      ctx.strokeStyle = '#ffd0e6';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      const R = e.radius, r = e.radius * 0.55;
-      for (let i = 0; i < 12; i++) {
-        const a = (i / 12) * TAU;
-        const rr = i % 2 ? R : r;
-        ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr);
-      }
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.fillStyle = '#fff';
-      ctx.arc(0, 0, 6, 0, TAU);
-      ctx.fill();
+      drawSprite(BOSS_SPRITE, BOSS_PAL, e.x, e.y, 4.5);
     } else {
-      let col = '#ff9be0';
-      if (e.pattern === 'spin') col = '#aef0ff';
-      else if (e.pattern === 'fan') col = '#ffd27a';
-      ctx.fillStyle = col;
-      ctx.strokeStyle = '#fff';
-      ctx.lineWidth = 1.2;
-      ctx.beginPath();
-      ctx.moveTo(0, e.radius);
-      ctx.lineTo(e.radius, 0);
-      ctx.lineTo(0, -e.radius);
-      ctx.lineTo(-e.radius, 0);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-      // hp pip
-      const w = e.radius * 1.6;
-      ctx.fillStyle = 'rgba(255,255,255,0.2)';
-      ctx.fillRect(-w/2, e.radius + 4, w, 2);
+      const pal = e.pattern === 'spin' ? GRUNT_PAL_SPIN
+                : e.pattern === 'fan'  ? GRUNT_PAL_FAN
+                : GRUNT_PAL_AIM;
+      const cell = e.pattern === 'spin' ? 3.2 : 2.8;
+      drawSprite(GRUNT_SPRITE, pal, e.x, e.y, cell);
+      // hp pip — chunky two-tone bar
+      const w = e.radius * 1.8;
+      ctx.fillStyle = '#22243a';
+      ctx.fillRect(e.x - w/2, e.y + e.radius + 4, w, 3);
       ctx.fillStyle = '#ffeb6e';
-      ctx.fillRect(-w/2, e.radius + 4, w * clamp(e.hp / e.maxHp, 0, 1), 2);
+      ctx.fillRect(e.x - w/2, e.y + e.radius + 4,
+                   w * clamp(e.hp / e.maxHp, 0, 1), 3);
     }
-    ctx.restore();
   }
 
   // ---------- Start / restart ----------
