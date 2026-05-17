@@ -117,6 +117,7 @@
       <div>LIVES <b id="lives">3</b></div>
       <div>STAGE <b id="stage_no">1</b></div>
       <div>BOMB <b id="bombs">2</b></div>
+      <div>GUARD <b id="guard">10.0s</b></div>
     </div>
 
     <div id="status">model: loading…</div>
@@ -124,7 +125,7 @@
     <div id="overlay">
       <div class="panel">
         <h1>HAND DANMAKU</h1>
-        <p>人差し指で機体を操作。親指と人差し指でつまむ動作（ピンチ）でボム発動。</p>
+        <p>人差し指で機体を操作。<br>ピンチ（親指＋人差し指）でボム発動。<br>グー（握り拳）で周囲の弾を弾くガード（合計10秒まで）。</p>
         <p>カメラの使用許可が必要です。MediaPipe Hands (modelComplexity=1 / Heavy) を使用します。</p>
         <p style="color:#ffb3b3" id="errMsg"></p>
         <button id="startBtn">START</button>
@@ -156,6 +157,7 @@
     lives: document.getElementById('lives'),
     stage: document.getElementById('stage_no'),
     bombs: document.getElementById('bombs'),
+    guard: document.getElementById('guard'),
   };
 
   // ---------- Canvas sizing ----------
@@ -183,8 +185,8 @@
     running: false,
     t: 0,             // frames
     score: 0,
-    lives: 3,
-    bombs: 2,
+    lives: 5,
+    bombs: 4,
     stageNo: 1,
     stageTimer: 0,
     bossFight: false,
@@ -204,6 +206,7 @@
     enemies: [],
     particles: [],
     pinch: { active: false, lastUsed: -9999 },
+    guard: { active: false, remaining: 600 }, // up to 10 seconds (60fps)
     handSeen: false,
     smoothX: VW * 0.5, smoothY: VH * 0.78,
   };
@@ -256,6 +259,22 @@
       // Pinch detection
       const pinchD = Math.hypot(tip.x - thumb.x, tip.y - thumb.y);
       const isPinch = pinchD < 0.06;
+
+      // Fist detection: index/middle/ring/pinky tips closer to wrist than PIP joints
+      // (= fingers curled). Pairs: tip-pip = (8,6), (12,10), (16,14), (20,18). Wrist = 0.
+      const wrist = lm[0];
+      const fingerPairs = [[8, 6], [12, 10], [16, 14], [20, 18]];
+      let curled = 0;
+      for (const [tipI, pipI] of fingerPairs) {
+        const t = lm[tipI], p = lm[pipI];
+        const dt = Math.hypot(t.x - wrist.x, t.y - wrist.y);
+        const dp = Math.hypot(p.x - wrist.x, p.y - wrist.y);
+        if (dt < dp * 1.05) curled++;
+      }
+      const isFist = curled >= 3 && !isPinch;
+      // Fist gates guard only while still has remaining budget
+      state.guard.active = isFist && state.guard.remaining > 0 && state.running;
+
       if (isPinch && !state.pinch.active && state.running) {
         triggerBomb();
       }
@@ -309,7 +328,7 @@
   }
 
   function spawnBoss() {
-    const hp = 280 + state.stageNo * 120;
+    const hp = 200 + state.stageNo * 80;
     state.boss = {
       x: VW * 0.5, y: -60, tx: VW * 0.5, ty: 120,
       hp, maxHp: hp,
@@ -377,42 +396,42 @@
     const lvl = state.stageNo;
 
     // periodic small enemy waves
-    if (T % Math.max(70 - lvl * 5, 30) === 0) {
+    if (T % Math.max(120 - lvl * 4, 70) === 0) {
       const side = Math.random() < 0.5 ? 1 : -1;
       const x = VW * 0.5 + side * rand(120, 280);
       spawnEnemy('grunt', x, -20, {
-        vy: rand(0.8, 1.4),
-        vx: -side * rand(0.0, 0.4),
+        vy: rand(0.7, 1.2),
+        vx: -side * rand(0.0, 0.3),
         hp: 4 + lvl,
         radius: 14,
-        fireRate: 110 - lvl * 6,
+        fireRate: 160 - lvl * 4,
         pattern: 'aim',
         score: 100,
       });
     }
-    if (T % Math.max(220 - lvl * 10, 110) === 0) {
+    if (T % Math.max(360 - lvl * 10, 220) === 0) {
       spawnEnemy('spinner', rand(120, VW - 120), -20, {
-        vy: 0.6,
+        vy: 0.5,
         hp: 18 + lvl * 3,
         radius: 20,
-        fireRate: 8,
+        fireRate: 16,
         pattern: 'spin',
         score: 600,
       });
     }
-    if (T % Math.max(340 - lvl * 12, 180) === 0) {
+    if (T % Math.max(480 - lvl * 12, 280) === 0) {
       spawnEnemy('fan', rand(140, VW - 140), -20, {
-        vy: 0.9,
+        vy: 0.8,
         hp: 12 + lvl * 2,
         radius: 18,
-        fireRate: 80,
+        fireRate: 120,
         pattern: 'fan',
         score: 400,
       });
     }
 
     // Boss after a while
-    const bossAt = 30 * 30 + lvl * 200; // ~30s baseline
+    const bossAt = 45 * 30 + lvl * 200; // ~45s baseline
     if (T > bossAt && !state.bossFight && !state.boss) {
       spawnBoss();
     }
@@ -436,32 +455,32 @@
 
       if (pat === 0) {
         // Wide aimed fan
-        if (phase % 20 === 0) {
+        if (phase % 32 === 0) {
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
-          for (let i = -3; i <= 3; i++) {
-            fireBullet(b.x, b.y + 20, aim + i * 0.16, 3.4, '#ff77c8', 6);
+          for (let i = -2; i <= 2; i++) {
+            fireBullet(b.x, b.y + 20, aim + i * 0.18, 2.4, '#ff77c8', 6);
           }
         }
       } else if (pat === 1) {
         // Spiral
-        if (phase % 4 === 0) {
+        if (phase % 8 === 0) {
           const base = b.t * 0.13;
-          for (let k = 0; k < 4; k++) {
-            fireBullet(b.x, b.y + 20, base + k * Math.PI / 2, 2.8, '#9bf2ff', 5);
+          for (let k = 0; k < 3; k++) {
+            fireBullet(b.x, b.y + 20, base + k * TAU / 3, 2.0, '#9bf2ff', 5);
           }
         }
       } else {
         // Ring bursts
-        if (phase % 60 === 0) {
-          const n = 26;
+        if (phase % 90 === 0) {
+          const n = 18;
           for (let i = 0; i < n; i++) {
-            fireBullet(b.x, b.y + 10, (i / n) * TAU + b.t * 0.02, 2.6, '#fff27a', 5);
+            fireBullet(b.x, b.y + 10, (i / n) * TAU + b.t * 0.02, 1.9, '#fff27a', 5);
           }
         }
         // Plus aimed slow bullets
-        if (phase % 28 === 14) {
+        if (phase % 45 === 22) {
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
-          fireBullet(b.x, b.y + 10, aim, 4.2, '#ff5050', 7);
+          fireBullet(b.x, b.y + 10, aim, 3.0, '#ff5050', 7);
         }
       }
       return;
@@ -474,16 +493,16 @@
     if (e.t % e.fireRate === 0 && e.y > 0) {
       if (e.pattern === 'aim') {
         const aim = Math.atan2(state.player.y - e.y, state.player.x - e.x);
-        fireBullet(e.x, e.y, aim, 3.2, '#ff9be0', 5);
+        fireBullet(e.x, e.y, aim, 2.2, '#ff9be0', 5);
       } else if (e.pattern === 'spin') {
         const base = e.t * 0.09;
-        for (let k = 0; k < 5; k++) {
-          fireBullet(e.x, e.y, base + k * TAU / 5, 2.6, '#aef0ff', 5);
+        for (let k = 0; k < 4; k++) {
+          fireBullet(e.x, e.y, base + k * TAU / 4, 1.8, '#aef0ff', 5);
         }
       } else if (e.pattern === 'fan') {
         const aim = Math.atan2(state.player.y - e.y, state.player.x - e.x);
-        for (let i = -2; i <= 2; i++) {
-          fireBullet(e.x, e.y, aim + i * 0.18, 3.0, '#ffd27a', 5);
+        for (let i = -1; i <= 1; i++) {
+          fireBullet(e.x, e.y, aim + i * 0.22, 2.1, '#ffd27a', 5);
         }
       }
     }
@@ -512,6 +531,24 @@
 
     if (p.invuln > 0) p.invuln--;
     if (p.bombFx > 0) p.bombFx--;
+
+    // Guard: while fist + budget remains, consume time and block hits
+    if (state.guard.active && state.guard.remaining > 0) {
+      state.guard.remaining--;
+      // Destroy bullets inside guard radius
+      const GR = 46;
+      for (let i = state.bullets.length - 1; i >= 0; i--) {
+        const b = state.bullets[i];
+        if (dist2(b.x, b.y, p.x, p.y) < (GR + b.r) ** 2) {
+          pushParticle(b.x, b.y, b.color);
+          state.bullets.splice(i, 1);
+        }
+      }
+      if (state.guard.remaining <= 0) state.guard.active = false;
+    } else if (state.guard.active && state.guard.remaining <= 0) {
+      state.guard.active = false;
+    }
+    if (state.t % 6 === 0) updateHud();
 
     // Auto-fire
     p.fireCooldown--;
@@ -567,8 +604,8 @@
       if (b.x < -20 || b.x > VW + 20 || b.y < -20 || b.y > VH + 20) {
         state.bullets.splice(i, 1); continue;
       }
-      // collide with player hitbox
-      if (p.invuln <= 0 && dist2(b.x, b.y, p.x, p.y) < (b.r + p.hitR) ** 2) {
+      // collide with player hitbox (guard also blocks)
+      if (p.invuln <= 0 && !state.guard.active && dist2(b.x, b.y, p.x, p.y) < (b.r + p.hitR) ** 2) {
         state.bullets.splice(i, 1);
         playerHit();
       }
@@ -610,6 +647,11 @@
     hud.lives.textContent = state.lives;
     hud.stage.textContent = state.stageNo;
     hud.bombs.textContent = state.bombs;
+    const sec = (state.guard.remaining / 60).toFixed(1);
+    hud.guard.textContent = sec + 's';
+    hud.guard.style.color = state.guard.active ? '#7fffd4'
+                          : state.guard.remaining <= 0 ? '#888'
+                          : '#9ad8ff';
   }
 
   // ---------- Rendering ----------
@@ -665,6 +707,26 @@
       ctx.lineWidth = 6;
       ctx.arc(state.player.x, state.player.y, r, 0, TAU);
       ctx.stroke();
+    }
+
+    // guard shield
+    if (state.guard.active) {
+      const p = state.player;
+      const pulse = 0.6 + 0.4 * Math.sin(state.t * 0.25);
+      ctx.save();
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(127,255,212,${0.7 * pulse})`;
+      ctx.lineWidth = 3;
+      ctx.shadowColor = '#7fffd4';
+      ctx.shadowBlur = 16;
+      ctx.arc(p.x, p.y, 46, 0, TAU);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.strokeStyle = `rgba(127,255,212,${0.25 * pulse})`;
+      ctx.lineWidth = 1;
+      ctx.arc(p.x, p.y, 38, 0, TAU);
+      ctx.stroke();
+      ctx.restore();
     }
 
     // player
@@ -818,8 +880,10 @@
     state.running = true;
     state.t = 0;
     state.score = 0;
-    state.lives = 3;
-    state.bombs = 2;
+    state.lives = 5;
+    state.bombs = 4;
+    state.guard.remaining = 600;
+    state.guard.active = false;
     state.stageNo = 1;
     state.stageTimer = 0;
     state.bossFight = false;
