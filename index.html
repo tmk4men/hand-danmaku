@@ -42,12 +42,11 @@
   #camWrap {
     position: absolute;
     right: 10px; bottom: 10px;
-    width: 22%; max-width: 220px; aspect-ratio: 4 / 3;
-    border: 1px solid #3a4080;
-    border-radius: 6px;
+    width: 26%; max-width: 260px; aspect-ratio: 4 / 3;
+    border: 2px solid #2a2f55;
+    box-shadow: 0 0 0 2px #06081a, 0 0 18px rgba(120,140,255,0.35);
     overflow: hidden;
     background: #000;
-    opacity: 0.85;
     pointer-events: none;
   }
   #camWrap video, #camWrap canvas {
@@ -57,6 +56,25 @@
     object-fit: cover;
   }
   #camWrap canvas { position: absolute; inset: 0; }
+  #camWrap .label {
+    position: absolute; left: 0; top: 0;
+    background: rgba(15,18,46,0.85);
+    color: #88e0ff;
+    font: 9px "Press Start 2P", monospace;
+    letter-spacing: 0.15em;
+    padding: 3px 6px;
+    border-right: 1px solid #2a2f55;
+    border-bottom: 1px solid #2a2f55;
+  }
+  #camWrap .live {
+    position: absolute; right: 4px; top: 4px;
+    width: 8px; height: 8px;
+    background: #ff5050;
+    border-radius: 50%;
+    box-shadow: 0 0 6px #ff5050;
+    animation: pulse 1.2s infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
 
   #hud {
     position: absolute; top: 10px; left: 10px;
@@ -230,6 +248,8 @@
     <div id="camWrap">
       <video id="cam" playsinline muted></video>
       <canvas id="camOverlay"></canvas>
+      <div class="label">MEDIAPIPE HANDS</div>
+      <div class="live"></div>
     </div>
 
     <div id="hud">
@@ -416,6 +436,10 @@
     combo: { count: 0, timer: 0, best: 0 },
     themeIndex: 0,
     themeT: 0,             // for slow planet/nebula drift
+    gestureFx: { label: '', sub: '', life: 0, color: '#ffffff' },
+    popups: [],            // {x,y,vy,life,maxLife,text,color,size}
+    stageBanner: 0,        // frames remaining
+    handAim: null,         // {x,y} raw hand target in VW coords
   };
 
   // ---------- Utility ----------
@@ -423,6 +447,17 @@
   const TAU = Math.PI * 2;
   function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx*dx + dy*dy; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
+  function showGesture(label, sub, color) {
+    state.gestureFx = { label, sub, life: 36, maxLife: 36, color };
+  }
+  function pushPopup(x, y, text, color = '#ffffff', size = 10) {
+    state.popups.push({
+      x, y, vy: -0.8, vx: rand(-0.2, 0.2),
+      life: 60, maxLife: 60, text, color, size,
+    });
+    if (state.popups.length > 24) state.popups.shift();
+  }
 
   // ---------- Hand tracking (MediaPipe Hands — Heavy) ----------
   let hands = null;
@@ -482,13 +517,22 @@
       const isPeace = !isPinch && !isFist
         && !curlBits[0] && !curlBits[1] && curlBits[2] && curlBits[3];
 
+      const prevFocus = state.focus;
+      const prevGuardOn = state.guard.active;
       state.focus = isPeace && state.running;
       state.guard.active = isFist && state.guard.remaining > 0 && state.running;
 
+      if (state.focus && !prevFocus) showGesture('PEACE', 'FOCUS', '#88e0ff');
+      if (state.guard.active && !prevGuardOn) showGesture('FIST', 'GUARD', '#7fffd4');
+
       if (isPinch && !state.pinch.active && state.running) {
         triggerBomb();
+        showGesture('PINCH', 'BOMB', '#ff7c98');
       }
       state.pinch.active = isPinch;
+
+      // Track raw target for viewer-facing aim reticle
+      state.handAim = { x: state.player.tx, y: state.player.ty };
 
       // Swipe-dash detection from fingertip velocity
       if (state.handPrev && state.running && state.player.dashCd <= 0
@@ -498,6 +542,7 @@
         const sp = Math.hypot(dx, dy);
         if (sp > 0.085) {
           triggerDash(dx / sp, dy / sp);
+          showGesture('SWIPE', 'DASH', '#aef4ff');
         }
       }
       state.handPrev = { x: tip.x, y: tip.y };
@@ -625,6 +670,7 @@
     const R2 = 28 * 28;
     const dx = x1 - x0, dy = y1 - y0;
     const len2 = dx * dx + dy * dy || 1;
+    let cut = 0;
     for (let i = state.bullets.length - 1; i >= 0; i--) {
       const b = state.bullets[i];
       let t = ((b.x - x0) * dx + (b.y - y0) * dy) / len2;
@@ -632,9 +678,11 @@
       const px = x0 + dx * t, py = y0 + dy * t;
       if (dist2(b.x, b.y, px, py) < R2) {
         pushParticle(b.x, b.y, b.color);
-        state.bullets.splice(i, 1);
+        state.bullets.splice(i, 1); cut++;
       }
     }
+    if (cut > 0) pushPopup((x0 + x1) / 2, (y0 + y1) / 2 - 14,
+                           `DASH CUT x${cut}`, '#aef4ff', 10);
     // visual trail samples
     for (let k = 0; k <= 6; k++) {
       const t = k / 6;
@@ -712,18 +760,25 @@
   }
 
   function applyItem(type) {
+    const p = state.player;
     if (type === 'power') {
-      if (state.power < 3) { state.power++; state.powerFlash = 36; state.score += 200; }
-      else { state.score += 500; } // overflow bonus
+      if (state.power < 3) {
+        state.power++; state.powerFlash = 36; state.score += 200;
+        pushPopup(p.x, p.y - 20, `POWER UP! Lv${state.power}`, '#ffd066', 12);
+      } else { state.score += 500; pushPopup(p.x, p.y - 20, 'MAX +500', '#ffd066', 10); }
     } else if (type === 'bomb') {
       state.bombs = Math.min(state.bombs + 1, 6);
       state.score += 200;
+      pushPopup(p.x, p.y - 20, 'BOMB +1', '#ff7c98', 10);
     } else if (type === 'guard') {
-      state.guard.remaining = Math.min(600, state.guard.remaining + 180); // +3s
+      state.guard.remaining = Math.min(600, state.guard.remaining + 180);
       state.score += 200;
+      pushPopup(p.x, p.y - 20, 'GUARD +3s', '#7fffd4', 10);
     } else if (type === 'life') {
       state.lives = Math.min(state.lives + 1, 7);
       state.score += 1000;
+      pushPopup(p.x, p.y - 20, '1 UP!', '#ffffff', 14);
+      state.shake = Math.max(state.shake, 8);
     }
     updateHud();
   }
@@ -744,13 +799,15 @@
     state.bombs--;
     state.player.bombFx = 40;
     state.player.invuln = Math.max(state.player.invuln, 60);
+    state.shake = Math.max(state.shake, 16);
     // clear all enemy bullets, give boss damage
-    for (const b of state.bullets) {
-      pushParticle(b.x, b.y, b.color);
-    }
+    const erased = state.bullets.length;
+    for (const b of state.bullets) pushParticle(b.x, b.y, b.color);
     state.bullets.length = 0;
-    for (const e of state.enemies) {
-      e.hp -= e.isBoss ? 35 : 30;
+    for (const e of state.enemies) e.hp -= e.isBoss ? 35 : 30;
+    if (erased > 0) {
+      pushPopup(state.player.x, state.player.y - 28,
+                `BULLET ERASE x${erased}`, '#ffd066', 12);
     }
     updateHud();
   }
@@ -774,6 +831,20 @@
 
     const T = state.stageTimer;
     const lvl = state.stageNo;
+
+    // Opening salvo: a few grunts arrive almost immediately so a clip
+    // recorded from the very start has action visible within ~0.5s.
+    if (T === 6) {
+      spawnEnemy('grunt', VW * 0.5 - 80, -10, {
+        vy: 1.1, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100,
+      });
+      spawnEnemy('grunt', VW * 0.5, -22, {
+        vy: 1.2, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100,
+      });
+      spawnEnemy('grunt', VW * 0.5 + 80, -10, {
+        vy: 1.1, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100,
+      });
+    }
 
     // periodic small enemy waves
     if (T % Math.max(120 - lvl * 4, 70) === 0) {
@@ -1013,8 +1084,13 @@
         state.combo.timer = 120;
         state.combo.best = Math.max(state.combo.best, state.combo.count);
         const mult = 1 + Math.min(state.combo.count - 1, 19) * 0.1; // up to 3x
-        state.score += Math.round((e.score || 100) * mult);
-
+        const gained = Math.round((e.score || 100) * mult);
+        state.score += gained;
+        if (e.isBoss) {
+          pushPopup(e.x, e.y - 30, `BOSS DOWN +${gained}`, '#ffd066', 14);
+        } else if (state.combo.count >= 3) {
+          pushPopup(e.x, e.y - 10, `+${gained}`, '#ffd066', 10);
+        }
         for (let k = 0; k < 18; k++) pushParticle(e.x, e.y, '#ffd27a');
         // item drops
         const cat = e.isBoss ? 'boss'
@@ -1032,6 +1108,7 @@
           state.shake = 28;
           state.themeIndex = (state.stageNo - 1) % STAGE_THEMES.length;
           pickStageMod();
+          state.stageBanner = 150;
           for (let k = 0; k < 60; k++) pushParticle(e.x, e.y, '#ffffff');
         } else {
           state.shake = Math.max(state.shake, 4);
@@ -1058,9 +1135,12 @@
         b.grazed = true;
         state.graze.value = Math.min(state.graze.max, state.graze.value + 4);
         state.score += 30;
+        pushPopup(b.x, b.y - 4, '+30', '#ffd066', 8);
         if (state.graze.value >= state.graze.max) {
           state.graze.value = 0;
           state.graze.boost = 300; // 5s
+          pushPopup(p.x, p.y - 36, 'MAX POWER', '#ffd066', 14);
+          state.shake = Math.max(state.shake, 10);
         }
       }
       // collide with player hitbox (guard also blocks)
@@ -1080,6 +1160,15 @@
     }
 
     if (state.powerFlash > 0) state.powerFlash--;
+    if (state.gestureFx.life > 0) state.gestureFx.life--;
+    if (state.stageBanner > 0) state.stageBanner--;
+    for (let i = state.popups.length - 1; i >= 0; i--) {
+      const pu = state.popups[i];
+      pu.x += pu.vx; pu.y += pu.vy;
+      pu.vy *= 0.97;
+      pu.life--;
+      if (pu.life <= 0) state.popups.splice(i, 1);
+    }
     updateItems();
     stageTick();
   }
@@ -1288,6 +1377,115 @@
         ctx.fillText('BOSS APPROACHING', VW / 2, VH / 2 + 8);
       }
     }
+
+    // Hand aim reticle + lead line (so viewers see "hand controls ship")
+    if (state.handAim && state.handSeen) {
+      const a = state.handAim;
+      const p = state.player;
+      // dashed lead line (a series of small squares)
+      const dx = p.x - a.x, dy = p.y - a.y;
+      const len = Math.hypot(dx, dy);
+      if (len > 6) {
+        const steps = Math.min(10, Math.floor(len / 6));
+        for (let i = 1; i < steps; i++) {
+          const t = i / steps;
+          ctx.fillStyle = 'rgba(174,244,255,0.45)';
+          ctx.fillRect(a.x + dx * t - 1.2, a.y + dy * t - 1.2, 2.4, 2.4);
+        }
+      }
+      // reticle: bracketed crosshair at raw fingertip target
+      ctx.fillStyle = '#aef4ff';
+      ctx.fillRect(a.x - 7, a.y - 7, 4, 1.5);
+      ctx.fillRect(a.x - 7, a.y - 7, 1.5, 4);
+      ctx.fillRect(a.x + 3, a.y - 7, 4, 1.5);
+      ctx.fillRect(a.x + 5.5, a.y - 7, 1.5, 4);
+      ctx.fillRect(a.x - 7, a.y + 5.5, 4, 1.5);
+      ctx.fillRect(a.x - 7, a.y + 3, 1.5, 4);
+      ctx.fillRect(a.x + 3, a.y + 5.5, 4, 1.5);
+      ctx.fillRect(a.x + 5.5, a.y + 3, 1.5, 4);
+    }
+
+    // Floating popups (score, item, erase counters)
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (const pu of state.popups) {
+      const a = clamp(pu.life / pu.maxLife, 0, 1);
+      ctx.font = `${pu.size}px monospace`;
+      // shadow
+      ctx.fillStyle = `rgba(0,0,0,${0.65 * a})`;
+      ctx.fillText(pu.text, pu.x + 1, pu.y + 1);
+      ctx.fillStyle = pu.color;
+      ctx.globalAlpha = a;
+      ctx.fillText(pu.text, pu.x, pu.y);
+      ctx.globalAlpha = 1;
+    }
+
+    // Big gesture FX (center-top): shows what gesture viewer just made
+    if (state.gestureFx.life > 0) {
+      const g = state.gestureFx;
+      const a = clamp(g.life / g.maxLife, 0, 1);
+      const cy = VH * 0.30;
+      const padX = 12, padY = 6;
+      ctx.font = '16px monospace';
+      const tw = ctx.measureText(g.label).width;
+      const w = tw + padX * 2;
+      const h = 22 + padY;
+      const x = (VW - w) / 2;
+      const y = cy - h / 2;
+      // frame
+      ctx.globalAlpha = 0.92 * a;
+      ctx.fillStyle = '#0a0c20';
+      ctx.fillRect(x - 2, y - 2, w + 4, h + 4);
+      ctx.fillStyle = g.color;
+      ctx.fillRect(x, y, w, 3);
+      ctx.fillRect(x, y + h - 3, w, 3);
+      ctx.fillStyle = '#15193a';
+      ctx.fillRect(x, y + 3, w, h - 6);
+      // label
+      ctx.fillStyle = g.color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(g.label, VW / 2, y + 5);
+      // sub
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '8px monospace';
+      ctx.fillText(g.sub, VW / 2, y + h + 4);
+      ctx.globalAlpha = 1;
+    }
+
+    // Stage start banner (1-2.5s) — big stage name + theme
+    if (state.stageBanner > 0) {
+      const total = 150;
+      const t = total - state.stageBanner;
+      let a = 1;
+      if (t < 12) a = t / 12;
+      else if (state.stageBanner < 24) a = state.stageBanner / 24;
+      const theme = STAGE_THEMES[state.themeIndex];
+      const big = `STAGE ${state.stageNo}`;
+      const sub = theme.name;
+      ctx.globalAlpha = a;
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(0, VH / 2 - 28, VW, 56);
+      ctx.fillStyle = theme.accent;
+      ctx.fillRect(0, VH / 2 - 28, VW, 2);
+      ctx.fillRect(0, VH / 2 + 26, VW, 2);
+      ctx.font = '20px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(big, VW / 2, VH / 2 - 8);
+      ctx.font = '11px monospace';
+      ctx.fillStyle = theme.accent;
+      ctx.fillText(sub, VW / 2, VH / 2 + 12);
+      ctx.globalAlpha = 1;
+    }
+
+    // Branding watermark — subtle, bottom-right inside game area
+    ctx.font = '7px monospace';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'bottom';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillText('HAND DANMAKU // MEDIAPIPE', VW - 4, VH - 3);
 
     // Combo readout
     if (state.combo.count >= 2) {
@@ -1698,6 +1896,10 @@
     state.combo.best = 0;
     state.themeIndex = 0;
     state.themeT = 0;
+    state.gestureFx.life = 0;
+    state.popups.length = 0;
+    state.stageBanner = 150;
+    state.handAim = null;
     pickStageMod();
     overlay.querySelector('h1').textContent = 'HAND DANMAKU';
     updateHud();
