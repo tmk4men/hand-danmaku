@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,shrink-to-fit=yes">
+  <title>{{{ PRODUCT_NAME }}}</title>
+  <style>
+    html, body { margin: 0; padding: 0; background: #06081a; height: 100%; }
+    body { display: flex; align-items: center; justify-content: center; }
+    #unity-canvas {
+      display: block; background: #06081a;
+      width: {{{ WIDTH }}}px; height: {{{ HEIGHT }}}px;
+    }
+    #cam-video { display: none; }
+    .status {
+      position: fixed; top: 8px; left: 8px;
+      color: #88a8ff; font: 11px monospace;
+      letter-spacing: 0.1em;
+    }
+  </style>
+  <!-- MediaPipe Hands (loaded BEFORE Unity so the .jslib bridge can reference it) -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <canvas id="unity-canvas" width="{{{ WIDTH }}}" height="{{{ HEIGHT }}}" tabindex="-1"></canvas>
+  <video id="cam-video" playsinline muted></video>
+  <div class="status" id="boot-status">Loading…</div>
+
+  <script src="Build/{{{ LOADER_FILENAME }}}"></script>
+  <script>
+    var statusEl = document.getElementById('boot-status');
+    createUnityInstance(document.querySelector("#unity-canvas"), {
+      dataUrl: "Build/{{{ DATA_FILENAME }}}",
+      frameworkUrl: "Build/{{{ FRAMEWORK_FILENAME }}}",
+      codeUrl: "Build/{{{ CODE_FILENAME }}}",
+      streamingAssetsUrl: "StreamingAssets",
+      companyName: "{{{ COMPANY_NAME }}}",
+      productName: "{{{ PRODUCT_NAME }}}",
+      productVersion: "{{{ PRODUCT_VERSION }}}",
+    }, function (progress) {
+      statusEl.textContent = 'Loading… ' + Math.round(progress * 100) + '%';
+    }).then(function () {
+      statusEl.textContent = '';
+    }).catch(function (err) {
+      statusEl.textContent = 'Error: ' + err;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>

@@ -158,3 +158,58 @@ landmarks を毎フレーム解析。既存 JS の判定式をそのまま移植
 
 個人開発で時間優先なら **A** を強く推奨します。
 バズ後に余力が出てから unityroom 版を検討で十分。
+
+---
+
+## Phase 2 以降の C# 移植ヒント
+
+Phase 1 のスケルトンは `unity-starter/` に同梱（`unity-starter/README.md` 参照）。
+そこから先で押さえるべきポイント:
+
+### 弾・敵スポーン
+
+- `Bullet.cs`: `Vector2 velocity` を持ち、Update で `transform.position += velocity * Time.deltaTime;`
+  画面外（Camera のビューポート x/y < -0.1 or > 1.1）で `Destroy(gameObject)`。
+- `EnemySpawner.cs`: ステージタイマを持ち、JS 版 `stageTick` と同じインターバルで Instantiate。
+  `Object.Instantiate(prefab)` のコストはあるが、雑魚〜数十体ならフレーム落ちしない。
+
+### 衝突判定
+
+- 自機: 小さい `CircleCollider2D` (radius 0.05 程度) + `IsTrigger`
+- 弾: 同じく `CircleCollider2D` + `IsTrigger`
+- Physics2D の Layer Collision Matrix で「PlayerHitbox × EnemyBullet」だけ true にする
+- `OnTriggerEnter2D` で被弾処理
+
+### HUD
+
+- TextMeshPro でテキスト、UI Image でメーター（Filled タイプ）
+- `Canvas` を Screen Space Overlay にしてゲーム解像度に追従
+
+### SFX
+
+- Web Audio の代わりに `AudioSource.PlayClipAtPoint` または事前に AudioSource を1つ用意して PlayOneShot
+- 効果音ファイルが必要なら sfxr / Audacity で作るか、`AudioClipBuilder` を書いて手続き的に生成
+
+### LocalStorage / PlayerPrefs
+
+- `localStorage` の代わりに **`PlayerPrefs.SetString` / `SetInt` / `SetFloat`**
+- WebGL ビルドでは IndexedDB に保存される
+
+### Daily シード RNG
+
+- `System.Random(seed)` を使う
+- seed は `string.GetHashCode()` で十分（移植中の小さな差は誤差）
+
+### unityroom 固有の注意
+
+- **WebGL Player Settings → Publishing → Decompression Fallback は OFF**
+  （ON だと unityroom 側の解凍と干渉する報告あり）
+- **Asset Bundle / Addressables は使わない**（unityroom の制約）
+- 説明文に「カメラを使用します」と明記（unity1week でレギュレーション違反扱いされる事例回避）
+- 起動時にカメラ許可ダイアログが出る前に「許可してください」案内を Canvas に表示すると親切
+
+### バイナリサイズの目安
+
+- Unity 2022 LTS + 2D で何も足さなければ WebGL ビルドは **5〜10MB** 程度
+- スプライト/SFX を足しても 15MB 以下に収まる想定
+- MediaPipe Hands モデル（4MB）は CDN 経由なのでバイナリには含まれない

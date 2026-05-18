@@ -1,0 +1,23 @@
+# Unity meta files and project files should be added separately when you set up
+# a real project. This starter is just source files to copy into Assets/.
+.DS_Store
+Thumbs.db
+*.csproj
+*.sln
+*.suo
+*.user
+*.userosscache
+*.sublime-*
+.vs/
+.vscode/
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+MemoryCaptures/
+*.apk
+*.aab
+*.unitypackage
