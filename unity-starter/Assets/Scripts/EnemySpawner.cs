@@ -42,6 +42,7 @@ public class EnemySpawner : MonoBehaviour
             Boss.Spawn();
             bossActive = true;
             ProceduralSFX.StageStart();
+            StageBanner.Show(Strings.T("bossApproaching"), new Color(1f, 0.45f, 0.6f), 2.4f);
             return;
         }
 

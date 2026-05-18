@@ -84,7 +84,12 @@ public class Enemy : MonoBehaviour
 
     public void Die()
     {
-        if (GameDirector.Instance) GameDirector.Instance.AddScore(scoreReward);
+        // chain combo
+        float mult = 1f;
+        if (ComboMeter.Instance) { ComboMeter.Instance.Bump(); mult = ComboMeter.Instance.Multiplier; }
+        int gained = Mathf.RoundToInt(scoreReward * mult);
+        if (GameDirector.Instance) GameDirector.Instance.AddScore(gained);
+        if (mult > 1.5f) FloatingText.Spawn(transform.position, $"+{gained}", new Color(1f, 0.82f, 0.4f), 18);
         ProceduralSFX.Explode();
         // Random item drop (chance scales with the enemy's wave variety)
         float roll = GameRng.Float01();

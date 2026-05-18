@@ -70,11 +70,11 @@ public class HUD : MonoBehaviour
     public void Refresh()
     {
         if (GameDirector.Instance == null) return;
-        scoreTxt.text  = $"SCORE  {GameDirector.Instance.Score:D7}";
-        hiTxt.text     = $"HI     {GameDirector.Instance.HiScore:D7}";
+        scoreTxt.text  = $"{Strings.T("score")}  {GameDirector.Instance.Score:D7}";
+        hiTxt.text     = $"{Strings.T("hi")}     {GameDirector.Instance.HiScore:D7}";
         var ph = GameDirector.Instance.Player ? GameDirector.Instance.Player.GetComponent<PlayerHealth>() : null;
         int lives = ph ? ph.lives : 0;
-        livesTxt.text = "LIVES  " + new string('♥', Mathf.Max(0, lives));
+        livesTxt.text = $"{Strings.T("lives")}  " + new string('♥', Mathf.Max(0, lives));
     }
 
     public void ShowStatus(string s) { if (statusTxt) statusTxt.text = s; }

@@ -20,20 +20,36 @@ public class GameBootstrap : MonoBehaviour
 
     void Awake()
     {
+        Strings.Load();
         SetupCamera();
         SetupBackground();
         SetupHand();
         SetupGameDirector();
+        SetupCombo();
         SetupSFX();
         var player = SetupPlayer();
         SetupSpawner();
         SetupHUD();
         SetupGestures(player);
+        SetupStageBanner();
 
         if (dailyChallenge) Daily.EnableToday();
         GameDirector.Instance.Player = player.transform;
         GameDirector.Instance.StartGame();
         ProceduralSFX.StageStart();
+        StageBanner.Show(Strings.T("title"), new Color(0.55f, 0.88f, 1f), 2f);
+    }
+
+    void SetupCombo()
+    {
+        var go = new GameObject("ComboMeter");
+        go.AddComponent<ComboMeter>();
+    }
+
+    void SetupStageBanner()
+    {
+        var go = new GameObject("StageBanner");
+        go.AddComponent<StageBanner>();
     }
 
     void SetupBackground()

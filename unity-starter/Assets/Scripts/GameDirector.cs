@@ -13,7 +13,7 @@ public class GameDirector : MonoBehaviour
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
-        HiScore = PlayerPrefs.GetInt("hd_hi", 0);
+        HiScore = Persistence.HiScore;
     }
 
     public void StartGame()
@@ -29,9 +29,13 @@ public class GameDirector : MonoBehaviour
         if (Score > HiScore)
         {
             HiScore = Score;
-            PlayerPrefs.SetInt("hd_hi", HiScore);
-            PlayerPrefs.Save();
+            Persistence.HiScore = HiScore;
         }
+        int best = ComboMeter.Instance ? ComboMeter.Instance.Best : 0;
+        int earned = Persistence.AwardCoins(Score, 0, best);
+        if (earned > 0) FloatingText.Spawn(Player ? Player.position : Vector3.zero,
+                                            Strings.T("earned", earned),
+                                            new Color(1f, 0.82f, 0.4f), 24);
         if (HUD.Instance) HUD.Instance.ShowGameOver();
     }
 

@@ -72,6 +72,8 @@ public class Item : MonoBehaviour
             var beam = ph.GetComponent<DragonBeam>();
             if (beam != null) beam.UnlockCharge();
             dir?.AddScore(300);
+            FloatingText.Spawn(transform.position, Strings.T("dragonUnlocked"),
+                               new Color(1f, 0.47f, 0.78f), 22);
             ProceduralSFX.PickupLife();
         }
         else

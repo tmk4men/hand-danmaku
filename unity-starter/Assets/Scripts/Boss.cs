@@ -158,6 +158,7 @@ public class Boss : MonoBehaviour
     void Die()
     {
         GameDirector.Instance?.AddScore(3000);
+        FloatingText.Spawn(transform.position, "BOSS DOWN +3000", new Color(1f, 0.82f, 0.4f), 28);
         // drop all six items
         for (int i = 0; i < 6; i++)
             Item.Spawn(transform.position + Random.insideUnitSphere * 0.3f,

@@ -12,7 +12,7 @@ public class PlayerHealth : MonoBehaviour
 
     void Awake()
     {
-        lives = maxLives;
+        lives = Persistence.ApplyLife(maxLives);
         var col = GetComponent<CircleCollider2D>();
         col.radius = 0.06f;
         col.isTrigger = true;
@@ -31,6 +31,7 @@ public class PlayerHealth : MonoBehaviour
         invulnUntil = Time.time + invulnSeconds;
         CameraShake.Pulse(0.25f, 0.15f);
         ProceduralSFX.PlayerHit();
+        if (ComboMeter.Instance) ComboMeter.Instance.Reset();
         if (lives <= 0) GameDirector.Instance.GameOver();
         if (HUD.Instance) HUD.Instance.Refresh();
     }
