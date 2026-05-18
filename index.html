@@ -1249,6 +1249,7 @@
     bomb:  { color: '#ff7c98', edge: '#73122d', glyph: 'B' },
     guard: { color: '#7fffd4', edge: '#0d6e57', glyph: 'G' },
     life:  { color: '#ffffff', edge: '#444466', glyph: '1' },
+    tool:  { color: '#c8a878', edge: '#3b2a14', glyph: 'T' },
   };
 
   function dropItems(x, y, list) {
@@ -1265,22 +1266,25 @@
 
   function rollDrop(category) {
     // category: 'grunt' | 'spinner' | 'fan' | 'boss'
-    if (category === 'boss') return ['power', 'bomb', 'guard', 'life'];
+    if (category === 'boss') return ['power', 'bomb', 'guard', 'tool', 'life'];
     if (category === 'spinner') {
       const r = Math.random();
-      return [r < 0.45 ? 'power' : r < 0.75 ? 'bomb' : 'guard'];
+      return [r < 0.4 ? 'power' : r < 0.65 ? 'bomb' : r < 0.85 ? 'guard' : 'tool'];
     }
     if (category === 'fan') {
-      if (Math.random() < 0.6) {
+      if (Math.random() < 0.65) {
         const r = Math.random();
-        return [r < 0.5 ? 'power' : r < 0.85 ? 'guard' : 'bomb'];
+        return [r < 0.45 ? 'power' : r < 0.75 ? 'guard' : r < 0.92 ? 'tool' : 'bomb'];
       }
       return [];
     }
     // grunt
-    if (Math.random() < 0.08) {
+    if (Math.random() < 0.10) {
       const r = Math.random();
-      return [r < 0.55 ? 'power' : r < 0.8 ? 'guard' : r < 0.97 ? 'bomb' : 'life'];
+      return [r < 0.45 ? 'power'
+            : r < 0.65 ? 'guard'
+            : r < 0.82 ? 'tool'
+            : r < 0.97 ? 'bomb' : 'life'];
     }
     return [];
   }
@@ -1340,6 +1344,20 @@
       pushPopup(p.x, p.y - 20, '1 UP!', '#ffffff', 14);
       state.shake = Math.max(state.shake, 8);
       SFX.pickupLife();
+    } else if (type === 'tool') {
+      // Toolbox: a small repair — short invuln + a sliver of guard + score
+      p.invuln = Math.max(p.invuln, 50);
+      state.guard.remaining = Math.min(600, state.guard.remaining + 90); // +1.5s
+      state.score += 150;
+      // Small chance to actually restore a life when crit
+      if (state.lives <= 2 && Math.random() < 0.25) {
+        state.lives = Math.min(state.lives + 1, 7);
+        pushPopup(p.x, p.y - 20, 'TOOLBOX +REPAIR', '#c8a878', 12);
+        SFX.pickupLife();
+      } else {
+        pushPopup(p.x, p.y - 20, 'TOOLBOX +1.5s GUARD', '#c8a878', 11);
+        SFX.pickup();
+      }
     }
     updateHud();
   }
@@ -2364,6 +2382,7 @@
     'B': ['##.','#.#','##.','#.#','##.'],
     'G': ['###','#..','#.#','#.#','###'],
     '1': ['.#.','##.','.#.','.#.','###'],
+    'T': ['###','.#.','.#.','.#.','.#.'],
   };
   function drawItemGlyph(g, cx, cy, color) {
     const grid = GLYPHS[g]; if (!grid) return;
