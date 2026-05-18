@@ -4,7 +4,7 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>HAND DANMAKU — 手で操る弾幕シューティング</title>
-<meta name="description" content="MediaPipe Hands で操作する弾幕シューティング。人差し指で移動、ピンチでボム、ピースで追尾射撃、グーでガード、指振りでダッシュ。ブラウザだけで動作。" />
+<meta name="description" content="手のジェスチャだけで操る弾幕シューティング。人差し指で移動、ピンチでボム、ピースで追尾射撃、グーでガード、指振りでダッシュ。ブラウザだけで動作。" />
 
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
@@ -20,7 +20,7 @@
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="HAND DANMAKU — 手で操る弾幕シューティング" />
-<meta name="twitter:description" content="MediaPipe Hands × 弾幕。ピンチ/ピース/グー/指振り/親指曲げ — ジェスチャーだけで戦うブラウザゲーム。" />
+<meta name="twitter:description" content="ピンチ/ピース/グー/指振り/親指曲げ — 手のジェスチャだけで戦うブラウザ弾幕ゲーム。" />
 <meta name="twitter:image" content="https://tmk4men.github.io/hand-danmaku/og.png" />
 
 <link rel="icon" href="og.png" />
@@ -551,7 +551,7 @@
     <div id="overlay">
       <div class="panel" id="overlayPanel">
         <h1 class="home-only">HAND DANMAKU</h1>
-        <p class="home-only kicker">MEDIAPIPE HANDS BULLET HELL</p>
+        <p class="home-only kicker">HAND-TRACKING BULLET HELL</p>
 
         <div id="overlayMsg" class="howto home-only">
           <div class="row" style="color:#88e0ff">
@@ -587,7 +587,7 @@
           <button type="button" id="shopBtn">SHOP</button>
         </div>
 
-        <p class="home-only" style="font-size:11px; color:#8890b8">カメラ許可が必要 / MediaPipe Hands</p>
+        <p class="home-only" style="font-size:11px; color:#8890b8">カメラ許可が必要</p>
         <p style="color:#ffb3b3" id="errMsg"></p>
 
         <div class="shop-only" style="text-align:left;">
@@ -1008,7 +1008,7 @@
       selfieMode: true,
     });
     hands.onResults(onHandResults);
-    statusEl.textContent = 'model: MediaPipe Hands (Heavy, modelComplexity=1)';
+    statusEl.textContent = 'model: hand-tracking (heavy)';
   }
 
   function onHandResults(results) {
@@ -2162,7 +2162,7 @@
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    ctx.fillText('HAND DANMAKU // MEDIAPIPE', VW - 4, VH - 3);
+    ctx.fillText('HAND DANMAKU', VW - 4, VH - 3);
 
     // Combo readout
     if (state.combo.count >= 2) {
