@@ -1735,8 +1735,8 @@
     // category: 'grunt' | 'spinner' | 'fan' | 'boss'
     if (category === 'boss') {
       const drops = ['power', 'bomb', 'guard', 'tool', 'life'];
-      // ~45% chance the boss also drops a Dragon Crystal — not guaranteed
-      if (gameRand() < 0.45) drops.push('dragon');
+      // 50% chance the boss also drops a Dragon Crystal — not guaranteed
+      if (gameRand() < 0.50) drops.push('dragon');
       return drops;
     }
     if (category === 'spinner') {
