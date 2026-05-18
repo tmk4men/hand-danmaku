@@ -1077,7 +1077,7 @@
           <span class="num">${n}</span>
           <button type="button" data-act="inc" ${(disabled || n >= r.owned) ? 'disabled' : ''}>＋</button>
         </div>`;
-        wrap.innerHTML = meta + `<div class="owned">${r.owned}</div>` + action;
+        wrap.innerHTML = meta + `<div></div>` + action;
         for (const b of wrap.querySelectorAll('button')) {
           b.addEventListener('click', () => {
             if (b.disabled) return;
