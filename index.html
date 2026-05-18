@@ -827,7 +827,9 @@
 
         <div class="ready-only">
           <div class="readyBig">READY?</div>
-          <div id="readyHint">手をカメラの中央に映して PLAY</div>
+          <div id="readyHint">手をカメラの中央に映して PLAY<br>
+            <span style="color:#ffd066;font-size:11px;">✋ パー → ✊ グー でも開始</span>
+          </div>
           <div id="readyStat">カメラ準備中…</div>
           <div id="readyDots">
             <div class="dot" id="dotCam"><span class="ind"></span>CAM</div>
@@ -1007,6 +1009,7 @@
     thumbBent: false,      // active gesture state for USE item
     bulletTime: 0,         // frames remaining of slow-mo
     thumbsUp: false,       // thumb extended, others curled
+    readyPalmRecent: 0,    // frames since open-palm was seen on READY view
     dragonUnlocked: false, // crystal pickup required before charging
     dragonCharge: 0,       // 0..DRAGON_MAX frames of cumulative thumbs-up
     dragonFiring: 0,       // frames remaining of beam
@@ -1538,6 +1541,17 @@
         useActiveItem();
       }
       state.thumbBent = isThumbBent;
+
+      // READY screen: パー → グー で PLAY 発動
+      const isOpenPalm = !isPinch && !isPeace && curled === 0 && thumbExtended;
+      if (state.readyPalmRecent > 0) state.readyPalmRecent--;
+      if (isOpenPalm) state.readyPalmRecent = 30;  // 0.5s grace window
+      if (!playBtn.disabled
+          && overlayPanel.classList.contains('readyView')
+          && isFistOnly && state.readyPalmRecent > 0) {
+        state.readyPalmRecent = 0;
+        start();
+      }
 
       // Dragon: requires a Dragon Crystal to be picked up first.
       // Once unlocked, thumbs-up charges the beam; releasing it when full fires.
