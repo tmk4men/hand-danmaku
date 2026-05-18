@@ -1,7 +1,19 @@
-# Unity スターター — HAND DANMAKU 移植 Phase 1
+# Unity スターター — HAND DANMAKU 移植
 
-「手の人差し指で四角が動く」最小 Unity プロジェクトのスケルトン。
-unityroom 投稿に向けた第一歩。
+unityroom 投稿に向けた **動くプロトタイプ一式**。Unity 2022.3 LTS の
+新規 2D プロジェクトに `Assets/` を丸ごとコピーし、シーンに
+`GameBootstrap` を1つ置いて WebGL ビルドすれば下記が動きます:
+
+- 人差し指で機体追従（PlayerShip）
+- 自動射撃（PlayerShooter）
+- 敵スポーン・追尾弾・スプレッド・回転弾（Enemy, EnemySpawner）
+- 隕石（Meteor、即死、GUARD/DASH で回避）
+- ピンチ→ボム、握り→ガード、指振り→ダッシュ、親指立て10秒→ドラゴンビーム
+- HUD（SCORE / HI / LIVES）、ゲームオーバー画面
+- カメラシェイク
+- PlayerPrefs によるハイスコア保存
+
+JS 版の核となる挙動は移植済み。Phase 1 だけでも遊べる状態です。
 
 ## 0. 前提
 
@@ -38,15 +50,30 @@ HandDanmaku/Assets/
 
 Unity エディタ側に戻ると自動でインポートされる。
 
-## 3. シーンセットアップ
+## 3. シーンセットアップ — 1コンポーネントで全部組む
 
-1. **Hierarchy** で右クリック → Create Empty → 名前 `HandManager`
-2. `HandManager` を選択 → Inspector → **Add Component** → `Hand Manager`
-3. Hierarchy で右クリック → **2D Object → Sprites → Square** → 名前 `Player`
-4. `Player` を選択 → Sprite Renderer → Color をお好み色（黄色推奨）
-5. `Player` の Inspector → **Add Component** → `Player Ship`
-6. **Main Camera** を選択 → Inspector → Orthographic Size = `4`
-7. **File → Save Scene** → 名前 `Main`、保存先 `Assets/Scenes/`
+スターターには **GameBootstrap** という万能セットアップが入ってます。
+Awake() でカメラ、自機、HUD、敵スポーナー、ジェスチャ制御、ドラゴンビーム、
+カメラシェイクを全部生成するので、シーンに置く GameObject は1つだけでOK。
+
+1. **Hierarchy** で右クリック → Create Empty → 名前 `Bootstrap`
+2. Inspector → **Add Component** → `Game Bootstrap`
+3. **File → Save Scene** → 名前 `Main`、保存先 `Assets/Scenes/`
+
+スプライトもコードで生成（`SpriteFactory.cs`）なので、画像インポート作業
+ゼロ。Play すれば即「指先を追う機体 + 敵スポーン + 弾幕 + 隕石 + ドラゴン
+ビーム + HUD」が走ります。
+
+### 手動で組みたい場合
+
+各コンポーネントは個別に使えます:
+- `HandManager`（GameObject 名は必ず `HandManager`）
+- `PlayerShip` + `PlayerShooter` + `PlayerHealth` + `DragonBeam` を自機に
+- `EnemySpawner` 空オブジェクト
+- `GameDirector` 空オブジェクト
+- `HUD` 空オブジェクト
+- `GestureController` 空オブジェクト
+- カメラに `CameraShake`
 
 ## 4. WebGL ビルド設定
 
