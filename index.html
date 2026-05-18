@@ -2024,8 +2024,10 @@
       e.x = b.x; e.y = b.y;
       e.hp = Math.min(e.hp, b.hp = e.hp); // sync
 
-      // Boss patterns rotate every 360 frames (4 patterns now)
-      const pat = Math.floor(b.t / 360) % 4;
+      // Boss patterns rotate every 360 frames.
+      // Stage 1 boss has 3 patterns (no laser); stage 2+ adds the laser sweep.
+      const numPatterns = state.stageNo >= 2 ? 4 : 3;
+      const pat = Math.floor(b.t / 360) % numPatterns;
       const phase = b.t % 360;
 
       if (pat === 0) {
