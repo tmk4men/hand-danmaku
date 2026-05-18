@@ -26,5 +26,6 @@ public class PlayerShooter : MonoBehaviour
         var p = transform.position;
         var v = Vector2.up * bulletSpeed;
         Bullet.Spawn(p + Vector3.up * 0.10f, v, color, true, 1);
+        ProceduralSFX.Shoot();
     }
 }

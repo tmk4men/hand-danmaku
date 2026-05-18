@@ -15,18 +15,37 @@ public class GameBootstrap : MonoBehaviour
     [Header("Player")]
     public Vector3 playerStart = new Vector3(0, -2.6f, 0);
 
+    [Header("Toggles")]
+    public bool dailyChallenge = false;
+
     void Awake()
     {
         SetupCamera();
+        SetupBackground();
         SetupHand();
         SetupGameDirector();
+        SetupSFX();
         var player = SetupPlayer();
         SetupSpawner();
         SetupHUD();
         SetupGestures(player);
 
+        if (dailyChallenge) Daily.EnableToday();
         GameDirector.Instance.Player = player.transform;
         GameDirector.Instance.StartGame();
+        ProceduralSFX.StageStart();
+    }
+
+    void SetupBackground()
+    {
+        var go = new GameObject("Background");
+        go.AddComponent<Background>();
+    }
+
+    void SetupSFX()
+    {
+        var go = new GameObject("SFX");
+        go.AddComponent<ProceduralSFX>();
     }
 
     void SetupCamera()

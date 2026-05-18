@@ -9,8 +9,11 @@ public class DragonBeam : MonoBehaviour
 
     public float Charge { get; private set; }
     public bool Firing { get; private set; }
+    public bool Unlocked { get; private set; }
     private float firingUntil;
     private GameObject beamGO;
+
+    public void UnlockCharge() { Unlocked = true; }
 
     public void UpdateGesture(bool thumbsUp, bool wasThumbsUp)
     {
@@ -20,7 +23,8 @@ public class DragonBeam : MonoBehaviour
             else DoBeam();
             return;
         }
-        if (thumbsUp) Charge = Mathf.Min(chargeRequired, Charge + Time.deltaTime);
+        if (thumbsUp && Unlocked)
+            Charge = Mathf.Min(chargeRequired, Charge + Time.deltaTime);
         // Falling edge: was holding, now released
         if (!thumbsUp && wasThumbsUp && Charge >= chargeRequired) FireBeam();
     }
@@ -29,10 +33,12 @@ public class DragonBeam : MonoBehaviour
     {
         Charge = 0;
         Firing = true;
+        Unlocked = false;   // crystal consumed
         firingUntil = Time.time + firingDuration;
         if (beamGO == null) BuildBeam();
         beamGO.SetActive(true);
-        CameraShake.Pulse(0.6f, 0.4f);
+        CameraShake.Pulse(0.8f, 0.5f);
+        ProceduralSFX.DragonFire();
     }
 
     void StopFire()

@@ -53,7 +53,9 @@ public class Bullet : MonoBehaviour
         if (isPlayerShot)
         {
             var e = other.GetComponent<Enemy>();
-            if (e != null) { e.TakeDamage(damage); Destroy(gameObject); }
+            if (e != null) { e.TakeDamage(damage); ProceduralSFX.Hit(); Destroy(gameObject); return; }
+            var b = other.GetComponent<Boss>();
+            if (b != null) { b.TakeDamage(damage); ProceduralSFX.Hit(); Destroy(gameObject); return; }
         }
         else
         {

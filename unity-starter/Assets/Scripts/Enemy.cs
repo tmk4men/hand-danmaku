@@ -85,6 +85,21 @@ public class Enemy : MonoBehaviour
     public void Die()
     {
         if (GameDirector.Instance) GameDirector.Instance.AddScore(scoreReward);
+        ProceduralSFX.Explode();
+        // Random item drop (chance scales with the enemy's wave variety)
+        float roll = GameRng.Float01();
+        if (roll < 0.18f)
+        {
+            // 6 item types — pick one weighted toward Power & Bomb
+            float r = GameRng.Float01();
+            ItemType t = r < 0.30f ? ItemType.Power
+                       : r < 0.50f ? ItemType.Bomb
+                       : r < 0.70f ? ItemType.Guard
+                       : r < 0.85f ? ItemType.Tool
+                       : r < 0.95f ? ItemType.Dragon
+                                   : ItemType.Life;
+            Item.Spawn(transform.position, t);
+        }
         Destroy(gameObject);
     }
 

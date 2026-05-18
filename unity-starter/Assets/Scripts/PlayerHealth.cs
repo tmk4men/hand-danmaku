@@ -30,6 +30,7 @@ public class PlayerHealth : MonoBehaviour
         lives--;
         invulnUntil = Time.time + invulnSeconds;
         CameraShake.Pulse(0.25f, 0.15f);
+        ProceduralSFX.PlayerHit();
         if (lives <= 0) GameDirector.Instance.GameOver();
         if (HUD.Instance) HUD.Instance.Refresh();
     }
