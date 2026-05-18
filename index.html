@@ -915,7 +915,7 @@
   function getMosaicBuf() {
     if (!_mosaicBuf) {
       _mosaicBuf = document.createElement('canvas');
-      _mosaicBuf.width = 8; _mosaicBuf.height = 8;
+      _mosaicBuf.width = 8; _mosaicBuf.height = 6;  // chunky 8x6 over a 4:3 frame
     }
     return _mosaicBuf;
   }
@@ -2727,43 +2727,15 @@
       ctx.translate(VW, 0); ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, VW, VH);
 
-      // Face mosaic — smooth the bbox toward the latest detection
+      // Whole-frame chunky pixelate — reliable privacy mask
       if (camBg.state === 'mask') {
-        if (faceTrack.target) {
-          if (!faceTrack.box) faceTrack.box = { ...faceTrack.target };
-          else {
-            const k = 0.4;
-            faceTrack.box.x = faceTrack.box.x + (faceTrack.target.x - faceTrack.box.x) * k;
-            faceTrack.box.y = faceTrack.box.y + (faceTrack.target.y - faceTrack.box.y) * k;
-            faceTrack.box.w = faceTrack.box.w + (faceTrack.target.w - faceTrack.box.w) * k;
-            faceTrack.box.h = faceTrack.box.h + (faceTrack.target.h - faceTrack.box.h) * k;
-          }
-        }
-        if (faceTrack.box) {
-          const f = faceTrack.box;
-          const cx = f.x + f.w / 2;
-          const cy = f.y + f.h / 2;
-          // Add a small absolute pad and cap to 40% width / 50% height so a
-          // very close-up face doesn't cover the whole screen.
-          const fw = clamp(f.w + 0.04, 0.05, 0.40);
-          const fh = clamp(f.h + 0.04, 0.05, 0.50);
-          const nx = clamp(cx - fw / 2, 0, 1 - fw);
-          const ny = clamp(cy - fh / 2, 0, 1 - fh);
-          const mb = getMosaicBuf();
-          const mctx = mb.getContext('2d');
-          mctx.imageSmoothingEnabled = false;
-          mctx.drawImage(
-            video,
-            nx * video.videoWidth,  ny * video.videoHeight,
-            fw * video.videoWidth,  fh * video.videoHeight,
-            0, 0, mb.width, mb.height
-          );
-          ctx.imageSmoothingEnabled = false;
-          ctx.drawImage(
-            mb, 0, 0, mb.width, mb.height,
-            nx * VW, ny * VH, fw * VW, fh * VH
-          );
-        }
+        const mb = getMosaicBuf();
+        const mctx = mb.getContext('2d');
+        mctx.imageSmoothingEnabled = false;
+        mctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight,
+                       0, 0, mb.width, mb.height);
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(mb, 0, 0, mb.width, mb.height, 0, 0, VW, VH);
       }
       ctx.restore();
     } else {
@@ -3144,12 +3116,12 @@
       ctx.fillText('▸ BULLET TIME', 8, 8);
     }
 
-    // Face mosaic indicator
+    // Privacy mask indicator
     if (camBg.state === 'mask') {
       ctx.font = '8px monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      const txt = faceTrack.box ? 'FACE MASK ON' : 'FACE MASK — searching…';
+      const txt = 'PRIVACY MASK ON';
       const tw = ctx.measureText(txt).width + 12;
       ctx.fillStyle = '#0a0c20';
       ctx.fillRect(6, VH - 18, tw, 12);
@@ -3996,8 +3968,8 @@
   function syncCamBtn() {
     const labels = { on: 'CAM', mask: 'MSK', off: 'OFF' };
     camBtn.textContent = labels[camBg.state];
-    camBtn.title = camBg.state === 'on' ? 'Camera (C) — next: face mosaic'
-                 : camBg.state === 'mask' ? 'Face mosaic (C) — next: off'
+    camBtn.title = camBg.state === 'on' ? 'Camera background (C) — next: privacy mosaic'
+                 : camBg.state === 'mask' ? 'Privacy mosaic (C) — next: off'
                  : 'Camera off (C) — next: on';
     camBtn.classList.toggle('off', camBg.state === 'off');
     camBtn.classList.toggle('mask', camBg.state === 'mask');
