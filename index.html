@@ -768,7 +768,7 @@
           </div>
           <div class="row" style="color:#ff77c8">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 V11 M5 9 H11 M6 11 H10 M7 13 H9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></span>
-            <b>DRAGON</b><em>👍 親指立てを通算10秒キープ → 手を変えて必殺発射</em>
+            <b>DRAGON</b><em>D アイテム取得 → 親指立て10秒で必殺 → 手を変えて発射</em>
           </div>
         </div>
 
@@ -1006,6 +1006,7 @@
     thumbBent: false,      // active gesture state for USE item
     bulletTime: 0,         // frames remaining of slow-mo
     thumbsUp: false,       // thumb extended, others curled
+    dragonUnlocked: false, // crystal pickup required before charging
     dragonCharge: 0,       // 0..DRAGON_MAX frames of cumulative thumbs-up
     dragonFiring: 0,       // frames remaining of beam
     daily: false,
@@ -1537,11 +1538,12 @@
       }
       state.thumbBent = isThumbBent;
 
-      // Dragon: thumbs-up charges the beam; releasing it when full fires.
-      if (isThumbsUp && state.running && !state.paused && !state.autoPaused
-          && state.dragonFiring === 0) {
-        const DRAGON_MAX = 600;
-        state.dragonCharge = Math.min(DRAGON_MAX, state.dragonCharge + 1);
+      // Dragon: requires a Dragon Crystal to be picked up first.
+      // Once unlocked, thumbs-up charges the beam; releasing it when full fires.
+      const dragonChargeable = state.dragonUnlocked && state.running
+        && !state.paused && !state.autoPaused && state.dragonFiring === 0;
+      if (isThumbsUp && dragonChargeable) {
+        state.dragonCharge = Math.min(600, state.dragonCharge + 1);
       }
       if (state.thumbsUp && !isThumbsUp && state.dragonCharge >= 600
           && state.running && !state.paused && !state.autoPaused
@@ -1549,7 +1551,11 @@
         fireDragon();
       }
       if (isThumbsUp && !state.thumbsUp && state.running) {
-        showGesture('THUMBS UP', 'CHARGING DRAGON', '#ffd066');
+        if (state.dragonUnlocked) {
+          showGesture('THUMBS UP', 'CHARGING DRAGON', '#ffd066');
+        } else {
+          showGesture('THUMBS UP', 'NEED DRAGON CRYSTAL', '#888888');
+        }
       }
       state.thumbsUp = isThumbsUp;
 
@@ -1726,11 +1732,12 @@
 
   // ---------- Items ----------
   const ITEM_DEFS = {
-    power: { color: '#ffd066', edge: '#7a4400', glyph: 'P' },
-    bomb:  { color: '#ff7c98', edge: '#73122d', glyph: 'B' },
-    guard: { color: '#7fffd4', edge: '#0d6e57', glyph: 'G' },
-    life:  { color: '#ffffff', edge: '#444466', glyph: '1' },
-    tool:  { color: '#c8a878', edge: '#3b2a14', glyph: 'T' },
+    power:  { color: '#ffd066', edge: '#7a4400', glyph: 'P' },
+    bomb:   { color: '#ff7c98', edge: '#73122d', glyph: 'B' },
+    guard:  { color: '#7fffd4', edge: '#0d6e57', glyph: 'G' },
+    life:   { color: '#ffffff', edge: '#444466', glyph: '1' },
+    tool:   { color: '#c8a878', edge: '#3b2a14', glyph: 'T' },
+    dragon: { color: '#ff77c8', edge: '#3a0e2a', glyph: 'D' },
   };
 
   function dropItems(x, y, list) {
@@ -1747,24 +1754,32 @@
 
   function rollDrop(category) {
     // category: 'grunt' | 'spinner' | 'fan' | 'boss'
-    if (category === 'boss') return ['power', 'bomb', 'guard', 'tool', 'life'];
+    if (category === 'boss') {
+      const drops = ['power', 'bomb', 'guard', 'tool', 'life'];
+      // ~40% chance the boss also drops a Dragon Crystal — not guaranteed
+      if (gameRand() < 0.40) drops.push('dragon');
+      return drops;
+    }
     if (category === 'spinner') {
       const r = gameRand();
+      if (r < 0.05) return ['dragon'];      // 5%
       return [r < 0.4 ? 'power' : r < 0.65 ? 'bomb' : r < 0.85 ? 'guard' : 'tool'];
     }
     if (category === 'fan') {
       if (gameRand() < 0.65) {
         const r = gameRand();
-        return [r < 0.45 ? 'power' : r < 0.75 ? 'guard' : r < 0.92 ? 'tool' : 'bomb'];
+        if (r < 0.04) return ['dragon'];    // 4% of the 65% = ~2.6% absolute
+        return [r < 0.45 ? 'power' : r < 0.78 ? 'guard' : r < 0.94 ? 'tool' : 'bomb'];
       }
       return [];
     }
     // grunt
     if (gameRand() < 0.10) {
       const r = gameRand();
-      return [r < 0.45 ? 'power'
-            : r < 0.65 ? 'guard'
-            : r < 0.82 ? 'tool'
+      if (r < 0.02) return ['dragon'];      // ~0.2% absolute
+      return [r < 0.47 ? 'power'
+            : r < 0.67 ? 'guard'
+            : r < 0.84 ? 'tool'
             : r < 0.97 ? 'bomb' : 'life'];
     }
     return [];
@@ -1825,6 +1840,13 @@
       pushPopup(p.x, p.y - 20, '1 UP!', '#ffffff', 14);
       state.shake = Math.max(state.shake, 8);
       SFX.pickupLife();
+    } else if (type === 'dragon') {
+      state.dragonUnlocked = true;
+      state.dragonCharge = 0;
+      state.score += 300;
+      pushPopup(p.x, p.y - 22, 'DRAGON UNLOCKED', '#ff77c8', 14);
+      state.shake = Math.max(state.shake, 10);
+      SFX.grazeMax();
     } else if (type === 'tool') {
       // Toolbox: a small repair — short invuln + a sliver of guard + score
       p.invuln = Math.max(p.invuln, 50);
@@ -1857,6 +1879,7 @@
   function fireDragon() {
     state.dragonFiring = 180;          // 3s at 60fps
     state.dragonCharge = 0;
+    state.dragonUnlocked = false;      // need another Dragon Crystal
     state.shake = Math.max(state.shake, 24);
     pushPopup(state.player.x, state.player.y - 40, 'DRAGON BREAK !!', '#ffffff', 16);
     showGesture('RELEASE', 'DRAGON BEAM', '#ffd066');
@@ -2475,6 +2498,9 @@
     if (state.dragonFiring > 0) {
       hud.dragonText.textContent = 'FIRING!';
       hud.dragonText.style.color = '#ffffff';
+    } else if (!state.dragonUnlocked) {
+      hud.dragonText.textContent = 'LOCKED';
+      hud.dragonText.style.color = '#555a82';
     } else if (state.dragonCharge >= 600) {
       hud.dragonText.textContent = 'READY';
       hud.dragonText.style.color = '#ff77c8';
@@ -2482,7 +2508,7 @@
       hud.dragonText.textContent = dpct + '%';
       hud.dragonText.style.color = state.thumbsUp ? '#ffd066' : '#cfd2f0';
     }
-    hud.dragonBar.style.width = dpct + '%';
+    hud.dragonBar.style.width = (state.dragonUnlocked ? dpct : 0) + '%';
   }
 
   // ---------- Rendering ----------
@@ -2588,22 +2614,37 @@
       }
     } else if (state.thumbsUp) {
       const px = state.player.x, py = state.player.y;
-      const charge = state.dragonCharge / 600;
-      const r = 10 + charge * 24;
-      const segs = 18;
-      const t = state.t;
-      const col = state.dragonCharge >= 600 ? '#ffffff' : '#ffd066';
-      ctx.fillStyle = col;
-      for (let i = 0; i < segs; i++) {
-        const a = (i / segs) * TAU + t * 0.08;
-        ctx.fillRect(px + Math.cos(a) * r - 1.5, py + Math.sin(a) * r - 1.5, 3, 3);
-      }
-      if (state.dragonCharge >= 600) {
-        ctx.font = '10px monospace';
+      if (state.dragonUnlocked) {
+        const charge = state.dragonCharge / 600;
+        const r = 10 + charge * 24;
+        const segs = 18;
+        const t = state.t;
+        const col = state.dragonCharge >= 600 ? '#ffffff' : '#ffd066';
+        ctx.fillStyle = col;
+        for (let i = 0; i < segs; i++) {
+          const a = (i / segs) * TAU + t * 0.08;
+          ctx.fillRect(px + Math.cos(a) * r - 1.5, py + Math.sin(a) * r - 1.5, 3, 3);
+        }
+        if (state.dragonCharge >= 600) {
+          ctx.font = '10px monospace';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'top';
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText('RELEASE TO FIRE', px, py - 56);
+        }
+      } else {
+        // locked: faint gray ring hint
+        ctx.fillStyle = '#555a82';
+        const r = 14;
+        for (let i = 0; i < 12; i++) {
+          const a = (i / 12) * TAU + state.t * 0.04;
+          ctx.fillRect(px + Math.cos(a) * r - 1, py + Math.sin(a) * r - 1, 2, 2);
+        }
+        ctx.font = '8px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText('RELEASE TO FIRE', px, py - 56);
+        ctx.fillStyle = '#888';
+        ctx.fillText('FIND DRAGON CRYSTAL', px, py - 38);
       }
     }
 
@@ -3146,6 +3187,7 @@
     'G': ['###','#..','#.#','#.#','###'],
     '1': ['.#.','##.','.#.','.#.','###'],
     'T': ['###','.#.','.#.','.#.','.#.'],
+    'D': ['##.','#.#','#.#','#.#','##.'],
   };
   function drawItemGlyph(g, cx, cy, color) {
     const grid = GLYPHS[g]; if (!grid) return;
@@ -3466,6 +3508,7 @@
     state.bulletTime = 0;
     state.thumbBent = false;
     state.thumbsUp = false;
+    state.dragonUnlocked = false;
     state.dragonCharge = 0;
     state.dragonFiring = 0;
     // Per-run charges cap from loadout
