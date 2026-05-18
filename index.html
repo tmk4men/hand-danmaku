@@ -275,52 +275,130 @@
   }
   #overlay.hidden { display: none; }
   #overlay .panel {
-    background: rgba(20, 25, 60, 0.85);
-    border: 1px solid #3a4080;
-    border-radius: 10px;
-    padding: 24px 32px;
-    max-width: 520px;
+    background: #101537;
+    border: 3px solid #88a8ff;
+    border-radius: 0;
+    box-shadow:
+      0 0 0 4px #06081a,
+      inset 0 0 0 2px #2a2f55,
+      0 0 32px rgba(136, 168, 255, 0.28);
+    padding: 26px 28px 22px;
+    width: min(92vw, 640px);
+    max-width: 640px;
+    position: relative;
   }
+  /* Bezel corner ticks for "arcade cabinet" feel */
+  #overlay .panel::before,
+  #overlay .panel::after {
+    content: '';
+    position: absolute;
+    width: 12px; height: 12px;
+    border: 2px solid #ffd066;
+    pointer-events: none;
+  }
+  #overlay .panel::before { top: -7px; left: -7px; border-right: none; border-bottom: none; }
+  #overlay .panel::after  { bottom: -7px; right: -7px; border-left: none; border-top: none; }
   #overlay h1 {
-    margin: 0 0 8px;
-    font-size: 28px;
-    letter-spacing: 0.1em;
-    color: #aee0ff;
+    margin: 4px 0 0;
+    font-size: 34px;
+    letter-spacing: 0.15em;
+    color: #ffffff;
+    text-shadow:
+      3px 3px 0 #06081a,
+      -1px -1px 0 #2a2f55,
+      0 0 14px rgba(136, 224, 255, 0.55);
+    line-height: 1.1;
+  }
+  #overlay .kicker {
+    margin: 6px 0 14px;
+    font-size: 10px;
+    color: #88e0ff;
+    letter-spacing: 0.32em;
+    opacity: 0.9;
   }
   #overlay p { margin: 8px 0; font-size: 14px; color: #cfd2f0; }
   #overlayMsg.howto {
-    display: flex; flex-direction: column;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
     gap: 6px;
     text-align: left;
-    font-size: 12px;
-    line-height: 1.4;
-    margin: 14px 0 4px;
+    margin: 6px 0 10px;
   }
   #overlayMsg.howto .row {
     display: grid;
-    grid-template-columns: 20px 56px 1fr;
-    align-items: center;
-    gap: 8px;
+    grid-template-columns: 20px 1fr;
+    grid-template-rows: auto auto;
+    column-gap: 8px; row-gap: 2px;
+    padding: 8px 10px;
+    background: rgba(6, 8, 26, 0.55);
+    border: 1px solid #2a2f55;
+    align-items: start;
+  }
+  #overlayMsg.howto .ico {
+    grid-row: 1 / span 2;
+    align-self: center;
   }
   #overlayMsg.howto .ico svg {
-    width: 16px; height: 16px; display: block;
+    width: 18px; height: 18px; display: block;
   }
-  #overlayMsg.howto b { font-weight: 700; letter-spacing: 0.08em; color: inherit; }
+  #overlayMsg.howto b {
+    grid-column: 2; grid-row: 1;
+    font-weight: 700; letter-spacing: 0.1em; color: inherit;
+    font-size: 12px;
+  }
   #overlayMsg.howto em {
-    font-style: normal; color: #cfd2f0; font-size: 11px;
+    grid-column: 2; grid-row: 2;
+    font-style: normal; color: #cfd2f0; font-size: 10px;
+    line-height: 1.3;
+  }
+
+  /* Mobile / narrow viewports */
+  @media (max-width: 600px) {
+    #overlay { align-items: flex-start; padding: 12px; }
+    #overlay .panel {
+      width: 100%; max-height: calc(100dvh - 24px);
+      overflow: auto; padding: 18px 16px;
+    }
+    #overlay h1 { font-size: 24px; }
+    #overlay .kicker { font-size: 9px; }
+    #overlayMsg.howto { grid-template-columns: repeat(2, 1fr); }
+    #startBtn, #playBtn { font-size: 16px; padding: 12px 20px; }
   }
   #overlay button {
-    margin-top: 16px;
+    margin-top: 10px;
     padding: 10px 22px;
-    font-size: 15px;
+    font-size: 13px;
     background: linear-gradient(180deg, #4a60d8, #2a3a9a);
     border: 1px solid #88a8ff;
     color: white;
-    border-radius: 6px;
+    border-radius: 0;
     cursor: pointer;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
+    image-rendering: pixelated;
+    transition: transform 0.08s, filter 0.08s;
   }
   #overlay button:hover { filter: brightness(1.15); }
+  #overlay button:active { transform: translateY(1px); }
+
+  /* PLAY (start) button — primary CTA */
+  #startBtn, #playBtn {
+    width: min(100%, 360px);
+    font-size: 18px;
+    padding: 14px 32px;
+    background: linear-gradient(180deg, #ffd866, #c89a3a);
+    border: 2px solid #ffd066;
+    color: #06081a;
+    font-weight: 700;
+    letter-spacing: 0.24em;
+    box-shadow: 0 0 0 3px #06081a, 0 0 22px rgba(255, 208, 102, 0.55);
+    margin-top: 12px;
+    animation: pulseCTA 1.6s ease-in-out infinite;
+  }
+  #playBtn:disabled, #startBtn:disabled { animation: none; box-shadow: none; }
+  @keyframes pulseCTA {
+    0%, 100% { box-shadow: 0 0 0 3px #06081a, 0 0 18px rgba(255,208,102,0.45); }
+    50%      { box-shadow: 0 0 0 3px #06081a, 0 0 32px rgba(255,208,102,0.85); }
+  }
   #overlay .panel.shopView .home-only,
   #overlay .panel.readyView .home-only { display: none; }
   #overlay .panel:not(.shopView) .shop-only { display: none; }
@@ -473,6 +551,7 @@
     <div id="overlay">
       <div class="panel" id="overlayPanel">
         <h1 class="home-only">HAND DANMAKU</h1>
+        <p class="home-only kicker">MEDIAPIPE HANDS BULLET HELL</p>
 
         <div id="overlayMsg" class="howto home-only">
           <div class="row" style="color:#88e0ff">
@@ -523,7 +602,7 @@
           </div>
         </div>
 
-        <button id="startBtn" class="home-only">START</button>
+        <button id="startBtn" class="home-only">▶ PLAY NOW</button>
 
         <div class="ready-only">
           <div class="readyBig">READY?</div>
@@ -1721,7 +1800,7 @@
       `SCORE ${state.score}  /  HI ${state.hiScore}  /  STAGE ${state.stageNo}<br>` +
       `MAX CHAIN ${state.combo.best}  /  <span style="color:#ffd066">EARNED +${earned} COINS</span>`;
     coinAmt.textContent = shop.coins;
-    startBtn.textContent = 'RETRY';
+    startBtn.textContent = '▶ PLAY AGAIN';
   }
 
   function updateHud() {
