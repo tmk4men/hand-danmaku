@@ -827,8 +827,8 @@
 
         <div class="ready-only">
           <div class="readyBig">READY?</div>
-          <div id="readyHint">手をカメラの中央に映して PLAY<br>
-            <span style="color:#ffd066;font-size:11px;">✋ パー → ✊ グー でも開始</span>
+          <div id="readyHint">手をカメラに映すと自動で開始<br>
+            <span style="color:#8890b8;font-size:11px;">PLAY ボタンを押しても開始できます</span>
           </div>
           <div id="readyStat">カメラ準備中…</div>
           <div id="readyDots">
@@ -1542,17 +1542,17 @@
       }
       state.thumbBent = isThumbBent;
 
-      // READY screen: パー → グー で PLAY 発動
-      const isOpenPalm = !isPinch && !isPeace && curled === 0 && thumbExtended;
-      if (state.readyPalmRecent > 0) state.readyPalmRecent--;
-      if (isOpenPalm) state.readyPalmRecent = 30;  // 0.5s grace window
+      // READY screen: 手を継続して映すだけで PLAY 発動 (~0.6s dwell)
       const readyVisible = !overlay.classList.contains('hidden')
         && overlayPanel.classList.contains('readyView');
-      if (!state.running && !playBtn.disabled
-          && readyVisible
-          && isFistOnly && state.readyPalmRecent > 0) {
-        state.readyPalmRecent = 0;
-        start();
+      if (!state.running && !playBtn.disabled && readyVisible) {
+        state.readyHandFrames = (state.readyHandFrames || 0) + 1;
+        if (state.readyHandFrames > 18) {
+          state.readyHandFrames = 0;
+          start();
+        }
+      } else {
+        state.readyHandFrames = 0;
       }
 
       // Dragon: requires a Dragon Crystal to be picked up first.
@@ -1601,6 +1601,7 @@
       }
     } else {
       state.handSeen = false;
+      state.readyHandFrames = 0;
     }
     camCtx.restore();
   }
