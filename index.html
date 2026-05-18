@@ -1099,34 +1099,41 @@
     starters: loadJSON('hd_starters', { bomb: 0, life: 0, power: 0 }),
     charges:  parseInt(localStorage.getItem('hd_charges') || '0', 10),
   };
-  const loadout = loadJSON('hd_loadout', { bomb: true, life: true, power: true, charges: 99 });
+  // Cap any pre-existing inventory to 1 per type (new rule).
+  shop.starters.bomb  = Math.min(1, shop.starters.bomb  || 0);
+  shop.starters.life  = Math.min(1, shop.starters.life  || 0);
+  shop.starters.power = Math.min(1, shop.starters.power || 0);
+  shop.charges        = Math.min(1, shop.charges        || 0);
+  const loadout = loadJSON('hd_loadout', { bomb: true, life: true, power: true, charges: true });
+  // Coerce legacy numeric "charges" loadout to a boolean
+  if (typeof loadout.charges === 'number') loadout.charges = loadout.charges > 0;
   function saveLoadout() {
     try { localStorage.setItem('hd_loadout', JSON.stringify(loadout)); } catch {}
   }
   const SHOP_ITEMS = [
     {
       id: 'bomb', name: 'START +1 BOMB', cost: 200,
-      desc: '毎ラウンドの初期ボムを+1（最大+3）',
-      max: () => 3, owned: () => shop.starters.bomb,
-      buy:   () => { shop.starters.bomb++; },
+      desc: 'スタート時のボムを+1',
+      max: () => 1, owned: () => shop.starters.bomb,
+      buy:   () => { shop.starters.bomb = 1; },
     },
     {
       id: 'life', name: 'START +1 LIFE', cost: 400,
-      desc: '毎ラウンドの初期ライフを+1（最大+2）',
-      max: () => 2, owned: () => shop.starters.life,
-      buy:   () => { shop.starters.life++; },
+      desc: 'スタート時のライフを+1',
+      max: () => 1, owned: () => shop.starters.life,
+      buy:   () => { shop.starters.life = 1; },
     },
     {
       id: 'power', name: 'START AT Lv2', cost: 600,
-      desc: '武器Lv2からスタート',
+      desc: '武器Lv2 からスタート',
       max: () => 1, owned: () => shop.starters.power,
       buy:   () => { shop.starters.power = 1; },
     },
     {
-      id: 'charge', name: 'BULLET TIME +1', cost: 100,
+      id: 'charge', name: 'BULLET TIME CHARGE', cost: 100,
       desc: '親指曲げで発動：3秒間 敵弾を超スロー化',
-      max: () => 99, owned: () => shop.charges, stack: true,
-      buy:   () => { shop.charges++; },
+      max: () => 1, owned: () => shop.charges,
+      buy:   () => { shop.charges = 1; },
     },
   ];
   function saveShop() {
@@ -1173,10 +1180,10 @@
     syncLoadoutSummary();
   }
   function syncLoadoutSummary() {
-    const lifeN  = 5 + (loadout.life  ? shop.starters.life  : 0);
-    const bombN  = 4 + (loadout.bomb  ? shop.starters.bomb  : 0);
-    const powerN = 1 + (loadout.power ? shop.starters.power : 0);
-    const useN   = Math.min(loadout.charges, shop.charges);
+    const lifeN  = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0);
+    const bombN  = 4 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
+    const powerN = 1 + ((loadout.power && shop.starters.power > 0) ? 1 : 0);
+    const useN   = (loadout.charges && shop.charges > 0) ? 1 : 0;
     document.getElementById('sumLife').textContent  = lifeN;
     document.getElementById('sumBomb').textContent  = bombN;
     document.getElementById('sumPower').textContent = powerN;
@@ -1200,75 +1207,29 @@
   function renderLoadout() {
     const list = document.getElementById('loadoutList');
     list.innerHTML = '';
-    // Clamp loadout against owned
-    loadout.charges = Math.min(loadout.charges, shop.charges);
-    if (loadout.charges < 0) loadout.charges = 0;
-
     const rows = [
-      {
-        key: 'bomb', name: 'EXTRA BOMB',
-        desc: 'ランの初期ボムを +' + shop.starters.bomb,
-        owned: shop.starters.bomb,
-        type: 'toggle',
-      },
-      {
-        key: 'life', name: 'EXTRA LIFE',
-        desc: 'ランの初期ライフを +' + shop.starters.life,
-        owned: shop.starters.life,
-        type: 'toggle',
-      },
-      {
-        key: 'power', name: 'POWER Lv2 START',
-        desc: '武器Lv2 から開始',
-        owned: shop.starters.power,
-        type: 'toggle',
-      },
-      {
-        key: 'charges', name: 'BULLET TIME CHARGE',
-        desc: '親指曲げで発動 / 使った分だけ減少',
-        owned: shop.charges,
-        type: 'count',
-      },
+      { key: 'bomb',    name: 'EXTRA BOMB',         desc: 'スタート時のボム +1',                    owned: shop.starters.bomb  },
+      { key: 'life',    name: 'EXTRA LIFE',         desc: 'スタート時のライフ +1',                  owned: shop.starters.life  },
+      { key: 'power',   name: 'POWER Lv2 START',    desc: '武器Lv2 から開始',                        owned: shop.starters.power },
+      { key: 'charges', name: 'BULLET TIME CHARGE', desc: '親指曲げで発動：3秒間 敵弾スロー',         owned: shop.charges        },
     ];
     for (const r of rows) {
       const wrap = document.createElement('div');
       const disabled = r.owned <= 0;
-      wrap.className = 'item' + (disabled ? ' disabled' : '')
-                       + (r.type === 'toggle' && loadout[r.key] && !disabled ? ' on' : '');
+      const on = !disabled && loadout[r.key];
+      wrap.className = 'item' + (disabled ? ' disabled' : '') + (on ? ' on' : '');
       const meta = `<div><div class="name">${r.name}</div><div class="desc">${r.desc}</div>`
-                 + `<div class="qty">${r.type === 'count' ? `所持 ${r.owned}` : `購入 ${r.owned}`}</div></div>`;
-      let action;
-      if (r.type === 'toggle') {
-        const on = !disabled && loadout[r.key];
-        action = `<button type="button" class="btn-toggle${on ? ' on' : ''}">${on ? 'USE' : disabled ? '—' : 'OFF'}</button>`;
-        wrap.innerHTML = meta + `<div></div>` + action;
-        const btn = wrap.querySelector('button');
-        if (disabled) btn.disabled = true;
-        btn.addEventListener('click', () => {
-          if (disabled) return;
-          loadout[r.key] = !loadout[r.key];
-          saveLoadout();
-          renderLoadout();
-        });
-      } else {
-        const n = Math.min(loadout.charges, r.owned);
-        action = `<div class="stepper">
-          <button type="button" data-act="dec" ${(disabled || n <= 0) ? 'disabled' : ''}>−</button>
-          <span class="num">${n}</span>
-          <button type="button" data-act="inc" ${(disabled || n >= r.owned) ? 'disabled' : ''}>＋</button>
-        </div>`;
-        wrap.innerHTML = meta + `<div></div>` + action;
-        for (const b of wrap.querySelectorAll('button')) {
-          b.addEventListener('click', () => {
-            if (b.disabled) return;
-            const act = b.dataset.act;
-            if (act === 'inc') loadout.charges = Math.min(r.owned, loadout.charges + 1);
-            else loadout.charges = Math.max(0, loadout.charges - 1);
-            saveLoadout();
-            renderLoadout();
-          });
-        }
-      }
+                 + `<div class="qty">${disabled ? '未所持' : '所持済 — 1個'}</div></div>`;
+      const action = `<button type="button" class="btn-toggle${on ? ' on' : ''}">${on ? 'USE' : disabled ? '—' : 'OFF'}</button>`;
+      wrap.innerHTML = meta + `<div></div>` + action;
+      const btn = wrap.querySelector('button');
+      if (disabled) btn.disabled = true;
+      btn.addEventListener('click', () => {
+        if (disabled) return;
+        loadout[r.key] = !loadout[r.key];
+        saveLoadout();
+        renderLoadout();
+      });
       list.appendChild(wrap);
     }
   }
@@ -3733,8 +3694,8 @@
     pauseBtn.classList.remove('paused');
     state.t = 0;
     state.score = 0;
-    state.lives = 5 + (loadout.life ? (shop.starters.life || 0) : 0);
-    state.bombs = 4 + (loadout.bomb ? (shop.starters.bomb || 0) : 0);
+    state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0);
+    state.bombs = 4 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
     state.guard.remaining = 600;
     state.guard.active = false;
     state.stageNo = 1;
@@ -3750,7 +3711,7 @@
     state.player.invuln = 60;
     state.player.dashCd = 0;
     state.player.dashTrail.length = 0;
-    state.power = 1 + (loadout.power ? (shop.starters.power || 0) : 0);
+    state.power = 1 + ((loadout.power && shop.starters.power > 0) ? 1 : 0);
     state.powerFlash = 0;
     state.bulletTime = 0;
     state.thumbBent = false;
@@ -3758,8 +3719,8 @@
     state.dragonUnlocked = false;
     state.dragonCharge = 0;
     state.dragonFiring = 0;
-    // Per-run charges cap from loadout
-    state.runCharges = Math.min(loadout.charges, shop.charges);
+    // Per-run charges: max 1 if owned + loadout says use
+    state.runCharges = (loadout.charges && shop.charges > 0) ? 1 : 0;
     state.graze.value = 0;
     state.graze.boost = 0;
     state.focus = false;
