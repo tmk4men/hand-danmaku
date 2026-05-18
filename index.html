@@ -3,7 +3,27 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>HandDanmaku — MediaPipe Heavy 弾幕</title>
+<title>HAND DANMAKU — 手で操る弾幕シューティング</title>
+<meta name="description" content="MediaPipe Hands で操作する弾幕シューティング。人差し指で移動、ピンチでボム、ピースで追尾射撃、グーでガード、指振りでダッシュ。ブラウザだけで動作。" />
+
+<!-- Open Graph -->
+<meta property="og:type" content="website" />
+<meta property="og:title" content="HAND DANMAKU — 手で操る弾幕シューティング" />
+<meta property="og:description" content="MOVE / BOMB / GUARD / FOCUS / DASH / USE — 手のジェスチャだけで弾幕を捌くブラウザゲーム。" />
+<meta property="og:image" content="https://tmk4men.github.io/hand-danmaku/og.png" />
+<meta property="og:image:width" content="1200" />
+<meta property="og:image:height" content="630" />
+<meta property="og:url" content="https://tmk4men.github.io/hand-danmaku/" />
+<meta property="og:site_name" content="HAND DANMAKU" />
+<meta property="og:locale" content="ja_JP" />
+
+<!-- Twitter -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="HAND DANMAKU — 手で操る弾幕シューティング" />
+<meta name="twitter:description" content="MediaPipe Hands × 弾幕。ピンチ/ピース/グー/指振り/親指曲げ — ジェスチャーだけで戦うブラウザゲーム。" />
+<meta name="twitter:image" content="https://tmk4men.github.io/hand-danmaku/og.png" />
+
+<link rel="icon" href="og.png" />
 <style>
   * { box-sizing: border-box; }
   html, body {
@@ -203,6 +223,7 @@
   }
   #camBtn:hover { border-color: #88a8ff; color: #ffffff; }
   #camBtn.off { color: #555a82; }
+  #camBtn.mask { color: #ffd066; border-color: #ffd066; }
 
   #pauseOverlay {
     position: absolute; inset: 0;
@@ -232,10 +253,25 @@
   #overlay {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    background: rgba(5, 6, 10, 0.7);
-    backdrop-filter: blur(4px);
+    background:
+      radial-gradient(ellipse at 50% 25%, #1a1f4e 0%, #06081a 60%, #02030a 100%);
     text-align: center;
     z-index: 10;
+    overflow: hidden;
+  }
+  /* Subtle starfield specks on the home backdrop (drawn via box-shadows for cheap effect) */
+  #overlay::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      radial-gradient(circle, #ffffff 1px, transparent 1.5px),
+      radial-gradient(circle, #88a8ff 1px, transparent 1.5px),
+      radial-gradient(circle, #cad0ff 1px, transparent 1.5px);
+    background-size: 220px 180px, 320px 240px, 180px 150px;
+    background-position: 10px 30px, 80px 120px, 50px 70px;
+    opacity: 0.6;
+    pointer-events: none;
   }
   #overlay.hidden { display: none; }
   #overlay .panel {
@@ -546,7 +582,7 @@
   function getMosaicBuf() {
     if (!_mosaicBuf) {
       _mosaicBuf = document.createElement('canvas');
-      _mosaicBuf.width = 14; _mosaicBuf.height = 7;
+      _mosaicBuf.width = 8; _mosaicBuf.height = 4;  // very chunky
     }
     return _mosaicBuf;
   }
@@ -2009,6 +2045,19 @@
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#88e0ff';
       ctx.fillText('▸ BULLET TIME', 8, 8);
+    }
+
+    // Face mask badge
+    if (camBg.state === 'mask') {
+      ctx.font = '8px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#0a0c20';
+      ctx.fillRect(6, VH - 18, 90, 12);
+      ctx.fillStyle = '#ffd066';
+      ctx.fillRect(6, VH - 18, 90, 2);
+      ctx.fillStyle = '#ffd066';
+      ctx.fillText('FACE MASK ON', 11, VH - 14);
     }
 
     // Branding watermark — subtle, bottom-right inside game area
