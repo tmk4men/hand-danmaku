@@ -1757,8 +1757,8 @@
     // category: 'grunt' | 'spinner' | 'fan' | 'boss'
     if (category === 'boss') {
       const drops = ['power', 'bomb', 'guard', 'tool', 'life'];
-      // ~40% chance the boss also drops a Dragon Crystal — not guaranteed
-      if (gameRand() < 0.40) drops.push('dragon');
+      // ~45% chance the boss also drops a Dragon Crystal — not guaranteed
+      if (gameRand() < 0.45) drops.push('dragon');
       return drops;
     }
     if (category === 'spinner') {
@@ -2081,18 +2081,18 @@
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           L.angle = L.angle * 0.85 + aim * 0.15;
           if (L.charge === 0) {
-            L.fire = 100;
+            L.fire = 80;
             state.shake = Math.max(state.shake, 14);
             SFX.bomb();
           }
         } else if (L.fire > 0) {
           L.fire--;
-          // Slowly sweep toward current player position
+          // Gentle sweep toward player so it can be out-run
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           let d = aim - L.angle;
           while (d > Math.PI) d -= TAU;
           while (d < -Math.PI) d += TAU;
-          L.angle += clamp(d, -0.018, 0.018);
+          L.angle += clamp(d, -0.008, 0.008);
           // Player collision: project player onto beam, check perpendicular distance
           const p = state.player;
           const ca = Math.cos(L.angle), sa = Math.sin(L.angle);
@@ -2214,9 +2214,9 @@
     }
     if (state.t % 6 === 0) updateHud();
 
-    // Auto-fire (focus mode fires faster, single bolt; graze boost = faster too)
+    // Auto-fire (suppressed while charging DRAGON: thumbs-up posture)
     p.fireCooldown--;
-    if (p.fireCooldown <= 0 && state.handSeen) {
+    if (p.fireCooldown <= 0 && state.handSeen && !state.thumbsUp) {
       playerShot();
       if (state.focus) SFX.shootFocus(); else SFX.shoot();
       p.fireCooldown = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
@@ -2805,23 +2805,12 @@
     }
     ctx.globalAlpha = 1;
 
-    // items
+    // items — chunky per-type sprites with glow halo, bob, sparkle
     for (const it of state.items) {
       const d = ITEM_DEFS[it.type];
       const bob = Math.sin((it.life + it.x) * 0.2) * 1.5;
       const x = it.x, y = it.y + bob;
-      // shadow
-      ctx.fillStyle = d.edge;
-      ctx.fillRect(x - 8, y - 8, 16, 16);
-      ctx.fillStyle = d.color;
-      ctx.fillRect(x - 6, y - 6, 12, 12);
-      // glyph
-      ctx.fillStyle = d.edge;
-      ctx.fillRect(x - 1.5, y - 4, 3, 8);
-      ctx.fillRect(x - 4, y - 1.5, 8, 3);
-      // letter (drawn at higher resolution via canvas text on display? keep pixel-ish here)
-      // simple pixel letter via overlay rect pattern based on glyph
-      drawItemGlyph(d.glyph, x, y, d.edge);
+      drawItemSprite(it.type, x, y, d, it.life);
     }
 
     // guard shield — pixely ring of cyan squares
@@ -3271,6 +3260,135 @@
     ctx.fillStyle = color;
     for (let y = 0; y < 5; y++) for (let x = 0; x < 3; x++) {
       if (grid[y][x] === '#') ctx.fillRect(x0 + x * cell, y0 + y * cell, cell, cell);
+    }
+  }
+
+  // 12x12 per-type item sprites. '.' transparent, '#' main color,
+  // 'W' white highlight, 'E' edge/dark, 'L' lighter accent.
+  const ITEM_SPRITES = {
+    power: [           // lightning bolt
+      '......##....',
+      '.....###....',
+      '....####....',
+      '...####.....',
+      '..#####.....',
+      '.######WWWW.',
+      '.WWWW######.',
+      '.....#####..',
+      '.....####...',
+      '....####....',
+      '....###.....',
+      '....##......',
+    ],
+    bomb: [            // round bomb with short fuse
+      '........E...',
+      '.......E....',
+      '......E.W...',
+      '....######..',
+      '...########.',
+      '..##########',
+      '..##W#######',
+      '..########W#',
+      '..##########',
+      '...########.',
+      '....######..',
+      '......##....',
+    ],
+    guard: [           // shield (chevron + inner cross)
+      '############',
+      '##W########W',
+      '##WW######WW',
+      '.###W##W###.',
+      '.####WW####.',
+      '.####WW####.',
+      '..####W####.',
+      '..###WWW###.',
+      '...#######..',
+      '....#####...',
+      '.....###....',
+      '......#.....',
+    ],
+    life: [            // heart
+      '..##....##..',
+      '.####..####.',
+      '############',
+      '###W######W#',
+      '############',
+      '############',
+      '.##########.',
+      '..########..',
+      '...######...',
+      '....####....',
+      '.....##.....',
+      '............',
+    ],
+    tool: [            // wrench
+      '.####.....##',
+      '#####....###',
+      '##W##....#W#',
+      '###W#...####',
+      '..####.####.',
+      '...########.',
+      '....#######.',
+      '.....######.',
+      '......#####.',
+      '.......#####',
+      '........####',
+      '.........###',
+    ],
+    dragon: [          // faceted crystal (rotates + sparkles when drawn)
+      '.....##.....',
+      '....####....',
+      '...##WW##...',
+      '..##WWWW##..',
+      '.###WWWW###.',
+      '#####WW#####',
+      '#####WW#####',
+      '.###WWWW###.',
+      '..##WWWW##..',
+      '...##WW##...',
+      '....####....',
+      '.....##.....',
+    ],
+  };
+
+  function drawItemSprite(type, x, y, def, life) {
+    const sprite = ITEM_SPRITES[type];
+    const pal = { '#': def.color, 'E': def.edge, 'W': '#ffffff', 'L': def.color };
+    // Soft glow halo
+    const pulse = 0.55 + 0.45 * Math.sin(life * 0.08);
+    ctx.save();
+    ctx.globalAlpha = 0.25 * pulse;
+    ctx.fillStyle = def.color;
+    const segs = 14, haloR = 10;
+    for (let i = 0; i < segs; i++) {
+      const a = (i / segs) * TAU;
+      ctx.fillRect(x + Math.cos(a) * haloR - 1.5, y + Math.sin(a) * haloR - 1.5, 3, 3);
+    }
+    ctx.restore();
+    // Body
+    if (type === 'dragon') {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(life * 0.03);
+      drawSprite(sprite, pal, 0, 0, 1.6);
+      ctx.restore();
+      // Sparkles
+      const t = life * 0.05;
+      ctx.fillStyle = '#ffffff';
+      for (let k = 0; k < 4; k++) {
+        const a = t + k * Math.PI * 0.5;
+        const sr = 11 + Math.sin(life * 0.1 + k) * 2.5;
+        const sx = x + Math.cos(a) * sr;
+        const sy = y + Math.sin(a) * sr;
+        ctx.fillRect(sx - 1, sy - 1, 2, 2);
+        ctx.fillRect(sx - 2, sy, 1, 1);
+        ctx.fillRect(sx + 1, sy, 1, 1);
+        ctx.fillRect(sx, sy - 2, 1, 1);
+        ctx.fillRect(sx, sy + 1, 1, 1);
+      }
+    } else {
+      drawSprite(sprite, pal, x, y, 1.6);
     }
   }
 
