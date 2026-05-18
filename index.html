@@ -322,16 +322,14 @@
     <div id="overlay">
       <div class="panel">
         <h1>HAND DANMAKU</h1>
-        <p style="text-align:left;line-height:1.7">
-          <b style="color:#88e0ff">MOVE</b> 人差し指で機体を操作<br>
-          <b style="color:#ff7c98">BOMB</b> 親指＋人差し指でピンチ → 全弾消去<br>
-          <b style="color:#7fffd4">GUARD</b> グー（握り拳）で防御シールド（最大10秒／回復P）<br>
-          <b style="color:#88e0ff">FOCUS</b> ピース✌で低速・狙撃・小ヒットボックス<br>
-          <b style="color:#aef4ff">DASH</b> 指先を素早く振ると短距離回避＋弾消し<br>
-          <b style="color:#ffd066">GRAZE</b> 弾スレスレを通す → 満タンでPOWER UP（一定時間強化）<br>
-          <b style="color:#ffd066">ITEM</b> P=武器UP / B=ボム+1 / G=ガード回復 / 1=1UP
+        <p id="overlayMsg" style="line-height:1.7; font-size:13px;">
+          <span style="color:#88e0ff">☝ MOVE</span> ・
+          <span style="color:#ff7c98">🤏 BOMB</span> ・
+          <span style="color:#7fffd4">✊ GUARD</span> ・
+          <span style="color:#88e0ff">✌ FOCUS</span> ・
+          <span style="color:#aef4ff">👋 DASH</span>
         </p>
-        <p>カメラの使用許可が必要です。MediaPipe Hands (modelComplexity=1 / Heavy) を使用します。</p>
+        <p style="font-size:11px; color:#8890b8">カメラ許可が必要 / MediaPipe Hands</p>
         <p style="color:#ffb3b3" id="errMsg"></p>
         <button id="startBtn">START</button>
       </div>
@@ -1346,7 +1344,7 @@
     }
     overlay.classList.remove('hidden');
     overlay.querySelector('h1').textContent = 'GAME OVER';
-    overlay.querySelector('p').textContent =
+    document.getElementById('overlayMsg').textContent =
       `SCORE ${state.score}  /  HI ${state.hiScore}  /  STAGE ${state.stageNo}  /  MAX CHAIN ${state.combo.best}`;
     startBtn.textContent = 'RETRY';
   }
