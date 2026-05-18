@@ -400,11 +400,56 @@
     50%      { box-shadow: 0 0 0 3px #06081a, 0 0 32px rgba(255,208,102,0.85); }
   }
   #overlay .panel.shopView .home-only,
-  #overlay .panel.readyView .home-only { display: none; }
+  #overlay .panel.readyView .home-only,
+  #overlay .panel.loadoutView .home-only { display: none; }
   #overlay .panel:not(.shopView) .shop-only { display: none; }
   #overlay .panel:not(.readyView) .ready-only { display: none; }
+  #overlay .panel:not(.loadoutView) .loadout-only { display: none; }
   #overlay .panel.shopView .ready-only,
-  #overlay .panel.readyView .shop-only { display: none; }
+  #overlay .panel.shopView .loadout-only,
+  #overlay .panel.readyView .shop-only,
+  #overlay .panel.readyView .loadout-only,
+  #overlay .panel.loadoutView .shop-only,
+  #overlay .panel.loadoutView .ready-only { display: none; }
+
+  #loadoutList {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin: 12px 0;
+    text-align: left;
+  }
+  #loadoutList .item {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+    background: rgba(15,18,46,0.6);
+    border: 1px solid #2a2f55;
+    font-size: 11px;
+  }
+  #loadoutList .item .name { color: #88e0ff; font-weight: 700; letter-spacing: 0.06em; }
+  #loadoutList .item .desc { color: #cfd2f0; font-size: 10px; margin-top: 2px; }
+  #loadoutList .item .qty { color: #8890b8; font-size: 10px; margin-top: 2px; }
+  #loadoutList .item .owned {
+    min-width: 56px; text-align: right;
+    color: #ffd066; font-weight: 700;
+  }
+  #loadoutList .item.disabled { opacity: 0.45; }
+  #loadoutList .item button {
+    padding: 4px 10px; font-size: 11px; margin: 0;
+    background: #2a2f55; border: 1px solid #88a8ff;
+    color: #ffffff; font-weight: 700; cursor: pointer; letter-spacing: 0.08em;
+  }
+  #loadoutList .item.on button { background: linear-gradient(180deg,#3aa66e,#206b48); border-color:#7fffd4; }
+  #loadoutList .item .stepper {
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  #loadoutList .item .stepper button { padding: 2px 8px; min-width: 26px; }
+  #loadoutList .item .stepper .num {
+    min-width: 24px; text-align: center; color: #ffd066; font-weight: 700;
+  }
   .readyBig {
     font-size: 36px;
     color: #88e0ff;
@@ -594,11 +639,23 @@
 
         <div id="coinBar" class="home-only">
           <span>COINS <span class="coins" id="coinAmt">0</span></span>
+          <button type="button" id="loadoutBtn">LOADOUT</button>
           <button type="button" id="shopBtn">SHOP</button>
         </div>
 
         <p class="home-only" style="font-size:11px; color:#8890b8">カメラ許可が必要</p>
         <p style="color:#ffb3b3" id="errMsg"></p>
+
+        <div class="loadout-only" style="text-align:left;">
+          <h1 style="font-size:20px; margin: 0 0 6px;">LOADOUT</h1>
+          <p style="font-size:11px; color:#8890b8; margin:0 0 4px;">
+            次のランで使うアイテムを選択。
+          </p>
+          <div id="loadoutList"></div>
+          <div style="display:flex; align-items:center; justify-content:flex-end;">
+            <button type="button" id="loadoutBack" style="margin:0;">BACK</button>
+          </div>
+        </div>
 
         <div class="shop-only" style="text-align:left;">
           <h1 style="font-size:20px; margin: 0 0 6px;">SHOP</h1>
@@ -873,6 +930,10 @@
     starters: loadJSON('hd_starters', { bomb: 0, life: 0, power: 0 }),
     charges:  parseInt(localStorage.getItem('hd_charges') || '0', 10),
   };
+  const loadout = loadJSON('hd_loadout', { bomb: true, life: true, power: true, charges: 99 });
+  function saveLoadout() {
+    try { localStorage.setItem('hd_loadout', JSON.stringify(loadout)); } catch {}
+  }
   const SHOP_ITEMS = [
     {
       id: 'bomb', name: 'START +1 BOMB', cost: 200,
@@ -938,17 +999,98 @@
     }
   }
   function showHomeView() {
-    overlayPanel.classList.remove('shopView', 'readyView');
+    overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView');
     coinAmt.textContent = shop.coins;
   }
   function showShopView() {
     overlayPanel.classList.add('shopView');
-    overlayPanel.classList.remove('readyView');
+    overlayPanel.classList.remove('readyView', 'loadoutView');
     renderShop();
   }
   function showReadyView() {
     overlayPanel.classList.add('readyView');
-    overlayPanel.classList.remove('shopView');
+    overlayPanel.classList.remove('shopView', 'loadoutView');
+  }
+  function showLoadoutView() {
+    overlayPanel.classList.add('loadoutView');
+    overlayPanel.classList.remove('shopView', 'readyView');
+    renderLoadout();
+  }
+
+  function renderLoadout() {
+    const list = document.getElementById('loadoutList');
+    list.innerHTML = '';
+    // Clamp loadout against owned
+    loadout.charges = Math.min(loadout.charges, shop.charges);
+    if (loadout.charges < 0) loadout.charges = 0;
+
+    const rows = [
+      {
+        key: 'bomb', name: 'EXTRA BOMB',
+        desc: 'ランの初期ボムを +' + shop.starters.bomb,
+        owned: shop.starters.bomb,
+        type: 'toggle',
+      },
+      {
+        key: 'life', name: 'EXTRA LIFE',
+        desc: 'ランの初期ライフを +' + shop.starters.life,
+        owned: shop.starters.life,
+        type: 'toggle',
+      },
+      {
+        key: 'power', name: 'POWER Lv2 START',
+        desc: '武器Lv2 から開始',
+        owned: shop.starters.power,
+        type: 'toggle',
+      },
+      {
+        key: 'charges', name: 'BULLET TIME CHARGE',
+        desc: '親指曲げで発動 / 使った分だけ減少',
+        owned: shop.charges,
+        type: 'count',
+      },
+    ];
+    for (const r of rows) {
+      const wrap = document.createElement('div');
+      const disabled = r.owned <= 0;
+      wrap.className = 'item' + (disabled ? ' disabled' : '')
+                       + (r.type === 'toggle' && loadout[r.key] && !disabled ? ' on' : '');
+      const meta = `<div><div class="name">${r.name}</div><div class="desc">${r.desc}</div>`
+                 + `<div class="qty">${r.type === 'count' ? `所持 ${r.owned}` : `購入 ${r.owned}`}</div></div>`;
+      let action;
+      if (r.type === 'toggle') {
+        const on = !disabled && loadout[r.key];
+        action = `<button type="button">${on ? 'USE' : disabled ? '—' : 'OFF'}</button>`;
+        wrap.innerHTML = meta + `<div></div>` + action;
+        const btn = wrap.querySelector('button');
+        if (disabled) btn.disabled = true;
+        btn.addEventListener('click', () => {
+          if (disabled) return;
+          loadout[r.key] = !loadout[r.key];
+          saveLoadout();
+          renderLoadout();
+        });
+      } else {
+        const n = Math.min(loadout.charges, r.owned);
+        action = `<div class="stepper">
+          <button type="button" data-act="dec" ${(disabled || n <= 0) ? 'disabled' : ''}>−</button>
+          <span class="num">${n}</span>
+          <button type="button" data-act="inc" ${(disabled || n >= r.owned) ? 'disabled' : ''}>＋</button>
+        </div>`;
+        wrap.innerHTML = meta + `<div class="owned">${r.owned}</div>` + action;
+        for (const b of wrap.querySelectorAll('button')) {
+          b.addEventListener('click', () => {
+            if (b.disabled) return;
+            const act = b.dataset.act;
+            if (act === 'inc') loadout.charges = Math.min(r.owned, loadout.charges + 1);
+            else loadout.charges = Math.max(0, loadout.charges - 1);
+            saveLoadout();
+            renderLoadout();
+          });
+        }
+      }
+      list.appendChild(wrap);
+    }
   }
   function awardCoinsFromRun() {
     const earned = Math.floor(state.score / 200)
@@ -1513,8 +1655,9 @@
 
   function useActiveItem() {
     const p = state.player;
-    if (shop.charges > 0) {
-      shop.charges--;
+    if (state.runCharges > 0 && shop.charges > 0) {
+      state.runCharges--;
+      shop.charges = Math.max(0, shop.charges - 1);
       saveShop();
       state.bulletTime = 180;
       state.shake = Math.max(state.shake, 10);
@@ -2032,9 +2175,10 @@
     hud.grazeText.textContent = state.graze.boost > 0 ? 'MAX!' : state.graze.value;
     hud.grazeBar.style.width = (state.graze.value / state.graze.max * 100) + '%';
     hud.boostFlag.classList.toggle('on', state.graze.boost > 0);
-    hud.useCharges.textContent = shop.charges + (state.bulletTime > 0 ? '  ACTIVE' : '');
+    const usable = state.running ? (state.runCharges || 0) : shop.charges;
+    hud.useCharges.textContent = usable + (state.bulletTime > 0 ? '  ACTIVE' : '');
     hud.useCharges.style.color = state.bulletTime > 0 ? '#88e0ff'
-                               : shop.charges > 0 ? '#ffd066' : '#555a82';
+                               : usable > 0 ? '#ffd066' : '#555a82';
   }
 
   // ---------- Rendering ----------
@@ -2810,8 +2954,8 @@
     pauseBtn.classList.remove('paused');
     state.t = 0;
     state.score = 0;
-    state.lives = 5 + (shop.starters.life || 0);
-    state.bombs = 4 + (shop.starters.bomb || 0);
+    state.lives = 5 + (loadout.life ? (shop.starters.life || 0) : 0);
+    state.bombs = 4 + (loadout.bomb ? (shop.starters.bomb || 0) : 0);
     state.guard.remaining = 600;
     state.guard.active = false;
     state.stageNo = 1;
@@ -2826,10 +2970,12 @@
     state.player.invuln = 60;
     state.player.dashCd = 0;
     state.player.dashTrail.length = 0;
-    state.power = 1 + (shop.starters.power || 0);
+    state.power = 1 + (loadout.power ? (shop.starters.power || 0) : 0);
     state.powerFlash = 0;
     state.bulletTime = 0;
     state.thumbBent = false;
+    // Per-run charges cap from loadout
+    state.runCharges = Math.min(loadout.charges, shop.charges);
     state.graze.value = 0;
     state.graze.boost = 0;
     state.focus = false;
@@ -2865,6 +3011,8 @@
   backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
   backBtn.addEventListener('click', () => { showHomeView(); });
+  document.getElementById('loadoutBtn').addEventListener('click', () => { showLoadoutView(); });
+  document.getElementById('loadoutBack').addEventListener('click', () => { showHomeView(); });
 
   // Daily Challenge: read URL on load, sync UI
   (() => {
