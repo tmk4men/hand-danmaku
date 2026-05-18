@@ -285,8 +285,34 @@
     letter-spacing: 0.1em;
   }
   #overlay button:hover { filter: brightness(1.15); }
-  #overlay .panel.shopView .home-only { display: none; }
+  #overlay .panel.shopView .home-only,
+  #overlay .panel.readyView .home-only { display: none; }
   #overlay .panel:not(.shopView) .shop-only { display: none; }
+  #overlay .panel:not(.readyView) .ready-only { display: none; }
+  #overlay .panel.shopView .ready-only,
+  #overlay .panel.readyView .shop-only { display: none; }
+  .readyBig {
+    font-size: 36px;
+    color: #88e0ff;
+    letter-spacing: 0.25em;
+    text-shadow: 0 0 12px rgba(136,224,255,0.4);
+    margin: 18px 0 10px;
+  }
+  #readyHint  { font-size: 12px; color: #cfd2f0; margin: 4px 0; }
+  #readyStat  { font-size: 11px; color: #8890b8; margin: 4px 0 16px; min-height: 16px; }
+  #playBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ready-only .back {
+    display: block;
+    margin: 14px auto 0;
+    background: none;
+    border: 1px solid #2a2f55;
+    color: #8890b8;
+    padding: 4px 12px;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    cursor: pointer;
+  }
+  .ready-only .back:hover { color: #ffffff; border-color: #88a8ff; }
 
   #coinBar {
     display: flex; align-items: center; justify-content: center;
@@ -462,6 +488,14 @@
         </div>
 
         <button id="startBtn" class="home-only">START</button>
+
+        <div class="ready-only">
+          <div class="readyBig">READY?</div>
+          <div id="readyHint">手をカメラの中央に映して PLAY</div>
+          <div id="readyStat">カメラ準備中…</div>
+          <button id="playBtn" type="button" disabled>LOADING…</button>
+          <button class="back" id="backToHomeBtn" type="button">◀ HOME</button>
+        </div>
       </div>
     </div>
   </div>
@@ -493,6 +527,9 @@
   const startBtn  = document.getElementById('startBtn');
   const shopBtn   = document.getElementById('shopBtn');
   const backBtn   = document.getElementById('backBtn');
+  const playBtn   = document.getElementById('playBtn');
+  const backHome  = document.getElementById('backToHomeBtn');
+  const readyStat = document.getElementById('readyStat');
   const shopList  = document.getElementById('shopList');
   const coinAmt   = document.getElementById('coinAmt');
   const coinAmt2  = document.getElementById('coinAmt2');
@@ -691,12 +728,17 @@
     }
   }
   function showHomeView() {
-    overlayPanel.classList.remove('shopView');
+    overlayPanel.classList.remove('shopView', 'readyView');
     coinAmt.textContent = shop.coins;
   }
   function showShopView() {
     overlayPanel.classList.add('shopView');
+    overlayPanel.classList.remove('readyView');
     renderShop();
+  }
+  function showReadyView() {
+    overlayPanel.classList.add('readyView');
+    overlayPanel.classList.remove('shopView');
   }
   function awardCoinsFromRun() {
     const earned = Math.floor(state.score / 200)
@@ -2348,23 +2390,39 @@
   }
 
   // ---------- Start / restart ----------
-  async function start() {
+  async function goToReady() {
+    audio.init();
+    audio.resume();
+    errMsg.textContent = '';
+    showReadyView();
+    if (hands) {
+      playBtn.disabled = false;
+      playBtn.textContent = 'PLAY';
+      readyStat.textContent = '準備完了 — PLAY で開始';
+      return;
+    }
+    playBtn.disabled = true;
+    playBtn.textContent = 'LOADING…';
+    try {
+      readyStat.textContent = 'モデル読み込み中…';
+      await initHands();
+      readyStat.textContent = 'カメラ起動中…';
+      await initCamera();
+    } catch (err) {
+      errMsg.textContent = err.message;
+      readyStat.textContent = 'エラー — HOMEに戻ってやり直してください';
+      return;
+    }
+    playBtn.disabled = false;
+    playBtn.textContent = 'PLAY';
+    readyStat.textContent = '準備完了 — PLAY で開始';
+  }
+
+  function start() {
     overlay.classList.add('hidden');
     overlay.querySelector('h1.home-only').textContent = 'HAND DANMAKU';
     document.getElementById('scoreSummary').innerHTML = '';
-    audio.init();
     audio.resume();
-    if (!hands) {
-      try {
-        statusEl.textContent = 'model: initializing…';
-        await initHands();
-        await initCamera();
-      } catch (err) {
-        errMsg.textContent = err.message;
-        overlay.classList.remove('hidden');
-        return;
-      }
-    }
     // reset game
     state.running = true;
     state.paused = false;
@@ -2415,7 +2473,9 @@
     updateHud();
   }
 
-  startBtn.addEventListener('click', start);
+  startBtn.addEventListener('click', goToReady);
+  playBtn.addEventListener('click', () => { if (!playBtn.disabled) start(); });
+  backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
   backBtn.addEventListener('click', () => { showHomeView(); });
   coinAmt.textContent = shop.coins;
