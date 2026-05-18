@@ -223,6 +223,7 @@
   }
   #camBtn:hover { border-color: #88a8ff; color: #ffffff; }
   #camBtn.off { color: #555a82; }
+  #camBtn.mask { color: #ffd066; border-color: #ffd066; }
 
   #pauseOverlay {
     position: absolute; inset: 0;
@@ -615,10 +616,11 @@
   </div>
 </div>
 
-<!-- MediaPipe Hands (Solutions / Heavy model: modelComplexity=1) -->
+<!-- MediaPipe Hands (Solutions / Heavy model: modelComplexity=1) + Face Detection (short-range) -->
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/face_detection.js" crossorigin="anonymous"></script>
 
 <script>
 (() => {
@@ -653,11 +655,26 @@
   const muteBtn   = document.getElementById('muteBtn');
   const camBtn    = document.getElementById('camBtn');
   const camBg = {
-    // 'on' = camera background visible, 'off' = no camera
+    // 'on' = camera visible; 'mask' = face-tracked mosaic; 'off' = no camera
     state: (() => {
       const v = localStorage.getItem('hd_cammode');
-      return v === 'off' ? 'off' : 'on';  // legacy 'mask' migrates to 'on'
+      return (v === 'off' || v === 'mask') ? v : 'on';
     })(),
+  };
+  let _mosaicBuf = null;
+  function getMosaicBuf() {
+    if (!_mosaicBuf) {
+      _mosaicBuf = document.createElement('canvas');
+      _mosaicBuf.width = 8; _mosaicBuf.height = 8;
+    }
+    return _mosaicBuf;
+  }
+  // Latest face bounding box from MediaPipe Face Detection, normalized to source frame.
+  // Smoothed across frames for stability.
+  const faceTrack = {
+    box: null,            // { x, y, w, h } in [0..1]
+    target: null,
+    lostFrames: 0,
   };
   const hud = {
     score: document.getElementById('score'),
@@ -987,7 +1004,9 @@
 
   // ---------- Hand tracking (MediaPipe Hands — Heavy) ----------
   let hands = null;
+  let faceDet = null;
   let camera = null;
+  let frameTick = 0;
 
   async function initHands() {
     hands = new Hands({
@@ -1003,6 +1022,43 @@
     });
     hands.onResults(onHandResults);
     statusEl.textContent = 'model: hand-tracking (heavy)';
+  }
+
+  async function initFaceDetector() {
+    if (typeof FaceDetection === 'undefined') return; // CDN didn't load
+    faceDet = new FaceDetection({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${file}`,
+    });
+    faceDet.setOptions({
+      model: 'short',           // 0..2m range, lightweight
+      minDetectionConfidence: 0.5,
+    });
+    faceDet.onResults(onFaceResults);
+  }
+
+  function onFaceResults(results) {
+    if (results.detections && results.detections.length) {
+      // Use the largest detected face
+      let best = results.detections[0];
+      let bestArea = best.boundingBox.width * best.boundingBox.height;
+      for (let i = 1; i < results.detections.length; i++) {
+        const d = results.detections[i];
+        const a = d.boundingBox.width * d.boundingBox.height;
+        if (a > bestArea) { best = d; bestArea = a; }
+      }
+      const b = best.boundingBox;
+      // Center the box explicitly
+      faceTrack.target = {
+        x: b.xCenter - b.width / 2,
+        y: b.yCenter - b.height / 2,
+        w: b.width, h: b.height,
+      };
+      faceTrack.lostFrames = 0;
+    } else {
+      faceTrack.lostFrames++;
+      if (faceTrack.lostFrames > 30) faceTrack.target = null;
+    }
   }
 
   function onHandResults(results) {
@@ -1106,6 +1162,10 @@
       camera = new Camera(video, {
         onFrame: async () => {
           if (hands) await hands.send({ image: video });
+          // Run face detection on every other frame to halve its cost
+          if (faceDet && (frameTick++ & 1) === 0) {
+            await faceDet.send({ image: video });
+          }
         },
         width: 640,
         height: 480,
@@ -1853,6 +1913,44 @@
       ctx.save();
       ctx.translate(VW, 0); ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, VW, VH);
+
+      // Face mosaic — smooth the bbox toward the latest detection
+      if (camBg.state === 'mask') {
+        if (faceTrack.target) {
+          if (!faceTrack.box) faceTrack.box = { ...faceTrack.target };
+          else {
+            const k = 0.4;
+            faceTrack.box.x = faceTrack.box.x + (faceTrack.target.x - faceTrack.box.x) * k;
+            faceTrack.box.y = faceTrack.box.y + (faceTrack.target.y - faceTrack.box.y) * k;
+            faceTrack.box.w = faceTrack.box.w + (faceTrack.target.w - faceTrack.box.w) * k;
+            faceTrack.box.h = faceTrack.box.h + (faceTrack.target.h - faceTrack.box.h) * k;
+          }
+        }
+        if (faceTrack.box) {
+          const pad = 0.4;
+          const f = faceTrack.box;
+          const cx = f.x + f.w / 2;
+          const cy = f.y + f.h / 2;
+          const fw = clamp(f.w * (1 + pad), 0.05, 1);
+          const fh = clamp(f.h * (1 + pad), 0.05, 1);
+          const nx = clamp(cx - fw / 2, 0, 1);
+          const ny = clamp(cy - fh / 2, 0, 1);
+          const mb = getMosaicBuf();
+          const mctx = mb.getContext('2d');
+          mctx.imageSmoothingEnabled = false;
+          mctx.drawImage(
+            video,
+            nx * video.videoWidth,  ny * video.videoHeight,
+            fw * video.videoWidth,  fh * video.videoHeight,
+            0, 0, mb.width, mb.height
+          );
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(
+            mb, 0, 0, mb.width, mb.height,
+            nx * VW, ny * VH, fw * VW, fh * VH
+          );
+        }
+      }
       ctx.restore();
     } else {
       // black base when camera off / not ready
@@ -2126,6 +2224,21 @@
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#88e0ff';
       ctx.fillText('▸ BULLET TIME', 8, 8);
+    }
+
+    // Face mosaic indicator
+    if (camBg.state === 'mask') {
+      ctx.font = '8px monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const txt = faceTrack.box ? 'FACE MASK ON' : 'FACE MASK — searching…';
+      const tw = ctx.measureText(txt).width + 12;
+      ctx.fillStyle = '#0a0c20';
+      ctx.fillRect(6, VH - 18, tw, 12);
+      ctx.fillStyle = '#ffd066';
+      ctx.fillRect(6, VH - 18, tw, 2);
+      ctx.fillStyle = '#ffd066';
+      ctx.fillText(txt, 11, VH - 14);
     }
 
     // Branding watermark — subtle, bottom-right inside game area
@@ -2524,6 +2637,7 @@
     try {
       readyStat.textContent = 'モデル読み込み中…';
       await initHands();
+      await initFaceDetector();
       readyStat.textContent = 'カメラ起動中…';
       await initCamera();
     } catch (err) {
@@ -2627,14 +2741,17 @@
   });
 
   function syncCamBtn() {
-    camBtn.textContent = camBg.state === 'on' ? 'CAM' : 'OFF';
-    camBtn.title = camBg.state === 'on'
-      ? 'Camera background (C) — click to turn off'
-      : 'Camera off (C) — click to turn on';
+    const labels = { on: 'CAM', mask: 'MSK', off: 'OFF' };
+    camBtn.textContent = labels[camBg.state];
+    camBtn.title = camBg.state === 'on' ? 'Camera (C) — next: face mosaic'
+                 : camBg.state === 'mask' ? 'Face mosaic (C) — next: off'
+                 : 'Camera off (C) — next: on';
     camBtn.classList.toggle('off', camBg.state === 'off');
+    camBtn.classList.toggle('mask', camBg.state === 'mask');
   }
   function toggleCamBg() {
-    camBg.state = camBg.state === 'on' ? 'off' : 'on';
+    camBg.state = camBg.state === 'on' ? 'mask'
+                : camBg.state === 'mask' ? 'off' : 'on';
     try { localStorage.setItem('hd_cammode', camBg.state); } catch {}
     syncCamBtn();
   }
