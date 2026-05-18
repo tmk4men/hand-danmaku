@@ -1856,8 +1856,8 @@
       state.shake = Math.max(state.shake, 8);
       SFX.pickupLife();
     } else if (type === 'dragon') {
+      // Preserve any charge already built up so a second crystal doesn't wipe it.
       state.dragonUnlocked = true;
-      state.dragonCharge = 0;
       state.score += 300;
       pushPopup(p.x, p.y - 22, 'DRAGON UNLOCKED', '#ff77c8', 14);
       state.shake = Math.max(state.shake, 10);
