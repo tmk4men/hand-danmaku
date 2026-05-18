@@ -1490,6 +1490,7 @@
       t: 0,
       phase: 0,
       pattern: 0,
+      laser: { charge: 0, fire: 0, angle: 0, cardShown: false },
     };
     state.enemies.push({ ...state.boss, isBoss: true, ref: state.boss });
     state.bossFight = true;
@@ -1839,8 +1840,8 @@
       e.x = b.x; e.y = b.y;
       e.hp = Math.min(e.hp, b.hp = e.hp); // sync
 
-      // Boss patterns rotate every 360 frames
-      const pat = Math.floor(b.t / 360) % 3;
+      // Boss patterns rotate every 360 frames (4 patterns now)
+      const pat = Math.floor(b.t / 360) % 4;
       const phase = b.t % 360;
 
       if (pat === 0) {
@@ -1859,7 +1860,7 @@
             fireBullet(b.x, b.y + 20, base + k * TAU / 3, 2.0, '#9bf2ff', 5);
           }
         }
-      } else {
+      } else if (pat === 2) {
         // Ring bursts
         if (phase % 90 === 0) {
           const n = 18;
@@ -1871,6 +1872,54 @@
         if (phase % 45 === 22) {
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           fireBullet(b.x, b.y + 10, aim, 3.0, '#ff5050', 7);
+        }
+      } else {
+        // LASER BEAM — charge, lock, sweep across player
+        // Fire two laser cycles per 360-frame slot (each ~180f)
+        const sub = phase % 180;
+        const L = b.laser;
+        if (sub === 0) {
+          // Begin charging, aim at player
+          L.charge = 36;
+          L.fire = 0;
+          L.angle = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          SFX.warning();
+          if (sub === 0 && phase === 0 && !L.cardShown) {
+            pushPopup(b.x, b.y - 32, '!! LASER ARRAY !!', '#ff77c8', 14);
+            L.cardShown = true;
+          } else if (sub === 0 && phase !== 0) {
+            pushPopup(b.x, b.y - 32, 'LASER LOCK ON', '#ff77c8', 11);
+          }
+        }
+        if (L.charge > 0) {
+          L.charge--;
+          // Track player gently while charging
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          L.angle = L.angle * 0.85 + aim * 0.15;
+          if (L.charge === 0) {
+            L.fire = 100;
+            state.shake = Math.max(state.shake, 14);
+            SFX.bomb();
+          }
+        } else if (L.fire > 0) {
+          L.fire--;
+          // Slowly sweep toward current player position
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          let d = aim - L.angle;
+          while (d > Math.PI) d -= TAU;
+          while (d < -Math.PI) d += TAU;
+          L.angle += clamp(d, -0.018, 0.018);
+          // Player collision: project player onto beam, check perpendicular distance
+          const p = state.player;
+          const ca = Math.cos(L.angle), sa = Math.sin(L.angle);
+          const dx = p.x - b.x, dy = p.y - b.y;
+          const along = dx * ca + dy * sa;
+          const across = -dx * sa + dy * ca;
+          const halfW = 7;
+          if (along > 8 && Math.abs(across) < halfW + p.hitR
+              && p.invuln <= 0 && !state.guard.active) {
+            playerHit();
+          }
         }
       }
       return;
@@ -2320,6 +2369,43 @@
     // enemies
     for (const e of state.enemies) {
       drawEnemy(e);
+    }
+
+    // boss laser (charge guide + main beam)
+    if (state.boss && (state.boss.laser.charge > 0 || state.boss.laser.fire > 0)) {
+      const b = state.boss, L = b.laser;
+      const len = Math.hypot(VW, VH) + 40;
+      ctx.save();
+      ctx.translate(b.x, b.y);
+      ctx.rotate(L.angle);
+      if (L.charge > 0) {
+        // Thin pulsing crimson guide line
+        const blink = Math.floor(L.charge / 4) % 2 === 0;
+        const w = blink ? 2 : 1;
+        ctx.fillStyle = blink ? '#ff3060' : '#ff6688';
+        ctx.fillRect(8, -w / 2, len, w);
+        // Pulse markers along the line
+        for (let i = 0; i < 8; i++) {
+          ctx.fillRect(8 + i * 28, -2, 4, 4);
+        }
+      } else if (L.fire > 0) {
+        // Outer glow (chunky transparent)
+        ctx.fillStyle = 'rgba(255,124,200,0.35)';
+        ctx.fillRect(0, -12, len, 24);
+        // Mid beam
+        ctx.fillStyle = '#ff77c8';
+        ctx.fillRect(0, -7, len, 14);
+        // White core
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, -3, len, 6);
+        // Sparking pulse blocks at the muzzle
+        const m = (state.t % 8) * 4;
+        ctx.fillStyle = '#ffd066';
+        for (let i = 0; i < 4; i++) {
+          ctx.fillRect(m + i * 28, -10, 4, 20);
+        }
+      }
+      ctx.restore();
     }
 
     // player shots — chunky 2-tone pellet (homing = cyan diamond)
