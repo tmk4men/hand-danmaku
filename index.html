@@ -240,6 +240,25 @@
   #camBtn.off { color: #555a82; }
   #camBtn.mask { color: #ffd066; border-color: #ffd066; }
 
+  #langBtn {
+    position: absolute;
+    top: 10px; right: 148px;
+    width: 44px; height: 38px;
+    background: linear-gradient(180deg, rgba(15,18,46,0.85), rgba(8,10,28,0.85));
+    border: 2px solid #2a2f55;
+    box-shadow: 0 0 0 2px #06081a, 0 0 12px rgba(120,140,255,0.25);
+    color: #cfd2f0;
+    font-family: inherit;
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    padding: 0;
+    z-index: 5;
+    display: flex; align-items: center; justify-content: center;
+    image-rendering: pixelated;
+  }
+  #langBtn:hover { border-color: #88a8ff; color: #ffffff; }
+
   #pauseOverlay {
     position: absolute; inset: 0;
     display: none;
@@ -724,13 +743,14 @@
       <div class="meter dragon"><div class="fill" id="dragonBar" style="width:0%"></div></div>
     </div>
 
+    <button id="langBtn" type="button" title="Language (L)">JA</button>
     <button id="camBtn" type="button" title="Camera background (C)">CAM</button>
     <button id="muteBtn" type="button" title="Mute (M)">SFX</button>
     <button id="pauseBtn" type="button" title="Pause (P)"><span class="ico"><span></span><span></span></span></button>
     <div id="pauseOverlay">
       <div>
-        <div class="label">PAUSED</div>
-        <div class="sub">PRESS P OR TAP ICON TO RESUME</div>
+        <div class="label" data-i18n="paused">PAUSED</div>
+        <div class="sub" data-i18n="pauseSub">PRESS P OR TAP ICON TO RESUME</div>
       </div>
     </div>
 
@@ -738,37 +758,37 @@
 
     <div id="overlay">
       <div class="panel" id="overlayPanel">
-        <h1 class="home-only">HAND DANMAKU</h1>
-        <p class="home-only kicker">HAND-TRACKING BULLET HELL</p>
+        <h1 class="home-only" id="titleH1">HAND DANMAKU</h1>
+        <p class="home-only kicker" data-i18n="kicker">HAND-TRACKING BULLET HELL</p>
 
         <div id="overlayMsg" class="howto home-only">
           <div class="row" style="color:#88e0ff">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 1 H9 V10 H11 V14 H5 V10 H7 Z" fill="currentColor"/></svg></span>
-            <b>MOVE</b><em>人差し指で機体を移動</em>
+            <b>MOVE</b><em data-i18n="moveDesc">人差し指で機体を移動</em>
           </div>
           <div class="row" style="color:#ff7c98">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="8" r="3.2" fill="currentColor"/><circle cx="11" cy="8" r="2.4" fill="currentColor"/></svg></span>
-            <b>BOMB</b><em>親指と人差し指でつまむ</em>
+            <b>BOMB</b><em data-i18n="bombDesc">親指と人差し指でつまむ</em>
           </div>
           <div class="row" style="color:#7fffd4">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="currentColor"/><path d="M2 6.5 H14 M2 9.5 H14" stroke="#06081a" stroke-width="0.9"/></svg></span>
-            <b>GUARD</b><em>人差し指以外を握る（最大10秒）</em>
+            <b>GUARD</b><em data-i18n="guardDesc">人差し指以外を握る（最大10秒）</em>
           </div>
           <div class="row" style="color:#88e0ff">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 13 L7 2 M11 13 L9 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
-            <b>FOCUS</b><em>ピース（人差し指＋中指を立てる）</em>
+            <b>FOCUS</b><em data-i18n="focusDesc">ピース（人差し指＋中指を立てる）</em>
           </div>
           <div class="row" style="color:#aef4ff">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8 H12 M9 5 L12 8 L9 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M13.5 6 H15 M13.5 10 H15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
-            <b>DASH</b><em>指先を素早く振る</em>
+            <b>DASH</b><em data-i18n="dashDesc">指先を素早く振る</em>
           </div>
           <div class="row" style="color:#ffd066">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3 V11 H12 V9 L9 6 L11 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 6 H11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
-            <b>USE</b><em>親指を内側に曲げる → アイテム使用</em>
+            <b>USE</b><em data-i18n="useDesc">親指を内側に曲げる → アイテム使用</em>
           </div>
           <div class="row" style="color:#ff77c8">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2 V11 M5 9 H11 M6 11 H10 M7 13 H9" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg></span>
-            <b>DRAGON</b><em>D アイテム取得 → 親指立て10秒で必殺 → 手を変えて発射</em>
+            <b>DRAGON</b><em data-i18n="dragonDesc">D アイテム取得 → 親指立て10秒で必殺 → 手を変えて発射</em>
           </div>
         </div>
 
@@ -780,55 +800,56 @@
         </div>
 
         <div id="dailyBar" class="home-only">
-          <div class="dailyLabel">DAILY CHALLENGE</div>
+          <div class="dailyLabel" data-i18n="dailyTitle">DAILY CHALLENGE</div>
           <button type="button" id="dailyBtn" class="btn-toggle">OFF</button>
           <div id="dailyTag"></div>
         </div>
 
         <div id="coinBar" class="home-only">
-          <span>COINS <span class="coins" id="coinAmt">0</span></span>
-          <button type="button" id="loadoutBtn">LOADOUT</button>
-          <button type="button" id="shopBtn">SHOP</button>
+          <span><span data-i18n="coinsLabel">COINS</span> <span class="coins" id="coinAmt">0</span></span>
+          <button type="button" id="loadoutBtn" data-i18n="loadoutBtn">LOADOUT</button>
+          <button type="button" id="shopBtn" data-i18n="shopBtn">SHOP</button>
         </div>
         <div id="loadoutSummary" class="home-only">
-          START &nbsp;<span class="kv">LIFE <b id="sumLife">5</b></span>
+          <span data-i18n="startLabel">START</span> &nbsp;<span class="kv">LIFE <b id="sumLife">5</b></span>
           <span class="kv">BOMB <b id="sumBomb">4</b></span>
           <span class="kv">PWR Lv<b id="sumPower">1</b></span>
           <span class="kv">USE <b id="sumUse">0</b></span>
         </div>
 
-        <p class="home-only" style="font-size:11px; color:#8890b8">カメラ許可が必要</p>
+        <p class="home-only" style="font-size:11px; color:#8890b8" data-i18n="permsNeeded">カメラ許可が必要</p>
         <p style="color:#ffb3b3" id="errMsg"></p>
 
         <div class="loadout-only" style="text-align:left;">
-          <h1 style="font-size:20px; margin: 0 0 6px;">LOADOUT</h1>
-          <p style="font-size:11px; color:#8890b8; margin:0 0 4px;">
+          <h1 style="font-size:20px; margin: 0 0 6px;" data-i18n="loadoutTitle">LOADOUT</h1>
+          <p style="font-size:11px; color:#8890b8; margin:0 0 4px;" data-i18n="loadoutIntro">
             次のランで使うアイテムを選択。
           </p>
           <div id="loadoutList"></div>
           <div style="display:flex; align-items:center; justify-content:flex-end;">
-            <button type="button" id="loadoutBack" class="btn-ghost">◀ BACK</button>
+            <button type="button" id="loadoutBack" class="btn-ghost" data-i18n="backBtn">◀ BACK</button>
           </div>
         </div>
 
         <div class="shop-only" style="text-align:left;">
-          <h1 style="font-size:20px; margin: 0 0 6px;">SHOP</h1>
-          <p style="font-size:11px; color:#8890b8; margin:0 0 4px;">
+          <h1 style="font-size:20px; margin: 0 0 6px;" data-i18n="shopTitle">SHOP</h1>
+          <p style="font-size:11px; color:#8890b8; margin:0 0 4px;" data-i18n="shopIntro">
             プレイ後にスコア200ごとに1コイン獲得。
           </p>
           <div id="shopList"></div>
           <div style="display:flex; align-items:center; justify-content:space-between;">
-            <span style="font-size:12px;">COINS <span style="color:#ffd066; font-weight:700;" id="coinAmt2">0</span></span>
-            <button type="button" id="backBtn" class="btn-ghost">◀ BACK</button>
+            <span style="font-size:12px;"><span data-i18n="coinsLabel">COINS</span> <span style="color:#ffd066; font-weight:700;" id="coinAmt2">0</span></span>
+            <button type="button" id="backBtn" class="btn-ghost" data-i18n="backBtn">◀ BACK</button>
           </div>
         </div>
 
-        <button id="startBtn" class="home-only btn-cta btn-lg">▶ PLAY NOW</button>
+        <button id="startBtn" class="home-only btn-cta btn-lg" data-i18n="playBtn">▶ PLAY NOW</button>
 
         <div class="ready-only">
-          <div class="readyBig">READY?</div>
-          <div id="readyHint">手をカメラに映すと自動で開始<br>
-            <span style="color:#8890b8;font-size:11px;">PLAY ボタンを押しても開始できます</span>
+          <div class="readyBig" data-i18n="readyBig">READY?</div>
+          <div id="readyHint">
+            <span data-i18n="readyHint1">手をカメラに映すと自動で開始</span><br>
+            <span style="color:#8890b8;font-size:11px;" data-i18n="readyHint2">PLAY ボタンを押しても開始できます</span>
           </div>
           <div id="readyStat">カメラ準備中…</div>
           <div id="readyDots">
@@ -837,7 +858,7 @@
             <div class="dot" id="dotHand"><span class="ind"></span>HAND</div>
           </div>
           <button id="playBtn" type="button" class="btn-cta btn-lg" disabled>LOADING…</button>
-          <button class="back btn-ghost" id="backToHomeBtn" type="button">◀ HOME</button>
+          <button class="back btn-ghost" id="backToHomeBtn" type="button" data-i18n="homeBtn">◀ HOME</button>
         </div>
       </div>
     </div>
@@ -882,6 +903,7 @@
   const pauseOv   = document.getElementById('pauseOverlay');
   const muteBtn   = document.getElementById('muteBtn');
   const camBtn    = document.getElementById('camBtn');
+  const langBtn   = document.getElementById('langBtn');
   const camBg = {
     // 'on' = camera visible; 'mask' = face-tracked mosaic; 'off' = no camera
     state: (() => {
@@ -1020,6 +1042,149 @@
     rank: 'C',
   };
 
+  // ---------- i18n ----------
+  const STR = {
+    ja: {
+      kicker: 'HAND-TRACKING BULLET HELL',
+      titleHome: 'HAND DANMAKU',
+      titleGameOver: 'GAME OVER',
+      coinsLabel: 'COINS',
+      startLabel: 'START',
+      shopBtn: 'SHOP',
+      loadoutBtn: 'LOADOUT',
+      shopTitle: 'SHOP',
+      loadoutTitle: 'LOADOUT',
+      shopIntro: 'プレイ後にスコア200ごとに1コイン獲得。',
+      loadoutIntro: '次のランで使うアイテムを選択。',
+      backBtn: '◀ BACK',
+      homeBtn: '◀ HOME',
+      playBtn: '▶ PLAY NOW',
+      playAgain: '▶ PLAY AGAIN',
+      tryDaily: '▶ TRY AGAIN (DAILY)',
+      saveClip: '[REC] SAVE CLIP',
+      shareText: '[TXT] SHARE',
+      copied: '✓ COPIED',
+      permsNeeded: 'カメラ許可が必要',
+      readyBig: 'READY?',
+      readyHint1: '手をカメラに映すと自動で開始',
+      readyHint2: 'PLAY ボタンを押しても開始できます',
+      loading: 'モデル読み込み中…',
+      cameraStarting: 'カメラ起動中…',
+      readyDone: '準備完了 — PLAY で開始',
+      readyError: 'エラー — HOMEに戻ってやり直してください',
+      paused: 'PAUSED',
+      pauseSub: 'PRESS P OR TAP ICON TO RESUME',
+      moveDesc: '人差し指で機体を移動',
+      bombDesc: '親指と人差し指でつまむ',
+      guardDesc: '人差し指以外を握る（最大10秒）',
+      focusDesc: 'ピース（人差し指＋中指を立てる）',
+      dashDesc: '指先を素早く振る',
+      useDesc: '親指を内側に曲げる → アイテム使用',
+      dragonDesc: 'D アイテム取得 → 親指立て10秒で必殺 → 手を変えて発射',
+      dailyTitle: 'DAILY CHALLENGE',
+      dailyOff: '通常モード / 今日の日付: ',
+      dailyOnTpl: '今日の弾幕({KEY})で全員と勝負',
+      buy: 'BUY', maxBtn: 'MAX',
+      shopBomb: 'スタート時のボムを+1',
+      shopLife: 'スタート時のライフを+1',
+      shopPower: '武器Lv2 からスタート',
+      shopCharge: '親指曲げで発動：3秒間 敵弾を超スロー化',
+      ldBombName: 'EXTRA BOMB', ldBombDesc: 'スタート時のボム +1',
+      ldLifeName: 'EXTRA LIFE', ldLifeDesc: 'スタート時のライフ +1',
+      ldPowerName: 'POWER Lv2 START', ldPowerDesc: '武器Lv2 から開始',
+      ldChargeName: 'BULLET TIME CHARGE', ldChargeDesc: '親指曲げで発動：3秒間 敵弾スロー',
+      notOwned: '未所持', ownedOne: '所持済 — 1個',
+      use: 'USE', off: 'OFF',
+      earnedCoins: 'EARNED',
+    },
+    en: {
+      kicker: 'HAND-TRACKING BULLET HELL',
+      titleHome: 'HAND DANMAKU',
+      titleGameOver: 'GAME OVER',
+      coinsLabel: 'COINS',
+      startLabel: 'START',
+      shopBtn: 'SHOP',
+      loadoutBtn: 'LOADOUT',
+      shopTitle: 'SHOP',
+      loadoutTitle: 'LOADOUT',
+      shopIntro: 'Earn 1 coin per 200 score after each run.',
+      loadoutIntro: 'Pick items to bring into the next run.',
+      backBtn: '◀ BACK',
+      homeBtn: '◀ HOME',
+      playBtn: '▶ PLAY NOW',
+      playAgain: '▶ PLAY AGAIN',
+      tryDaily: '▶ TRY AGAIN (DAILY)',
+      saveClip: '[REC] SAVE CLIP',
+      shareText: '[TXT] SHARE',
+      copied: '✓ COPIED',
+      permsNeeded: 'Camera permission required',
+      readyBig: 'READY?',
+      readyHint1: 'Show your hand to auto-start',
+      readyHint2: 'Or click the PLAY button',
+      loading: 'Loading model…',
+      cameraStarting: 'Starting camera…',
+      readyDone: 'Ready — PLAY to begin',
+      readyError: 'Error — back to HOME and retry',
+      paused: 'PAUSED',
+      pauseSub: 'PRESS P OR TAP ICON TO RESUME',
+      moveDesc: 'Index finger moves the ship',
+      bombDesc: 'Pinch thumb + index',
+      guardDesc: 'Curl every finger but index (max 10s)',
+      focusDesc: 'Peace sign (index + middle up)',
+      dashDesc: 'Flick fingertip quickly',
+      useDesc: 'Bend thumb inward → use item',
+      dragonDesc: 'Pick D crystal → hold thumbs-up 10s → release to fire',
+      dailyTitle: 'DAILY CHALLENGE',
+      dailyOff: 'Normal mode / Today: ',
+      dailyOnTpl: "Today's pattern ({KEY}) — race the world",
+      buy: 'BUY', maxBtn: 'MAX',
+      shopBomb: '+1 starting bomb',
+      shopLife: '+1 starting life',
+      shopPower: 'Start at weapon Lv2',
+      shopCharge: 'Thumb-bend → slow bullets for 3s',
+      ldBombName: 'EXTRA BOMB', ldBombDesc: '+1 starting bomb',
+      ldLifeName: 'EXTRA LIFE', ldLifeDesc: '+1 starting life',
+      ldPowerName: 'POWER Lv2 START', ldPowerDesc: 'Begin at weapon Lv2',
+      ldChargeName: 'BULLET TIME CHARGE', ldChargeDesc: 'Thumb-bend → slow bullets for 3s',
+      notOwned: 'not owned', ownedOne: 'owned — 1',
+      use: 'USE', off: 'OFF',
+      earnedCoins: 'EARNED',
+    },
+  };
+  let lang = localStorage.getItem('hd_lang');
+  if (lang !== 'ja' && lang !== 'en') {
+    lang = (navigator.language || 'en').toLowerCase().startsWith('ja') ? 'ja' : 'en';
+  }
+  function t(k) { return (STR[lang] && STR[lang][k]) || STR.en[k] || k; }
+  function setLang(l) {
+    lang = l;
+    try { localStorage.setItem('hd_lang', l); } catch {}
+    applyLang();
+  }
+  function applyLang() {
+    document.querySelectorAll('[data-i18n]').forEach(el => {
+      const k = el.dataset.i18n;
+      el.textContent = t(k);
+    });
+    // Buttons whose label depends on state
+    if (typeof startBtn !== 'undefined' && startBtn) {
+      const txt = startBtn.textContent;
+      if (txt.includes('PLAY AGAIN') || txt.includes('TRY AGAIN') || txt.includes('PLAY NOW')) {
+        startBtn.textContent = (state && state.daily && txt.includes('TRY'))
+          ? t('tryDaily')
+          : (txt.includes('AGAIN') ? t('playAgain') : t('playBtn'));
+      }
+    }
+    if (typeof syncDailyBtn === 'function') syncDailyBtn();
+    if (typeof syncLoadoutSummary === 'function') syncLoadoutSummary();
+    if (typeof renderShop === 'function' && overlayPanel
+        && overlayPanel.classList.contains('shopView')) renderShop();
+    if (typeof renderLoadout === 'function' && overlayPanel
+        && overlayPanel.classList.contains('loadoutView')) renderLoadout();
+    const lb = document.getElementById('langBtn');
+    if (lb) lb.textContent = (lang === 'ja') ? 'JA' : 'EN';
+  }
+
   // ---------- Seeded RNG (Mulberry32) for Daily Challenge ----------
   let _seed = 1;
   function setSeed(s) { _seed = (s >>> 0) || 1; }
@@ -1112,28 +1277,24 @@
   }
   const SHOP_ITEMS = [
     {
-      id: 'bomb', name: 'START +1 BOMB', cost: 200,
-      desc: 'スタート時のボムを+1',
+      id: 'bomb', name: 'START +1 BOMB', descKey: 'shopBomb', cost: 200,
       max: () => 1, owned: () => shop.starters.bomb,
-      buy:   () => { shop.starters.bomb = 1; },
+      buy: () => { shop.starters.bomb = 1; },
     },
     {
-      id: 'life', name: 'START +1 LIFE', cost: 400,
-      desc: 'スタート時のライフを+1',
+      id: 'life', name: 'START +1 LIFE', descKey: 'shopLife', cost: 400,
       max: () => 1, owned: () => shop.starters.life,
-      buy:   () => { shop.starters.life = 1; },
+      buy: () => { shop.starters.life = 1; },
     },
     {
-      id: 'power', name: 'START AT Lv2', cost: 600,
-      desc: '武器Lv2 からスタート',
+      id: 'power', name: 'START AT Lv2', descKey: 'shopPower', cost: 600,
       max: () => 1, owned: () => shop.starters.power,
-      buy:   () => { shop.starters.power = 1; },
+      buy: () => { shop.starters.power = 1; },
     },
     {
-      id: 'charge', name: 'BULLET TIME CHARGE', cost: 100,
-      desc: '親指曲げで発動：3秒間 敵弾を超スロー化',
+      id: 'charge', name: 'BULLET TIME CHARGE', descKey: 'shopCharge', cost: 100,
       max: () => 1, owned: () => shop.charges,
-      buy:   () => { shop.charges = 1; },
+      buy: () => { shop.charges = 1; },
     },
   ];
   function saveShop() {
@@ -1154,14 +1315,15 @@
       const buyable = !maxed && shop.coins >= it.cost;
       const row = document.createElement('div');
       row.className = 'item' + (maxed ? ' maxed' : '');
+      const ownedStr = (lang === 'ja') ? `購入済: ${owned}/${max}` : `Owned: ${owned}/${max}`;
       row.innerHTML = `
         <div>
           <div class="name">${it.name}</div>
-          <div class="desc">${it.desc}</div>
-          <div class="meta">${it.stack ? `所持: ${owned}` : `購入済: ${owned}/${max}`}</div>
+          <div class="desc">${t(it.descKey)}</div>
+          <div class="meta">${ownedStr}</div>
         </div>
         <div class="cost">${it.cost}</div>
-        <button type="button" class="btn-cta" ${buyable ? '' : 'disabled'}>${maxed ? 'MAX' : 'BUY'}</button>
+        <button type="button" class="btn-cta" ${buyable ? '' : 'disabled'}>${maxed ? t('maxBtn') : t('buy')}</button>
       `;
       row.querySelector('button').addEventListener('click', () => {
         if (!buyable) return;
@@ -1208,10 +1370,10 @@
     const list = document.getElementById('loadoutList');
     list.innerHTML = '';
     const rows = [
-      { key: 'bomb',    name: 'EXTRA BOMB',         desc: 'スタート時のボム +1',                    owned: shop.starters.bomb  },
-      { key: 'life',    name: 'EXTRA LIFE',         desc: 'スタート時のライフ +1',                  owned: shop.starters.life  },
-      { key: 'power',   name: 'POWER Lv2 START',    desc: '武器Lv2 から開始',                        owned: shop.starters.power },
-      { key: 'charges', name: 'BULLET TIME CHARGE', desc: '親指曲げで発動：3秒間 敵弾スロー',         owned: shop.charges        },
+      { key: 'bomb',    name: t('ldBombName'),   desc: t('ldBombDesc'),   owned: shop.starters.bomb  },
+      { key: 'life',    name: t('ldLifeName'),   desc: t('ldLifeDesc'),   owned: shop.starters.life  },
+      { key: 'power',   name: t('ldPowerName'),  desc: t('ldPowerDesc'),  owned: shop.starters.power },
+      { key: 'charges', name: t('ldChargeName'), desc: t('ldChargeDesc'), owned: shop.charges        },
     ];
     for (const r of rows) {
       const wrap = document.createElement('div');
@@ -1219,8 +1381,8 @@
       const on = !disabled && loadout[r.key];
       wrap.className = 'item' + (disabled ? ' disabled' : '') + (on ? ' on' : '');
       const meta = `<div><div class="name">${r.name}</div><div class="desc">${r.desc}</div>`
-                 + `<div class="qty">${disabled ? '未所持' : '所持済 — 1個'}</div></div>`;
-      const action = `<button type="button" class="btn-toggle${on ? ' on' : ''}">${on ? 'USE' : disabled ? '—' : 'OFF'}</button>`;
+                 + `<div class="qty">${disabled ? t('notOwned') : t('ownedOne')}</div></div>`;
+      const action = `<button type="button" class="btn-toggle${on ? ' on' : ''}">${on ? t('use') : disabled ? '—' : t('off')}</button>`;
       wrap.innerHTML = meta + `<div></div>` + action;
       const btn = wrap.querySelector('button');
       if (disabled) btn.disabled = true;
@@ -2478,16 +2640,16 @@
     const earned = awardCoinsFromRun();
     overlay.classList.remove('hidden');
     showHomeView();
-    overlay.querySelector('h1.home-only').textContent = 'GAME OVER';
+    overlay.querySelector('h1.home-only').textContent = t('titleGameOver');
     const noHit = state.hitsTaken === 0 ? '<span class="nohit">★NO HIT</span>' : '';
     const noBomb = state.usedBombs === 0 ? '<span class="nobomb">★NO BOMB</span>' : '';
     document.getElementById('scoreSummary').innerHTML =
       `<div class="rank-badge rank-${state.rank}">${state.rank}</div>` +
       `<div class="result-line">SCORE <span class="accent">${state.score}</span>  /  HI ${state.hiScore}</div>` +
-      `<div class="result-line">STAGE ${state.stageNo}  /  CHAIN ${state.combo.best}  /  <span class="accent">+${earned} COINS</span></div>` +
+      `<div class="result-line">STAGE ${state.stageNo}  /  CHAIN ${state.combo.best}  /  <span class="accent">+${earned} ${t('coinsLabel')}</span></div>` +
       (noHit || noBomb ? `<div class="result-tags">${noHit}${noBomb}</div>` : '');
     coinAmt.textContent = shop.coins;
-    startBtn.textContent = state.daily ? '▶ TRY AGAIN (DAILY)' : '▶ PLAY AGAIN';
+    startBtn.textContent = state.daily ? t('tryDaily') : t('playAgain');
 
     // Finalize recording, then enable SAVE CLIP
     await clipper.stop();
@@ -2832,11 +2994,13 @@
         ctx.fillRect(x + (w / 4) * i, y, 1, h);
       }
       // BOSS label
-      ctx.fillStyle = '#ffffff';
-      ctx.font = '8px monospace';
+      ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
-      ctx.fillText('BOSS', x, y - 12);
+      ctx.fillStyle = '#06081a';
+      ctx.fillText('BOSS', x + 1, y - 15 + 1);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText('BOSS', x, y - 15);
     }
 
     // stage modifier banner (top-center inside canvas)
@@ -3607,23 +3771,30 @@
   function drawModBanner() {
     const label = (state.daily ? `DAILY ${state.dailyKey}  ` : '')
                 + `STAGE ${state.stageNo}  ${state.mod.name}`;
-    ctx.font = '8px monospace';
+    ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
     const tw = ctx.measureText(label).width;
-    const padX = 8, padY = 4;
-    const x = (VW - tw - padX * 2) / 2;
+    const padX = 10, padY = 6;
+    const w = tw + padX * 2;
+    const h = 22;
+    const x = (VW - w) / 2;
     const y = 4;
-    // shadow + body
-    ctx.fillStyle = '#0a0c20';
-    ctx.fillRect(x - 2, y - 2, tw + padX * 2 + 4, 18 + 4);
+    // hard outer shadow
+    ctx.fillStyle = '#06081a';
+    ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
+    // body
     ctx.fillStyle = '#1f234a';
-    ctx.fillRect(x, y, tw + padX * 2, 18);
+    ctx.fillRect(x, y, w, h);
     // top trim
     ctx.fillStyle = state.mod.name === 'NORMAL' ? '#88b0ff' : '#ffd066';
-    ctx.fillRect(x, y, tw + padX * 2, 2);
+    ctx.fillRect(x, y, w, 3);
+    ctx.fillRect(x, y + h - 3, w, 3);
+    // text shadow for extra crispness
+    ctx.fillStyle = '#06081a';
+    ctx.fillText(label, x + tw + padX + 1, y + 6 + 1);
     ctx.fillStyle = '#ffffff';
-    ctx.fillText(label, x + tw + padX, y + 5);
+    ctx.fillText(label, x + tw + padX, y + 6);
   }
 
   function drawEnemy(e) {
@@ -3655,32 +3826,32 @@
     if (hands) {
       playBtn.disabled = false;
       playBtn.textContent = 'PLAY';
-      readyStat.textContent = '準備完了 — PLAY で開始';
+      readyStat.textContent = t('readyDone');
       return;
     }
     playBtn.disabled = true;
-    playBtn.textContent = 'LOADING…';
+    playBtn.textContent = t('loading');
     try {
-      readyStat.textContent = 'モデル読み込み中…';
+      readyStat.textContent = t('loading');
       await initHands();
       await initFaceDetector();
-      readyStat.textContent = 'カメラ起動中…';
+      readyStat.textContent = t('cameraStarting');
       await initCamera();
     } catch (err) {
       errMsg.textContent = err.message;
-      readyStat.textContent = 'エラー — HOMEに戻ってやり直してください';
+      readyStat.textContent = t('readyError');
       return;
     }
     playBtn.disabled = false;
     playBtn.textContent = 'PLAY';
-    readyStat.textContent = '準備完了 — PLAY で開始';
+    readyStat.textContent = t('readyDone');
   }
 
   function start() {
     overlay.classList.add('hidden');
     overlayPanel.classList.remove('readyView', 'shopView', 'loadoutView');
     state.readyPalmRecent = 0;
-    overlay.querySelector('h1.home-only').textContent = 'HAND DANMAKU';
+    overlay.querySelector('h1.home-only').textContent = t('titleHome');
     document.getElementById('scoreSummary').innerHTML = '';
     document.getElementById('clipBtn').style.display = 'none';
     document.getElementById('shareBtn').style.display = 'none';
@@ -3776,11 +3947,11 @@
     if (state.daily) {
       dailyBtn.textContent = 'ON';
       dailyBtn.classList.add('on');
-      dailyTag.textContent = `今日の弾幕(${state.dailyKey})で全員と勝負`;
+      dailyTag.textContent = t('dailyOnTpl').replace('{KEY}', state.dailyKey);
     } else {
       dailyBtn.textContent = 'OFF';
       dailyBtn.classList.remove('on');
-      dailyTag.textContent = `通常モード / 今日の日付: ${todayKey()}`;
+      dailyTag.textContent = t('dailyOff') + todayKey();
     }
   }
   dailyBtn.addEventListener('click', () => {
@@ -3839,6 +4010,14 @@
   }
   syncCamBtn();
   camBtn.addEventListener('click', toggleCamBg);
+
+  // Language toggle
+  langBtn.textContent = (lang === 'ja') ? 'JA' : 'EN';
+  langBtn.addEventListener('click', () => setLang(lang === 'ja' ? 'en' : 'ja'));
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'l' || e.key === 'L') setLang(lang === 'ja' ? 'en' : 'ja');
+  });
+  applyLang();
   window.addEventListener('keydown', (e) => {
     if (e.key === 'p' || e.key === 'P' || e.code === 'Escape') {
       if (state.running) { e.preventDefault(); togglePause(); }
