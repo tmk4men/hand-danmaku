@@ -1927,14 +1927,15 @@
           }
         }
         if (faceTrack.box) {
-          const pad = 0.4;
           const f = faceTrack.box;
           const cx = f.x + f.w / 2;
           const cy = f.y + f.h / 2;
-          const fw = clamp(f.w * (1 + pad), 0.05, 1);
-          const fh = clamp(f.h * (1 + pad), 0.05, 1);
-          const nx = clamp(cx - fw / 2, 0, 1);
-          const ny = clamp(cy - fh / 2, 0, 1);
+          // Add a small absolute pad and cap to 40% width / 50% height so a
+          // very close-up face doesn't cover the whole screen.
+          const fw = clamp(f.w + 0.04, 0.05, 0.40);
+          const fh = clamp(f.h + 0.04, 0.05, 0.50);
+          const nx = clamp(cx - fw / 2, 0, 1 - fw);
+          const ny = clamp(cy - fh / 2, 0, 1 - fh);
           const mb = getMosaicBuf();
           const mctx = mb.getContext('2d');
           mctx.imageSmoothingEnabled = false;
