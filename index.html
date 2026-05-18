@@ -1546,8 +1546,10 @@
       const isOpenPalm = !isPinch && !isPeace && curled === 0 && thumbExtended;
       if (state.readyPalmRecent > 0) state.readyPalmRecent--;
       if (isOpenPalm) state.readyPalmRecent = 30;  // 0.5s grace window
-      if (!playBtn.disabled
-          && overlayPanel.classList.contains('readyView')
+      const readyVisible = !overlay.classList.contains('hidden')
+        && overlayPanel.classList.contains('readyView');
+      if (!state.running && !playBtn.disabled
+          && readyVisible
           && isFistOnly && state.readyPalmRecent > 0) {
         state.readyPalmRecent = 0;
         start();
@@ -3714,6 +3716,8 @@
 
   function start() {
     overlay.classList.add('hidden');
+    overlayPanel.classList.remove('readyView', 'shopView', 'loadoutView');
+    state.readyPalmRecent = 0;
     overlay.querySelector('h1.home-only').textContent = 'HAND DANMAKU';
     document.getElementById('scoreSummary').innerHTML = '';
     document.getElementById('clipBtn').style.display = 'none';
