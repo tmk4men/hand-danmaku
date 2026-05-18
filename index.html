@@ -661,7 +661,7 @@
   function getMosaicBuf() {
     if (!_mosaicBuf) {
       _mosaicBuf = document.createElement('canvas');
-      _mosaicBuf.width = 8; _mosaicBuf.height = 4;  // very chunky
+      _mosaicBuf.width = 10; _mosaicBuf.height = 7;  // chunky, 4:3 to match camera
     }
     return _mosaicBuf;
   }
@@ -1859,15 +1859,17 @@
       ctx.save();
       ctx.translate(VW, 0); ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, VW, VH);
-      // Pixelate the top ~50% of the frame (where the face usually is)
+      // Pixelate the entire frame (face position varies with camera angle,
+      // so blur everything to be safe — hand is still visible via the
+      // in-canvas reticle).
       if (camBg.state === 'mask') {
         const mb = getMosaicBuf();
         const mctx = mb.getContext('2d');
         mctx.imageSmoothingEnabled = false;
-        const srcH = video.videoHeight * 0.5;
-        mctx.drawImage(video, 0, 0, video.videoWidth, srcH, 0, 0, mb.width, mb.height);
+        mctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight,
+                       0, 0, mb.width, mb.height);
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(mb, 0, 0, mb.width, mb.height, 0, 0, VW, VH * 0.5);
+        ctx.drawImage(mb, 0, 0, mb.width, mb.height, 0, 0, VW, VH);
       }
       ctx.restore();
     } else {
