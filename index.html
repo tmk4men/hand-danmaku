@@ -223,7 +223,6 @@
   }
   #camBtn:hover { border-color: #88a8ff; color: #ffffff; }
   #camBtn.off { color: #555a82; }
-  #camBtn.mask { color: #ffd066; border-color: #ffd066; }
 
   #pauseOverlay {
     position: absolute; inset: 0;
@@ -654,17 +653,12 @@
   const muteBtn   = document.getElementById('muteBtn');
   const camBtn    = document.getElementById('camBtn');
   const camBg = {
-    // 'on' = camera background visible, 'mask' = with face mosaic, 'off' = no camera
-    state: localStorage.getItem('hd_cammode') || 'on',
+    // 'on' = camera background visible, 'off' = no camera
+    state: (() => {
+      const v = localStorage.getItem('hd_cammode');
+      return v === 'off' ? 'off' : 'on';  // legacy 'mask' migrates to 'on'
+    })(),
   };
-  let _mosaicBuf = null;
-  function getMosaicBuf() {
-    if (!_mosaicBuf) {
-      _mosaicBuf = document.createElement('canvas');
-      _mosaicBuf.width = 10; _mosaicBuf.height = 7;  // chunky, 4:3 to match camera
-    }
-    return _mosaicBuf;
-  }
   const hud = {
     score: document.getElementById('score'),
     hiscore: document.getElementById('hiscore'),
@@ -1859,18 +1853,6 @@
       ctx.save();
       ctx.translate(VW, 0); ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, VW, VH);
-      // Pixelate the entire frame (face position varies with camera angle,
-      // so blur everything to be safe — hand is still visible via the
-      // in-canvas reticle).
-      if (camBg.state === 'mask') {
-        const mb = getMosaicBuf();
-        const mctx = mb.getContext('2d');
-        mctx.imageSmoothingEnabled = false;
-        mctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight,
-                       0, 0, mb.width, mb.height);
-        ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(mb, 0, 0, mb.width, mb.height, 0, 0, VW, VH);
-      }
       ctx.restore();
     } else {
       // black base when camera off / not ready
@@ -2146,19 +2128,6 @@
       ctx.fillText('▸ BULLET TIME', 8, 8);
     }
 
-    // Face mask badge
-    if (camBg.state === 'mask') {
-      ctx.font = '8px monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#0a0c20';
-      ctx.fillRect(6, VH - 18, 90, 12);
-      ctx.fillStyle = '#ffd066';
-      ctx.fillRect(6, VH - 18, 90, 2);
-      ctx.fillStyle = '#ffd066';
-      ctx.fillText('FACE MASK ON', 11, VH - 14);
-    }
-
     // Branding watermark — subtle, bottom-right inside game area
     ctx.font = '7px monospace';
     ctx.textAlign = 'right';
@@ -2254,7 +2223,7 @@
     // Sky bands — semi-transparent so the camera (when on) bleeds through.
     const bands = theme.sky;
     const bh = VH / bands.length;
-    const skyAlpha = camBg.state === 'off' ? 1.0 : 0.74;
+    const skyAlpha = camBg.state === 'on' ? 0.74 : 1.0;
     for (let i = 0; i < bands.length; i++) {
       ctx.fillStyle = hexToRgba(bands[i], skyAlpha);
       ctx.fillRect(0, i * bh, VW, bh + 1);
@@ -2658,17 +2627,14 @@
   });
 
   function syncCamBtn() {
-    const labels = { on: 'CAM', mask: 'MSK', off: 'OFF' };
-    camBtn.textContent = labels[camBg.state];
-    camBtn.title = camBg.state === 'on' ? 'Camera background (C) — click to mosaic face'
-                 : camBg.state === 'mask' ? 'Face mosaic on (C) — click to turn camera off'
-                 : 'Camera off (C) — click to turn on';
+    camBtn.textContent = camBg.state === 'on' ? 'CAM' : 'OFF';
+    camBtn.title = camBg.state === 'on'
+      ? 'Camera background (C) — click to turn off'
+      : 'Camera off (C) — click to turn on';
     camBtn.classList.toggle('off', camBg.state === 'off');
-    camBtn.classList.toggle('mask', camBg.state === 'mask');
   }
   function toggleCamBg() {
-    camBg.state = camBg.state === 'on' ? 'mask'
-                : camBg.state === 'mask' ? 'off' : 'on';
+    camBg.state = camBg.state === 'on' ? 'off' : 'on';
     try { localStorage.setItem('hd_cammode', camBg.state); } catch {}
     syncCamBtn();
   }
