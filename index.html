@@ -451,6 +451,8 @@
   const state = {
     running: false,
     paused: false,
+    autoPaused: false,
+    noHandFrames: 0,
     t: 0,             // frames
     score: 0,
     lives: 5,
@@ -637,8 +639,8 @@
     hands.setOptions({
       maxNumHands: 1,
       modelComplexity: 1,       // 1 = Heavy (full) model
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.5,
+      minDetectionConfidence: 0.45,
+      minTrackingConfidence: 0.4,
       selfieMode: true,
     });
     hands.onResults(onHandResults);
@@ -657,9 +659,10 @@
 
       // Update player target. Note: selfieMode=true returns mirrored coords (right-hand =>
       // visually on right). Map normalized x to game x directly.
-      // Expand the active region a bit so user reaches edges easily.
-      const nx = clamp((tip.x - 0.1) / 0.8, 0, 1);
-      const ny = clamp((tip.y - 0.1) / 0.8, 0, 1);
+      // Use a slightly narrower active region so the user doesn't have to reach the
+      // edges of the camera frame to reach the edges of the play field.
+      const nx = clamp((tip.x - 0.20) / 0.60, 0, 1);
+      const ny = clamp((tip.y - 0.20) / 0.60, 0, 1);
       state.player.tx = nx * VW;
       state.player.ty = ny * VH;
       state.handSeen = true;
@@ -1143,7 +1146,17 @@
   function loop(now) {
     const dt = Math.min(50, now - last); // ms
     last = now;
-    if (state.running && !state.paused) update(dt);
+    // Auto-pause when hand is out of frame for ~0.75s
+    if (state.running) {
+      if (state.handSeen) {
+        state.noHandFrames = 0;
+        if (state.autoPaused) state.autoPaused = false;
+      } else if (!state.paused) {
+        state.noHandFrames++;
+        if (state.noHandFrames > 45) state.autoPaused = true;
+      }
+    }
+    if (state.running && !state.paused && !state.autoPaused) update(dt);
     draw();
     requestAnimationFrame(loop);
   }
@@ -1204,7 +1217,7 @@
     if (p.fireCooldown <= 0 && state.handSeen) {
       playerShot();
       if (state.focus) SFX.shootFocus(); else SFX.shoot();
-      p.fireCooldown = state.focus ? 22 : (state.graze.boost > 0 ? 4 : 6);
+      p.fireCooldown = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
     }
 
     // Player shots
@@ -1691,18 +1704,24 @@
       ctx.fillText(txt, VW / 2, y);
     }
 
-    // no-hand notice
+    // no-hand notice / auto-pause indicator
     if (state.running && !state.handSeen) {
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(VW/2 - 200, VH/2 - 28, 400, 56);
-      ctx.fillStyle = '#ffeb6e';
-      ctx.fillRect(VW/2 - 200, VH/2 - 28, 400, 4);
-      ctx.fillRect(VW/2 - 200, VH/2 + 24, 400, 4);
+      const paused = state.autoPaused;
+      ctx.fillStyle = paused ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.55)';
+      ctx.fillRect(VW/2 - 220, VH/2 - 36, 440, 72);
+      const accent = paused ? '#ff7c98' : '#ffeb6e';
+      ctx.fillStyle = accent;
+      ctx.fillRect(VW/2 - 220, VH/2 - 36, 440, 4);
+      ctx.fillRect(VW/2 - 220, VH/2 + 32, 440, 4);
       ctx.fillStyle = '#ffffff';
-      ctx.font = '14px monospace';
+      ctx.font = paused ? '16px monospace' : '14px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('SHOW YOUR HAND', VW/2, VH/2);
+      ctx.fillText(paused ? 'AUTO-PAUSED' : 'SHOW YOUR HAND', VW/2, VH/2 - 8);
+      ctx.fillStyle = accent;
+      ctx.font = '9px monospace';
+      ctx.fillText(paused ? 'RAISE YOUR HAND TO RESUME' : 'カメラに手を映してください',
+                   VW/2, VH/2 + 14);
     }
 
     // ---- Blit low-res buffer to display canvas (nearest neighbor) ----
@@ -2053,6 +2072,8 @@
     // reset game
     state.running = true;
     state.paused = false;
+    state.autoPaused = false;
+    state.noHandFrames = 0;
     pauseOv.classList.remove('on');
     pauseBtn.classList.remove('paused');
     state.t = 0;
