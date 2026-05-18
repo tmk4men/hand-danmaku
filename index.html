@@ -38,43 +38,8 @@
     font-family: "Press Start 2P", "Courier New", ui-monospace, monospace;
     letter-spacing: 0.05em;
   }
-  /* camera preview thumbnail */
-  #camWrap {
-    position: absolute;
-    right: 10px; bottom: 10px;
-    width: 26%; max-width: 260px; aspect-ratio: 4 / 3;
-    border: 2px solid #2a2f55;
-    box-shadow: 0 0 0 2px #06081a, 0 0 18px rgba(120,140,255,0.35);
-    overflow: hidden;
-    background: #000;
-    pointer-events: none;
-  }
-  #camWrap video, #camWrap canvas {
-    width: 100%; height: 100%;
-    display: block;
-    transform: scaleX(-1); /* mirror */
-    object-fit: cover;
-  }
-  #camWrap canvas { position: absolute; inset: 0; }
-  #camWrap .label {
-    position: absolute; left: 0; top: 0;
-    background: rgba(15,18,46,0.85);
-    color: #88e0ff;
-    font: 9px "Press Start 2P", monospace;
-    letter-spacing: 0.15em;
-    padding: 3px 6px;
-    border-right: 1px solid #2a2f55;
-    border-bottom: 1px solid #2a2f55;
-  }
-  #camWrap .live {
-    position: absolute; right: 4px; top: 4px;
-    width: 8px; height: 8px;
-    background: #ff5050;
-    border-radius: 50%;
-    box-shadow: 0 0 6px #ff5050;
-    animation: pulse 1.2s infinite;
-  }
-  @keyframes pulse { 0%,100% { opacity: 0.4; } 50% { opacity: 1; } }
+  /* Hidden video / overlay canvas — sampled into game buffer instead. */
+  #cam, #camOverlay { display: none; }
 
   #hud {
     position: absolute; top: 10px; left: 10px;
@@ -193,6 +158,26 @@
   #muteBtn:hover { border-color: #88a8ff; color: #ffffff; }
   #muteBtn.muted { color: #ff7c98; }
 
+  #camBtn {
+    position: absolute;
+    top: 10px; right: 102px;
+    width: 38px; height: 38px;
+    background: linear-gradient(180deg, rgba(15,18,46,0.85), rgba(8,10,28,0.85));
+    border: 2px solid #2a2f55;
+    box-shadow: 0 0 0 2px #06081a, 0 0 12px rgba(120,140,255,0.25);
+    color: #cfd2f0;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    padding: 0;
+    z-index: 5;
+    display: flex; align-items: center; justify-content: center;
+    image-rendering: pixelated;
+  }
+  #camBtn:hover { border-color: #88a8ff; color: #ffffff; }
+  #camBtn.off { color: #555a82; }
+
   #pauseOverlay {
     position: absolute; inset: 0;
     display: none;
@@ -286,12 +271,8 @@
   <div id="stage">
     <canvas id="game"></canvas>
 
-    <div id="camWrap">
-      <video id="cam" playsinline muted></video>
-      <canvas id="camOverlay"></canvas>
-      <div class="label">MEDIAPIPE HANDS</div>
-      <div class="live"></div>
-    </div>
+    <video id="cam" playsinline muted></video>
+    <canvas id="camOverlay"></canvas>
 
     <div id="hud">
       <div class="row">
@@ -329,6 +310,7 @@
       <div class="boost" id="boostFlag">POWER UP!</div>
     </div>
 
+    <button id="camBtn" type="button" title="Camera background (C)">CAM</button>
     <button id="muteBtn" type="button" title="Mute (M)">SFX</button>
     <button id="pauseBtn" type="button" title="Pause (P)"><span class="ico"><span></span><span></span></span></button>
     <div id="pauseOverlay">
@@ -400,6 +382,11 @@
   const pauseBtn  = document.getElementById('pauseBtn');
   const pauseOv   = document.getElementById('pauseOverlay');
   const muteBtn   = document.getElementById('muteBtn');
+  const camBtn    = document.getElementById('camBtn');
+  const camBg = {
+    on: localStorage.getItem('hd_cambg') !== '0',
+    alpha: 0.22,
+  };
   const hud = {
     score: document.getElementById('score'),
     hiscore: document.getElementById('hiscore'),
@@ -1428,7 +1415,19 @@
     ctx.setTransform(sx, 0, 0, sy, sxo * sx, syo * sy);
     ctx.imageSmoothingEnabled = false;
 
-    // background — themed parallax
+    // Optional camera frame as faint base layer ("you in the game")
+    if (camBg.on && video.readyState >= 2 && video.videoWidth > 0) {
+      ctx.save();
+      ctx.translate(VW, 0); ctx.scale(-1, 1);
+      ctx.drawImage(video, 0, 0, VW, VH);
+      ctx.restore();
+    } else {
+      // black base when camera off / not ready
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, VW, VH);
+    }
+
+    // background — themed parallax (semi-transparent over camera)
     drawBackground();
 
     // particles (one chunky pixel each)
@@ -1766,13 +1765,19 @@
     vy: rand(0.05, 0.15),
   }));
 
+  function hexToRgba(hex, a) {
+    const v = parseInt(hex.slice(1), 16);
+    return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+  }
+
   function drawBackground() {
     const theme = STAGE_THEMES[state.themeIndex];
-    // Sky bands (chunky gradient)
+    // Sky bands — semi-transparent so the camera (when on) bleeds through.
     const bands = theme.sky;
     const bh = VH / bands.length;
+    const skyAlpha = camBg.on ? 0.74 : 1.0;
     for (let i = 0; i < bands.length; i++) {
-      ctx.fillStyle = bands[i];
+      ctx.fillStyle = hexToRgba(bands[i], skyAlpha);
       ctx.fillRect(0, i * bh, VW, bh + 1);
     }
 
@@ -2141,8 +2146,22 @@
   window.addEventListener('keydown', (e) => {
     if (e.key === 'm' || e.key === 'M') {
       audio.init(); audio.setMuted(!audio.muted); syncMuteBtn();
+    } else if (e.key === 'c' || e.key === 'C') {
+      toggleCamBg();
     }
   });
+
+  function syncCamBtn() {
+    camBtn.textContent = camBg.on ? 'CAM' : 'OFF';
+    camBtn.classList.toggle('off', !camBg.on);
+  }
+  function toggleCamBg() {
+    camBg.on = !camBg.on;
+    try { localStorage.setItem('hd_cambg', camBg.on ? '1' : '0'); } catch {}
+    syncCamBtn();
+  }
+  syncCamBtn();
+  camBtn.addEventListener('click', toggleCamBg);
   window.addEventListener('keydown', (e) => {
     if (e.key === 'p' || e.key === 'P' || e.code === 'Escape') {
       if (state.running) { e.preventDefault(); togglePause(); }
