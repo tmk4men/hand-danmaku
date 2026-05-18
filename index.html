@@ -3015,6 +3015,8 @@
   document.getElementById('loadoutBack').addEventListener('click', () => { showHomeView(); });
 
   // Daily Challenge: read URL on load, sync UI
+  const dailyBtn = document.getElementById('dailyBtn');
+  const dailyTag = document.getElementById('dailyTag');
   (() => {
     const p = new URLSearchParams(location.search);
     const d = p.get('daily');
@@ -3025,8 +3027,6 @@
     }
     syncDailyBtn();
   })();
-  const dailyBtn = document.getElementById('dailyBtn');
-  const dailyTag = document.getElementById('dailyTag');
   function syncDailyBtn() {
     if (state.daily) {
       dailyBtn.textContent = 'DAILY ON';
