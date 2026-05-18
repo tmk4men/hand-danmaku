@@ -582,6 +582,16 @@
 
         <p id="scoreSummary" class="home-only" style="margin:8px 0; font-size:12px; color:#cfd2f0;"></p>
 
+        <div id="resultActions" class="home-only" style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+          <button type="button" id="clipBtn" style="display:none; background:linear-gradient(180deg,#3aa66e,#206b48); border-color:#7fffd4; color:#ffffff; padding:8px 14px; font-size:11px;">💾 SAVE CLIP</button>
+          <button type="button" id="shareBtn" style="display:none; background:linear-gradient(180deg,#7fa8ff,#3a5acc); border-color:#7fa8ff; color:#ffffff; padding:8px 14px; font-size:11px;">📋 SHARE TEXT</button>
+        </div>
+
+        <div id="dailyBar" class="home-only" style="display:flex; align-items:center; justify-content:center; gap:10px; margin:8px 0 0; font-size:11px;">
+          <button type="button" id="dailyBtn" style="padding:6px 12px; font-size:11px; background:#1f234a; border:1px solid #2a2f55; color:#cfd2f0;">DAILY OFF</button>
+          <span id="dailyTag" style="color:#8890b8;"></span>
+        </div>
+
         <div id="coinBar" class="home-only">
           <span>COINS <span class="coins" id="coinAmt">0</span></span>
           <button type="button" id="shopBtn">SHOP</button>
@@ -777,6 +787,80 @@
     handAim: null,         // {x,y} raw hand target in VW coords
     thumbBent: false,      // active gesture state for USE item
     bulletTime: 0,         // frames remaining of slow-mo
+    daily: false,
+    dailyKey: '',
+    hitsTaken: 0,
+    usedBombs: 0,
+    rank: 'C',
+  };
+
+  // ---------- Seeded RNG (Mulberry32) for Daily Challenge ----------
+  let _seed = 1;
+  function setSeed(s) { _seed = (s >>> 0) || 1; }
+  function srng() {
+    _seed = (_seed + 0x6D2B79F5) | 0;
+    let t = _seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  function gameRand() { return state.daily ? srng() : Math.random(); }
+  function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function hashStr(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+  }
+
+  // ---------- Clip recorder (last run as webm) ----------
+  const clipper = {
+    stream: null, recorder: null, chunks: [], active: false,
+    start(canvas) {
+      if (this.active || typeof MediaRecorder === 'undefined') return;
+      try {
+        this.stream = canvas.captureStream(30);
+        const mimes = [
+          'video/webm;codecs=vp9',
+          'video/webm;codecs=vp8',
+          'video/webm',
+        ];
+        const mime = mimes.find(m => MediaRecorder.isTypeSupported(m));
+        this.chunks = [];
+        this.recorder = new MediaRecorder(this.stream,
+          mime ? { mimeType: mime, videoBitsPerSecond: 4_500_000 } : {});
+        this.recorder.ondataavailable = (e) => {
+          if (e.data && e.data.size) this.chunks.push(e.data);
+        };
+        this.recorder.start(1000);
+        this.active = true;
+      } catch (e) { console.warn('clip start failed', e); this.active = false; }
+    },
+    async stop() {
+      if (!this.recorder || !this.active) return;
+      this.active = false;
+      return new Promise((res) => {
+        this.recorder.onstop = () => res();
+        try { this.recorder.stop(); } catch { res(); }
+      });
+    },
+    hasClip() { return this.chunks.length > 0; },
+    save() {
+      if (!this.chunks.length) return;
+      const blob = new Blob(this.chunks, { type: 'video/webm' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      a.download = `hand-danmaku-${ts}.webm`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    },
   };
 
   // ---------- Shop / persistence ----------
@@ -876,7 +960,7 @@
   }
 
   // ---------- Utility ----------
-  const rand = (a, b) => a + Math.random() * (b - a);
+  const rand = (a, b) => a + gameRand() * (b - a);
   const TAU = Math.PI * 2;
   function dist2(ax, ay, bx, by) { const dx = ax - bx, dy = ay - by; return dx*dx + dy*dy; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
@@ -1322,19 +1406,19 @@
     // category: 'grunt' | 'spinner' | 'fan' | 'boss'
     if (category === 'boss') return ['power', 'bomb', 'guard', 'tool', 'life'];
     if (category === 'spinner') {
-      const r = Math.random();
+      const r = gameRand();
       return [r < 0.4 ? 'power' : r < 0.65 ? 'bomb' : r < 0.85 ? 'guard' : 'tool'];
     }
     if (category === 'fan') {
-      if (Math.random() < 0.65) {
-        const r = Math.random();
+      if (gameRand() < 0.65) {
+        const r = gameRand();
         return [r < 0.45 ? 'power' : r < 0.75 ? 'guard' : r < 0.92 ? 'tool' : 'bomb'];
       }
       return [];
     }
     // grunt
-    if (Math.random() < 0.10) {
-      const r = Math.random();
+    if (gameRand() < 0.10) {
+      const r = gameRand();
       return [r < 0.45 ? 'power'
             : r < 0.65 ? 'guard'
             : r < 0.82 ? 'tool'
@@ -1404,7 +1488,7 @@
       state.guard.remaining = Math.min(600, state.guard.remaining + 90); // +1.5s
       state.score += 150;
       // Small chance to actually restore a life when crit
-      if (state.lives <= 2 && Math.random() < 0.25) {
+      if (state.lives <= 2 && gameRand() < 0.25) {
         state.lives = Math.min(state.lives + 1, 7);
         pushPopup(p.x, p.y - 20, 'TOOLBOX +REPAIR', '#c8a878', 12);
         SFX.pickupLife();
@@ -1424,7 +1508,7 @@
       { name: 'TWIN SPIN',    bulletSpeedMul: 1.0, fanRays: 0, spinnerExtra: 2 },
       { name: 'SLOW DENSE',   bulletSpeedMul: 0.75,fanRays: 1, spinnerExtra: 1 },
     ];
-    state.mod = mods[Math.floor(Math.random() * mods.length)];
+    state.mod = mods[Math.floor(gameRand() * mods.length)];
   }
 
   function useActiveItem() {
@@ -1446,6 +1530,7 @@
   function triggerBomb() {
     if (state.bombs <= 0) return;
     state.bombs--;
+    state.usedBombs++;
     state.player.bombFx = 40;
     state.player.invuln = Math.max(state.player.invuln, 60);
     state.shake = Math.max(state.shake, 16);
@@ -1498,7 +1583,7 @@
 
     // periodic small enemy waves
     if (T % Math.max(120 - lvl * 4, 70) === 0) {
-      const side = Math.random() < 0.5 ? 1 : -1;
+      const side = gameRand() < 0.5 ? 1 : -1;
       const x = VW * 0.5 + side * rand(120, 280);
       spawnEnemy('grunt', x, -20, {
         vy: rand(0.7, 1.2),
@@ -1846,6 +1931,7 @@
   function playerHit() {
     if (state.player.invuln > 0) return;
     state.lives--;
+    state.hitsTaken++;
     state.player.invuln = 120;
     state.shake = Math.max(state.shake, 20);
     state.combo.count = 0;
@@ -1857,9 +1943,42 @@
     if (state.lives <= 0) gameOver();
   }
 
-  function gameOver() {
+  function computeRank() {
+    let s = 0;
+    s += Math.min(state.score / 5000, 6);    // score weight, cap 6
+    s += (state.stageNo - 1) * 1.5;
+    s += Math.min(state.combo.best, 30) * 0.06;
+    s -= state.hitsTaken * 1.2;
+    s -= state.usedBombs * 0.6;
+    if (s >= 12) return 'SS';
+    if (s >= 9)  return 'S';
+    if (s >= 6)  return 'A';
+    if (s >= 3)  return 'B';
+    return 'C';
+  }
+  function buildShareText() {
+    const tags = [];
+    if (state.hitsTaken === 0) tags.push('★NO HIT');
+    if (state.usedBombs === 0) tags.push('★NO BOMB');
+    const head = state.daily
+      ? `HAND DANMAKU DAILY ${state.dailyKey}`
+      : 'HAND DANMAKU';
+    const link = state.daily
+      ? `https://tmk4men.github.io/hand-danmaku/?daily=${state.dailyKey}`
+      : 'https://tmk4men.github.io/hand-danmaku/';
+    return [
+      head,
+      `RANK ${state.rank}  SCORE ${state.score}  STAGE ${state.stageNo}  CHAIN ${state.combo.best}`,
+      tags.join('  '),
+      '#手で弾幕  #handdanmaku',
+      link,
+    ].filter(Boolean).join('\n');
+  }
+
+  async function gameOver() {
     state.running = false;
     SFX.gameOver();
+    state.rank = computeRank();
     if (state.score > state.hiScore) {
       state.hiScore = state.score;
       try { localStorage.setItem('hd_hi', String(state.hiScore)); } catch {}
@@ -1868,11 +1987,34 @@
     overlay.classList.remove('hidden');
     showHomeView();
     overlay.querySelector('h1.home-only').textContent = 'GAME OVER';
+    const noHit = state.hitsTaken === 0 ? ' <span style="color:#7fffd4">★NO HIT</span>' : '';
+    const noBomb = state.usedBombs === 0 ? ' <span style="color:#ffd066">★NO BOMB</span>' : '';
     document.getElementById('scoreSummary').innerHTML =
-      `SCORE ${state.score}  /  HI ${state.hiScore}  /  STAGE ${state.stageNo}<br>` +
-      `MAX CHAIN ${state.combo.best}  /  <span style="color:#ffd066">EARNED +${earned} COINS</span>`;
+      `<span style="color:#ffd066;font-size:18px;font-weight:700">RANK ${state.rank}</span>  ` +
+      `SCORE ${state.score}  /  HI ${state.hiScore}<br>` +
+      `STAGE ${state.stageNo}  /  CHAIN ${state.combo.best}  /  ` +
+      `<span style="color:#ffd066">+${earned} COINS</span>${noHit}${noBomb}`;
     coinAmt.textContent = shop.coins;
-    startBtn.textContent = '▶ PLAY AGAIN';
+    startBtn.textContent = state.daily ? '▶ TRY AGAIN (DAILY)' : '▶ PLAY AGAIN';
+
+    // Finalize recording, then enable SAVE CLIP
+    await clipper.stop();
+    const clipBtn = document.getElementById('clipBtn');
+    const shareBtn = document.getElementById('shareBtn');
+    if (clipper.hasClip()) {
+      clipBtn.style.display = '';
+      clipBtn.onclick = () => clipper.save();
+    } else { clipBtn.style.display = 'none'; }
+    shareBtn.style.display = '';
+    shareBtn.onclick = async () => {
+      const text = buildShareText();
+      try {
+        if (navigator.share) await navigator.share({ text });
+        else await navigator.clipboard.writeText(text);
+        shareBtn.textContent = '✓ COPIED';
+        setTimeout(() => shareBtn.textContent = '📋 SHARE TEXT', 1500);
+      } catch (e) { /* user cancel */ }
+    };
   }
 
   function updateHud() {
@@ -2582,7 +2724,8 @@
   const BOSS_PAL = { '#': '#d6457b', 'E': '#ffe066', 'W': '#ffffff' };
 
   function drawModBanner() {
-    const label = `STAGE ${state.stageNo}  ${state.mod.name}`;
+    const label = (state.daily ? `DAILY ${state.dailyKey}  ` : '')
+                + `STAGE ${state.stageNo}  ${state.mod.name}`;
     ctx.font = '8px monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -2655,6 +2798,8 @@
     overlay.classList.add('hidden');
     overlay.querySelector('h1.home-only').textContent = 'HAND DANMAKU';
     document.getElementById('scoreSummary').innerHTML = '';
+    document.getElementById('clipBtn').style.display = 'none';
+    document.getElementById('shareBtn').style.display = 'none';
     audio.resume();
     // reset game
     state.running = true;
@@ -2700,7 +2845,16 @@
     state.popups.length = 0;
     state.stageBanner = 150;
     state.handAim = null;
+    state.hitsTaken = 0;
+    state.usedBombs = 0;
+    state.rank = 'C';
+    // Daily seed
+    if (state.daily && state.dailyKey) {
+      setSeed(hashStr('daily-' + state.dailyKey));
+    }
     pickStageMod();
+    // Begin recording for save-clip
+    clipper.start(displayCanvas);
     SFX.stageStart();
     overlay.querySelector('h1').textContent = 'HAND DANMAKU';
     updateHud();
@@ -2711,6 +2865,44 @@
   backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
   backBtn.addEventListener('click', () => { showHomeView(); });
+
+  // Daily Challenge: read URL on load, sync UI
+  (() => {
+    const p = new URLSearchParams(location.search);
+    const d = p.get('daily');
+    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      state.daily = true; state.dailyKey = d;
+    } else {
+      state.daily = false; state.dailyKey = todayKey();
+    }
+    syncDailyBtn();
+  })();
+  const dailyBtn = document.getElementById('dailyBtn');
+  const dailyTag = document.getElementById('dailyTag');
+  function syncDailyBtn() {
+    if (state.daily) {
+      dailyBtn.textContent = 'DAILY ON';
+      dailyBtn.style.background = 'linear-gradient(180deg,#ffd066,#c89a3a)';
+      dailyBtn.style.color = '#06081a';
+      dailyBtn.style.borderColor = '#ffd066';
+      dailyTag.textContent = state.dailyKey + ' / 全員同じ弾幕';
+    } else {
+      dailyBtn.textContent = 'DAILY OFF';
+      dailyBtn.style.background = '#1f234a';
+      dailyBtn.style.color = '#cfd2f0';
+      dailyBtn.style.borderColor = '#2a2f55';
+      dailyTag.textContent = '本日: ' + todayKey();
+    }
+  }
+  dailyBtn.addEventListener('click', () => {
+    state.daily = !state.daily;
+    if (state.daily && !state.dailyKey) state.dailyKey = todayKey();
+    syncDailyBtn();
+    const url = new URL(location.href);
+    if (state.daily) url.searchParams.set('daily', state.dailyKey);
+    else url.searchParams.delete('daily');
+    history.replaceState({}, '', url);
+  });
   coinAmt.textContent = shop.coins;
   coinAmt2.textContent = shop.coins;
 
