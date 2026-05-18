@@ -78,6 +78,19 @@
   #hud .row {
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px;
+    padding-left: 6px;
+    border-left: 3px solid transparent;
+  }
+  #hud .row.lives   { border-left-color: #ff5f7e; }
+  #hud .row.bomb    { border-left-color: #ff7c98; }
+  #hud .row.power   { border-left-color: #ffd066; }
+  #hud .row.guard   { border-left-color: #7fffd4; }
+  #hud .row.graze   { border-left-color: #ffd066; }
+  #hud .row.use     { border-left-color: #88e0ff; }
+  #hud.crit { animation: hudCrit 0.5s infinite; }
+  @keyframes hudCrit {
+    0%, 100% { box-shadow: 0 0 0 2px #06081a, 0 0 12px rgba(120,140,255,0.25); }
+    50%      { box-shadow: 0 0 0 2px #06081a, 0 0 18px rgba(255, 80, 80, 0.8); }
   }
   #hud .lbl { color: #88a8ff; letter-spacing: 0.12em; }
   #hud .val { color: #ffffff; font-weight: bold; }
@@ -521,7 +534,29 @@
     margin: 18px 0 10px;
   }
   #readyHint  { font-size: 12px; color: #cfd2f0; margin: 4px 0; }
-  #readyStat  { font-size: 11px; color: #8890b8; margin: 4px 0 16px; min-height: 16px; }
+  #readyStat  { font-size: 11px; color: #8890b8; margin: 4px 0 12px; min-height: 16px; }
+  #readyDots {
+    display: flex; gap: 14px; justify-content: center;
+    margin: 0 0 16px; font-size: 10px;
+    color: #8890b8; letter-spacing: 0.15em;
+  }
+  #readyDots .dot {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 8px;
+    background: rgba(15,18,46,0.55);
+    border: 1px solid #2a2f55;
+  }
+  #readyDots .dot .ind {
+    width: 8px; height: 8px;
+    background: #ff5050;
+    box-shadow: 0 0 4px rgba(255, 80, 80, 0.6);
+    display: inline-block;
+  }
+  #readyDots .dot.on .ind {
+    background: #7fffd4;
+    box-shadow: 0 0 6px rgba(127, 255, 212, 0.8);
+  }
+  #readyDots .dot.on { color: #ffffff; border-color: #7fffd4; }
   #playBtn:disabled { opacity: 0.5; cursor: not-allowed; }
   .ready-only .back {
     display: block;
@@ -544,6 +579,20 @@
   #coinBar .coins { color: #ffd066; font-weight: 700; }
   #coinBar button {
     padding: 6px 14px; font-size: 11px;
+  }
+  #loadoutSummary {
+    margin: 6px 0 0;
+    font-size: 10px;
+    color: #8890b8;
+    letter-spacing: 0.12em;
+    display: flex; gap: 10px; justify-content: center;
+    flex-wrap: wrap;
+  }
+  #loadoutSummary .kv b { color: #ffffff; font-weight: 700; margin: 0 2px; }
+  #loadoutSummary .kv {
+    padding: 2px 6px;
+    background: rgba(15,18,46,0.55);
+    border: 1px solid #2a2f55;
   }
 
   #shopList {
@@ -614,28 +663,28 @@
         <span class="lbl">LIVES</span>
         <span class="icons" id="livesIcons"></span>
       </div>
-      <div class="row">
+      <div class="row bomb">
         <span class="lbl">BOMB</span>
         <span class="icons" id="bombIcons"></span>
       </div>
-      <div class="row">
+      <div class="row power">
         <span class="lbl">PWR</span>
         <span class="icons" id="powerIcons"></span>
       </div>
       <div class="divider"></div>
-      <div class="row">
+      <div class="row guard">
         <span class="lbl">GUARD</span>
         <span class="val" id="guard">10.0s</span>
       </div>
       <div class="meter guard"><div class="fill" id="guardBar" style="width:100%"></div></div>
-      <div class="row">
+      <div class="row graze">
         <span class="lbl">GRAZE</span>
         <span class="val" id="grazeText">0</span>
       </div>
       <div class="meter"><div class="fill" id="grazeBar" style="width:0%"></div></div>
       <div class="boost" id="boostFlag">POWER UP!</div>
       <div class="divider"></div>
-      <div class="row">
+      <div class="row use">
         <span class="lbl">USE</span>
         <span class="val" id="useCharges">0</span>
       </div>
@@ -688,8 +737,8 @@
         <p id="scoreSummary" class="home-only" style="margin:8px 0; font-size:12px; color:#cfd2f0;"></p>
 
         <div id="resultActions" class="home-only" style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
-          <button type="button" id="clipBtn" class="btn-good" style="display:none;">💾 SAVE CLIP</button>
-          <button type="button" id="shareBtn" class="btn-share" style="display:none;">📋 SHARE TEXT</button>
+          <button type="button" id="clipBtn" class="btn-good" style="display:none;">[REC] SAVE CLIP</button>
+          <button type="button" id="shareBtn" class="btn-share" style="display:none;">[TXT] SHARE</button>
         </div>
 
         <div id="dailyBar" class="home-only" style="display:flex; align-items:center; justify-content:center; gap:10px; margin:10px 0 0; font-size:11px;">
@@ -701,6 +750,12 @@
           <span>COINS <span class="coins" id="coinAmt">0</span></span>
           <button type="button" id="loadoutBtn">LOADOUT</button>
           <button type="button" id="shopBtn">SHOP</button>
+        </div>
+        <div id="loadoutSummary" class="home-only">
+          START &nbsp;<span class="kv">LIFE <b id="sumLife">5</b></span>
+          <span class="kv">BOMB <b id="sumBomb">4</b></span>
+          <span class="kv">PWR Lv<b id="sumPower">1</b></span>
+          <span class="kv">USE <b id="sumUse">0</b></span>
         </div>
 
         <p class="home-only" style="font-size:11px; color:#8890b8">カメラ許可が必要</p>
@@ -735,6 +790,11 @@
           <div class="readyBig">READY?</div>
           <div id="readyHint">手をカメラの中央に映して PLAY</div>
           <div id="readyStat">カメラ準備中…</div>
+          <div id="readyDots">
+            <div class="dot" id="dotCam"><span class="ind"></span>CAM</div>
+            <div class="dot" id="dotModel"><span class="ind"></span>MODEL</div>
+            <div class="dot" id="dotHand"><span class="ind"></span>HAND</div>
+          </div>
           <button id="playBtn" type="button" class="btn-cta btn-lg" disabled>LOADING…</button>
           <button class="back btn-ghost" id="backToHomeBtn" type="button">◀ HOME</button>
         </div>
@@ -1061,6 +1121,17 @@
   function showHomeView() {
     overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView');
     coinAmt.textContent = shop.coins;
+    syncLoadoutSummary();
+  }
+  function syncLoadoutSummary() {
+    const lifeN  = 5 + (loadout.life  ? shop.starters.life  : 0);
+    const bombN  = 4 + (loadout.bomb  ? shop.starters.bomb  : 0);
+    const powerN = 1 + (loadout.power ? shop.starters.power : 0);
+    const useN   = Math.min(loadout.charges, shop.charges);
+    document.getElementById('sumLife').textContent  = lifeN;
+    document.getElementById('sumBomb').textContent  = bombN;
+    document.getElementById('sumPower').textContent = powerN;
+    document.getElementById('sumUse').textContent   = useN;
   }
   function showShopView() {
     overlayPanel.classList.add('shopView');
@@ -1825,6 +1896,7 @@
     if (T > bossAt && !state.bossFight && !state.boss && state.bossWarning === 0) {
       state.bossWarning = 110;     // ~1.8s warning
       state.shake = Math.max(state.shake, 6);
+      pushPopup(VW / 2, VH * 0.4, getBossVariant().name, '#ff77c8', 14);
     }
   }
 
@@ -1951,9 +2023,19 @@
 
   // ---------- Main loop ----------
   let last = performance.now();
+  function syncReadyDots() {
+    const camOk = !!(video && video.readyState >= 2 && video.videoWidth > 0);
+    const modelOk = !!hands;
+    const handOk = !!state.handSeen;
+    document.getElementById('dotCam').classList.toggle('on', camOk);
+    document.getElementById('dotModel').classList.toggle('on', modelOk);
+    document.getElementById('dotHand').classList.toggle('on', handOk);
+  }
   function loop(now) {
     const dt = Math.min(50, now - last); // ms
     last = now;
+    // Refresh READY status dots only when on ready view
+    if (overlayPanel.classList.contains('readyView')) syncReadyDots();
     // Auto-pause when hand is out of frame for ~0.75s
     if (state.running) {
       if (state.handSeen) {
@@ -2264,7 +2346,7 @@
         if (navigator.share) await navigator.share({ text });
         else await navigator.clipboard.writeText(text);
         shareBtn.textContent = '✓ COPIED';
-        setTimeout(() => shareBtn.textContent = '📋 SHARE TEXT', 1500);
+        setTimeout(() => shareBtn.textContent = '[TXT] SHARE', 1500);
       } catch (e) { /* user cancel */ }
     };
   }
@@ -2274,6 +2356,7 @@
     hud.hiscore.textContent = String(state.hiScore).padStart(7, '0');
     renderPips(hud.livesIcons, state.lives, 7, 'life');
     document.getElementById('livesRow').classList.toggle('crit', state.lives <= 1);
+    document.getElementById('hud').classList.toggle('crit', state.lives <= 1 && state.running);
     renderPips(hud.bombIcons, state.bombs, 6, 'bomb');
     renderPips(hud.powerIcons, state.power, 3, '');
     const sec = (state.guard.remaining / 60).toFixed(1);
@@ -2681,20 +2764,30 @@
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.fillText('HAND DANMAKU', VW - 4, VH - 3);
 
-    // Combo readout
+    // Combo readout — right-edge vertical pill with decay bar
     if (state.combo.count >= 2) {
       const c = state.combo.count;
       const mult = 1 + Math.min(c - 1, 19) * 0.1;
-      ctx.font = '10px monospace';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'top';
-      const txt = `${c} CHAIN  x${mult.toFixed(1)}`;
-      const tw = ctx.measureText(txt).width;
-      const x = (VW - tw) / 2, y = 34;
+      const remain = Math.max(0, Math.min(1, state.combo.timer / 120));
+      const W = 64, H = 30;
+      const x = VW - W - 6;
+      const y = Math.max(60, VH * 0.30);
       ctx.fillStyle = '#0a0c20';
-      ctx.fillRect(x - 4, y - 2, tw + 8, 12);
+      ctx.fillRect(x - 2, y - 2, W + 4, H + 4);
+      ctx.fillStyle = '#22243a';
+      ctx.fillRect(x, y, W, H);
       ctx.fillStyle = '#ffd066';
-      ctx.fillText(txt, VW / 2, y);
+      ctx.fillRect(x, y, W, 2);
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = '#ffd066';
+      ctx.fillText(`x${mult.toFixed(1)}`, x + W - 6, y + 5);
+      ctx.font = '8px monospace';
+      ctx.fillStyle = '#cfd2f0';
+      ctx.fillText(`${c} CHAIN`, x + W - 6, y + 17);
+      ctx.fillStyle = '#ffd066';
+      ctx.fillRect(x, y + H - 2, W * remain, 2);
     }
 
     // no-hand notice / auto-pause indicator
@@ -2993,25 +3086,123 @@
   const GRUNT_PAL_SPIN = { '#': '#3aa6c8', 'E': '#ffffff', 'W': '#cdf3ff' };
   const GRUNT_PAL_FAN  = { '#': '#c89a3a', 'E': '#ffffff', 'W': '#ffe9b8' };
 
-  const BOSS_SPRITE = [
-    '......######......',
-    '....##########....',
-    '..##############..',
-    '.################.',
-    '##E##########E##.#',
-    '##E##WWWWWW##E##.#',
-    '##############W###',
-    '#####WWWWWW#######',
-    '#####WWWWWW#######',
-    '##############W###',
-    '##E##WWWWWW##E##.#',
-    '##E##########E##.#',
-    '.################.',
-    '..##############..',
-    '....##########....',
-    '......######......',
+  // ---------- Boss variants (one per stage theme) ----------
+  const BOSS_VARIANTS = [
+    {
+      name: 'NEBULA WARDEN',
+      pal: { '#': '#d6457b', 'E': '#ffe066', 'W': '#ffffff' },
+      sprite: [
+        '......######......',
+        '....##########....',
+        '..##############..',
+        '.################.',
+        '##E##########E##.#',
+        '##E##WWWWWW##E##.#',
+        '##############W###',
+        '#####WWWWWW#######',
+        '#####WWWWWW#######',
+        '##############W###',
+        '##E##WWWWWW##E##.#',
+        '##E##########E##.#',
+        '.################.',
+        '..##############..',
+        '....##########....',
+        '......######......',
+      ],
+    },
+    {
+      name: 'CRIMSON SKULL',
+      pal: { '#': '#b8324a', 'E': '#ffe066', 'W': '#ffffff', 'D': '#06081a' },
+      sprite: [
+        '.....########.....',
+        '...############...',
+        '..##############..',
+        '.################.',
+        '################W#',
+        '##DDDD####DDDD##.#',
+        '##DEED####DEED##.#',
+        '##DDDD####DDDD##.#',
+        '#################W',
+        '##############W###',
+        '##DDDDDDDDDDDD##.#',
+        '##D##D##D##D####.#',
+        '.################.',
+        '..##############..',
+        '....##########....',
+        '......######......',
+      ],
+    },
+    {
+      name: 'EMERALD JELLY',
+      pal: { '#': '#0d8a5a', 'E': '#7fffd4', 'W': '#ffffff' },
+      sprite: [
+        '......######......',
+        '...############...',
+        '..##############..',
+        '.################.',
+        '################W#',
+        '##W####E####W####.',
+        '##W####E####W####.',
+        '##W##########W###.',
+        '##WWWWWWWWWWWW####',
+        '.################.',
+        '..##############..',
+        '#.##.##.##.##.##.#',
+        '#..#...##...#..#..',
+        '.#..#.##.##.#..#..',
+        '..#..#..#..#..#...',
+        '.#..#..#..#..#..#.',
+      ],
+    },
+    {
+      name: 'AMBER FORTRESS',
+      pal: { '#': '#a06a14', 'E': '#ffd066', 'W': '#ffffff', 'D': '#3b2a14' },
+      sprite: [
+        'DD##########DDD##.',
+        'D############DD##.',
+        '##D########D####W#',
+        '##D##E##E##D######',
+        '##D############D##',
+        '##D##WWWWWW##D##.#',
+        '##D##W####W##D##.#',
+        '##D##W####W##D###W',
+        '##D##W####W##D####',
+        '##D##W####W##D##.#',
+        '##D##WWWWWW##D##.#',
+        '##D############D##',
+        '##D##########D####',
+        '##D##########D##.#',
+        'D############DD###',
+        'DD##########DDD#W.',
+      ],
+    },
+    {
+      name: 'COSMIC ARROW',
+      pal: { '#': '#1a55b8', 'E': '#88e0ff', 'W': '#ffffff' },
+      sprite: [
+        '........##........',
+        '.......####.......',
+        '......######......',
+        '.....########.....',
+        '....###W##W###....',
+        '...####WWWW####...',
+        '..##############..',
+        '..#####EE#####....',
+        '.##############...',
+        '..############....',
+        '...##########.....',
+        '...##W####W##.....',
+        '....########......',
+        '.....######.......',
+        '......####........',
+        '.......##.........',
+      ],
+    },
   ];
-  const BOSS_PAL = { '#': '#d6457b', 'E': '#ffe066', 'W': '#ffffff' };
+
+  function getBossVariant() {
+    return BOSS_VARIANTS[state.themeIndex % BOSS_VARIANTS.length];
+  }
 
   function drawModBanner() {
     const label = (state.daily ? `DAILY ${state.dailyKey}  ` : '')
@@ -3037,7 +3228,8 @@
 
   function drawEnemy(e) {
     if (e.isBoss) {
-      drawSprite(BOSS_SPRITE, BOSS_PAL, e.x, e.y, 4.5);
+      const v = getBossVariant();
+      drawSprite(v.sprite, v.pal, e.x, e.y, 4.5);
     } else {
       const pal = e.pattern === 'spin' ? GRUNT_PAL_SPIN
                 : e.pattern === 'fan'  ? GRUNT_PAL_FAN
