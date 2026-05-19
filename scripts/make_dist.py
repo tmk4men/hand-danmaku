@@ -10,6 +10,7 @@ os.makedirs(os.path.dirname(OUT), exist_ok=True)
 FILES = [
     ("index.html", "index.html"),
     ("og.png",     "og.png"),
+    ("bgm.mp3",    "bgm.mp3"),
 ]
 
 with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
