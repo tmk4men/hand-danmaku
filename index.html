@@ -942,6 +942,10 @@
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M7 1 H9 V10 H11 V14 H5 V10 H7 Z" fill="currentColor"/></svg></span>
             <b>MOVE</b><em data-i18n="moveDesc">人差し指で機体を移動</em>
           </div>
+          <div class="row" style="color:#ffd066">
+            <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 9 V6 M5.5 9 V3 M8 9 V2 M10.5 9 V3 M13 9 V6 M3 9 Q3 14 8 14 Q13 14 13 9" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+            <b>MAIN</b><em data-i18n="mainDesc">パー（手を開く）でメイン武器</em>
+          </div>
           <div class="row" style="color:#ff7c98">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="8" r="3.2" fill="currentColor"/><circle cx="11" cy="8" r="2.4" fill="currentColor"/></svg></span>
             <b>BOMB</b><em data-i18n="bombDesc">親指と人差し指でつまむ</em>
@@ -952,7 +956,7 @@
           </div>
           <div class="row" style="color:#88e0ff">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 13 L7 2 M11 13 L9 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
-            <b>FOCUS</b><em data-i18n="focusDesc">ピース（人差し指＋中指を立てる）</em>
+            <b>SUB</b><em data-i18n="focusDesc">ピースでサブ武器を発射</em>
           </div>
           <div class="row" style="color:#aef4ff">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8 H12 M9 5 L12 8 L9 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M13.5 6 H15 M13.5 10 H15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
@@ -1200,7 +1204,9 @@
     handSeen: false,
     handPrev: null,      // previous normalized tip pos for swipe detection
     smoothX: VW * 0.5, smoothY: VH * 0.78,
-    focus: false,        // peace-sign focus mode
+    focus: false,        // (retired) peace-sign focus mode — kept false
+    peace: false,        // peace gesture held -> fires the SUB weapon
+    openPalm: false,     // open palm (パー) held -> fires the MAIN weapon
     graze: { value: 0, max: 100, boost: 0 },
     mod: { name: 'NORMAL', bulletSpeedMul: 1, fanRays: 0, spinnerExtra: 0 },
     shake: 0,
@@ -1277,7 +1283,8 @@
       moveDesc: '人差し指で機体を移動',
       bombDesc: '親指と人差し指でつまむ',
       guardDesc: '人差し指以外を握る（最大10秒）',
-      focusDesc: 'ピース（人差し指＋中指を立てる）',
+      focusDesc: 'ピースでサブ武器を発射',
+      mainDesc: 'パー（手を開く）でメイン武器',
       dashDesc: '指先を素早く振る',
       useDesc: '親指を内側に曲げる → アイテム使用',
       dragonDesc: 'D アイテム取得 → 親指立て10秒で必殺 → 手を変えて発射',
@@ -1330,7 +1337,8 @@
       moveDesc: 'Index finger moves the ship',
       bombDesc: 'Pinch thumb + index',
       guardDesc: 'Curl every finger but index (max 10s)',
-      focusDesc: 'Peace sign (index + middle up)',
+      focusDesc: 'Peace = fire SUB weapon',
+      mainDesc: 'Open palm = fire MAIN weapon',
       dashDesc: 'Flick fingertip quickly',
       useDesc: 'Bend thumb inward → use item',
       dragonDesc: 'Pick D crystal → hold thumbs-up 10s → release to fire',
@@ -1465,16 +1473,15 @@
     charges:  parseInt(localStorage.getItem('hd_charges') || '0', 10),
     ships:    loadJSON('hd_ships', ['vanguard']),   // owned machine (skin) ids
     ship:     localStorage.getItem('hd_ship') || 'vanguard',     // equipped skin
-    weapons:    loadJSON('hd_weapons', ['std']),    // owned weapon ids
+    weapons:    loadJSON('hd_weapons', ['std', 'homing']),  // owned weapon ids
     weaponMain: localStorage.getItem('hd_weapon_main') || localStorage.getItem('hd_weapon') || 'std',
-    weaponSub:  localStorage.getItem('hd_weapon_sub') || 'none',
-    weaponLv:   loadJSON('hd_weaponlv', {}),    // per-weapon persistent level
+    weaponSub:  localStorage.getItem('hd_weapon_sub') || 'homing',
   };
-  if (typeof shop.weaponLv !== 'object' || !shop.weaponLv) shop.weaponLv = {};
   if (!Array.isArray(shop.ships)) shop.ships = ['vanguard'];
   if (!shop.ships.includes('vanguard')) shop.ships.unshift('vanguard');
-  if (!Array.isArray(shop.weapons)) shop.weapons = ['std'];
+  if (!Array.isArray(shop.weapons)) shop.weapons = ['std', 'homing'];
   if (!shop.weapons.includes('std')) shop.weapons.unshift('std');
+  if (!shop.weapons.includes('homing')) shop.weapons.push('homing');  // free default sub
   // Cap any pre-existing inventory to 1 per type (new rule).
   shop.starters.bomb  = Math.min(1, shop.starters.bomb  || 0);
   shop.starters.life  = Math.min(1, shop.starters.life  || 0);
@@ -1526,7 +1533,6 @@
       localStorage.setItem('hd_weapons', JSON.stringify(shop.weapons));
       localStorage.setItem('hd_weapon_main', shop.weaponMain);
       localStorage.setItem('hd_weapon_sub', shop.weaponSub);
-      localStorage.setItem('hd_weaponlv', JSON.stringify(shop.weaponLv));
     } catch {}
   }
   function skinStatLine(sk) {
@@ -1628,72 +1634,27 @@
         onEquip: () => { shop.ship = sk.id; },
       });
     } else {
-      const note = document.createElement('div');
-      note.className = 'shop-note';
-      note.textContent = (lang === 'ja') ? '主=メイン / 副=サブ（2種同時装備）' : 'M = main / S = sub (equip both)';
+      const ja = lang === 'ja';
+      const hdr = (txt) => { const d = document.createElement('div'); d.className = 'shop-section'; d.textContent = txt; rows.appendChild(d); };
+      const note = document.createElement('div'); note.className = 'shop-note';
+      note.textContent = ja ? '強化はプレイ中のパワーアップ取得で' : 'Weapons level up via in-run power-ups';
       rows.appendChild(note);
-      for (const wp of WEAPONS) {
-        const owned = shop.weapons.includes(wp.id);
-        const buyable = !owned && shop.coins >= wp.cost;
-        const isMain = shop.weaponMain === wp.id;
-        const isSub = shop.weaponSub === wp.id;
-        const row = document.createElement('div');
-        row.className = 'item wpn' + (isMain || isSub ? ' equipped' : '');
-        const ico = document.createElement('span');
-        ico.className = 'shop-ico'; ico.style.color = wp.color || '#88e0ff'; ico.innerHTML = wp.icon;
-        const mid = document.createElement('div');
-        const lvMeta = owned ? `<div class="meta">LV ${weaponLevel(wp.id)}/${WEAPON_MAX_LV}</div>` : '';
-        mid.innerHTML = `<div class="name">${wp.name}</div><div class="desc">${(lang === 'ja') ? wp.descJa : wp.desc}</div>${lvMeta}`;
-        const ctrl = document.createElement('div');
-        ctrl.className = 'wpn-ctrl';
-        if (!owned) {
-          const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = wp.cost;
-          const buy = document.createElement('button');
-          buy.type = 'button'; buy.className = 'btn-cta'; buy.textContent = t('buy'); buy.disabled = !buyable;
-          buy.addEventListener('click', () => {
-            if (!buyable) return;
-            shop.coins -= wp.cost; shop.weapons.push(wp.id); shop.weaponMain = wp.id;
-            saveShop(); renderShop(); SFX.pickup();
-          });
-          ctrl.append(cost, buy);
-        } else {
-          const mb = document.createElement('button');
-          mb.type = 'button'; mb.title = 'MAIN';
-          mb.className = 'slot-btn' + (isMain ? ' on' : ''); mb.textContent = (lang === 'ja') ? '主' : 'M';
-          mb.addEventListener('click', () => {
-            if (shop.weaponMain === wp.id) return;
-            shop.weaponMain = wp.id;
-            if (shop.weaponSub === wp.id) shop.weaponSub = 'none';
-            saveShop(); renderShop(); SFX.pickup();
-          });
-          const sb = document.createElement('button');
-          sb.type = 'button'; sb.title = 'SUB';
-          sb.className = 'slot-btn' + (isSub ? ' on' : ''); sb.textContent = (lang === 'ja') ? '副' : 'S';
-          sb.addEventListener('click', () => {
-            if (shop.weaponSub === wp.id) shop.weaponSub = 'none';
-            else if (shop.weaponMain !== wp.id) shop.weaponSub = wp.id;
-            saveShop(); renderShop(); SFX.pickup();
-          });
-          const slotRow = document.createElement('div'); slotRow.className = 'slot-row';
-          slotRow.append(mb, sb);
-          const wl = weaponLevel(wp.id);
-          const up = document.createElement('button'); up.type = 'button'; up.className = 'lvup-btn';
-          if (wl >= WEAPON_MAX_LV) { up.textContent = 'MAX'; up.disabled = true; }
-          else {
-            const c = weaponUpCost(wp.id);
-            up.textContent = ((lang === 'ja') ? '強化 ' : 'LV↑ ') + c;
-            up.disabled = shop.coins < c;
-            up.addEventListener('click', () => {
-              if (shop.coins < c) return;
-              shop.coins -= c; shop.weaponLv[wp.id] = wl + 1;
-              saveShop(); renderShop(); SFX.pickup();
-            });
-          }
-          ctrl.append(slotRow, up);
-        }
-        row.append(ico, mid, ctrl);
-        rows.appendChild(row);
-      }
+
+      hdr(ja ? 'メイン / MAIN' : 'MAIN');
+      for (const wp of WEAPONS.filter(w => w.slot === 'main')) addEquipRow({
+        owned: shop.weapons.includes(wp.id), equipped: shop.weaponMain === wp.id, cost: wp.cost,
+        name: wp.name, desc: ja ? wp.descJa : wp.desc, iconHtml: wp.icon, iconColor: wp.color,
+        onBuy: () => { shop.weapons.push(wp.id); shop.weaponMain = wp.id; },
+        onEquip: () => { shop.weaponMain = wp.id; },
+      });
+
+      hdr(ja ? 'サブ / SUB' : 'SUB');
+      for (const wp of WEAPONS.filter(w => w.slot === 'sub')) addEquipRow({
+        owned: shop.weapons.includes(wp.id), equipped: shop.weaponSub === wp.id, cost: wp.cost,
+        name: wp.name, desc: ja ? wp.descJa : wp.desc, iconHtml: wp.icon, iconColor: wp.color,
+        onBuy: () => { shop.weapons.push(wp.id); shop.weaponSub = wp.id; },
+        onEquip: () => { shop.weaponSub = wp.id; },
+      });
     }
   }
   function showHomeView() {
@@ -2067,12 +2028,13 @@
       const isPeace = !isPinch && !isFist
         && !curlBits[0] && !curlBits[1] && curlBits[2] && curlBits[3];
 
-      const prevFocus = state.focus;
+      const prevPeace = state.peace;
       const prevGuardOn = state.guard.active;
-      state.focus = isPeace && state.running;
+      state.focus = false;                       // focus retired — peace fires the SUB weapon
+      state.peace = isPeace && state.running;
       state.guard.active = isFist && state.guard.remaining > 0 && state.running && state.mode === 'normal';
 
-      if (state.focus && !prevFocus) { showGesture('PEACE', 'FOCUS', '#88e0ff'); SFX.focus(); }
+      if (state.peace && !prevPeace) { showGesture('PEACE', 'SUB', '#88e0ff'); SFX.shootFocus(); }
       if (state.guard.active && !prevGuardOn) { showGesture('FIST', 'GUARD', '#7fffd4'); SFX.guard(); }
 
       if (isPinch && !state.pinch.active && state.running) {
@@ -2089,6 +2051,9 @@
       const thumbToPalm = Math.hypot(lm[4].x - palmCx, lm[4].y - palmCy);
       const thumbInward = thumbToPalm < handSpan * 0.78;
       const thumbExtended = thumbToPalm > handSpan * 0.85;
+
+      // Open palm (パー): all four fingers extended, thumb out -> fire MAIN weapon.
+      state.openPalm = curled === 0 && !isPinch && !thumbInward && state.running;
 
       // Thumbs-up: thumb extended, the four fingers curled. Different from fist
       // (which has the thumb tucked across the palm).
@@ -2167,6 +2132,8 @@
       }
     } else {
       state.handSeen = false;
+      state.peace = false;
+      state.openPalm = false;
       state.readyHandFrames = 0;
     }
     camCtx.restore();
@@ -2266,33 +2233,37 @@
     }
   }
 
-  // One volley of a weapon. Scaled by run power (state.power) AND the weapon's
-  // persistent shop level (wlv): higher level = more damage / extra projectiles.
+  // One volley of a weapon, scaled by the in-run power level (lv = state.power,
+  // raised by power-ups DURING play). Each weapon scales differently.
   function emitWeapon(wid) {
-    const p = state.player, lv = state.power, wlv = weaponLevel(wid);
+    const p = state.player, lv = state.power;
     if (wid === 'spread') {
-      const rays = (lv === 1 ? 3 : lv === 2 ? 5 : 7) + (wlv - 1);
+      const rays = lv === 1 ? 3 : lv === 2 ? 5 : 7;
       const half = (rays - 1) / 2;
-      const dmg = 1 + Math.floor((wlv - 1) / 2);
       for (let i = -half; i <= half; i++) {
-        state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg, kind: 'std' });
+        state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg: 1, kind: 'std' });
       }
     } else if (wid === 'heavy') {
       const lanes = lv >= 3 ? [-7, 0, 7] : lv === 2 ? [-5, 5] : [0];
-      const dmg = 3 + (wlv - 1) * 2;
+      const dmg = 2 + lv;   // lv1=3 .. lv3=5
       for (const ox of lanes) {
         state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg, kind: 'std' });
       }
     } else if (wid === 'homing') {
-      const dmg = 2 + (wlv - 1);
       const mk = (ox, vx) => state.shots.push({
-        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg,
+        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 2,
         kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
       });
       mk(0, 0);
       if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }
-      if (lv >= 3) mk(0, 0);
-      if (wlv >= 4) { mk(-11, -2); mk(11, 2); }
+      if (lv >= 3) { mk(-11, -2); mk(11, 2); }
+    } else if (wid === 'option') {
+      const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
+      for (let i = 1; i <= n; i++) {
+        const sp = 0.4 + i * 0.6;
+        state.shots.push({ x: p.x - 11, y: p.y - 6, vx: -sp, vy: -7.5, r: 3, dmg: 1, kind: 'std' });
+        state.shots.push({ x: p.x + 11, y: p.y - 6, vx:  sp, vy: -7.5, r: 3, dmg: 1, kind: 'std' });
+      }
     } else {
       // 'std' (TWIN). Guard active = only center bolt.
       let lanes;
@@ -2300,13 +2271,8 @@
       else if (lv === 1) lanes = [[-6, 0], [6, 0]];
       else if (lv === 2) lanes = [[-8, 0], [0, -2], [8, 0]];
       else lanes = [[-10, 0], [-4, -2], [4, -2], [10, 0]];
-      const dmg = 1 + Math.floor((wlv - 1) / 2);
       for (const [ox, oy] of lanes) {
-        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg, kind: 'std' });
-      }
-      if (wlv >= 5 && !state.guard.active) {
-        state.shots.push({ x: p.x - 12, y: p.y - 8, vx: -1.2, vy: -9, r: 3, dmg, kind: 'std' });
-        state.shots.push({ x: p.x + 12, y: p.y - 8, vx:  1.2, vy: -9, r: 3, dmg, kind: 'std' });
+        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
       }
     }
   }
@@ -2918,7 +2884,7 @@
 
     // Auto-fire (suppressed while charging DRAGON: thumbs-up posture)
     p.fireCooldown--;
-    if (p.fireCooldown <= 0 && state.handSeen && !state.thumbsUp && state.mode !== 'defender') {
+    if (p.fireCooldown <= 0 && state.handSeen && state.openPalm && !state.thumbsUp && state.mode !== 'defender') {
       playerShot();
       if (state.focus) SFX.shootFocus(); else SFX.shoot();
       const baseCd = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
@@ -2926,16 +2892,20 @@
         : Math.round(baseCd * (currentMainWeapon().fireMul || 1) * (currentSkin().fireMul || 1));
     }
 
-    // SUB weapon: an independent, slower secondary stream (not during focus).
-    if (state.handSeen && !state.thumbsUp && !state.focus && state.mode !== 'defender') {
+    // SUB weapon fires while the PEACE gesture is held.
+    if (state.handSeen && !state.thumbsUp && state.peace && state.mode !== 'defender') {
       const sub = currentSubWeapon();
       if (sub) {
         if (--p.subCd <= 0) {
           emitWeapon(sub.id);
           SFX.shoot();
-          p.subCd = Math.max(8, Math.round(18 * (sub.fireMul || 1)));
+          p.subCd = Math.max(8, Math.round(14 * (sub.fireMul || 1)));
         }
+      } else {
+        p.subCd = 0;
       }
+    } else {
+      p.subCd = 0;   // ready to fire instantly on next peace
     }
 
     // Player shots
@@ -4118,26 +4088,39 @@
       speed: 1.0, hitMul: 1.0, lifeBonus: 0, fireMul: 0.85,
       pal: { '#': '#7a5ad6', 'B': '#2a1a6a', 'C': '#c8b6ff', 'W': '#ffffff', 'E': '#88e0ff' } },
   ];
+  // Weapons are split by slot: MAIN-slot vs SUB-slot. Strength scales with the
+  // in-run power level (picked up during play), NOT a shop purchase.
   const WEAPONS = [
-    { id: 'std',    name: 'TWIN',   cost: 0,    fireMul: 1.0, color: '#9ad8ff',
+    // ----- MAIN-slot -----
+    { id: 'std',    name: 'TWIN',   slot: 'main', cost: 0,    fireMul: 1.0, color: '#9ad8ff',
       descJa: 'バランス型・標準2連', desc: 'Balanced twin shots',
       icon: '<svg viewBox="0 0 16 16"><rect x="5" y="2" width="2" height="12" fill="currentColor"/><rect x="9" y="2" width="2" height="12" fill="currentColor"/></svg>' },
-    { id: 'spread', name: 'SPREAD', cost: 800,  fireMul: 1.1, color: '#b6ff3a',
+    { id: 'spread', name: 'SPREAD', slot: 'main', cost: 800,  fireMul: 1.1, color: '#b6ff3a',
       descJa: '横に広がる拡散弾', desc: 'Wide spread fire',
       icon: '<svg viewBox="0 0 16 16"><path d="M8 14 L3 3 M8 14 L8 2 M8 14 L13 3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>' },
-    { id: 'heavy',  name: 'CANNON', cost: 1200, fireMul: 1.9, color: '#ff8a3a',
+    { id: 'heavy',  name: 'CANNON', slot: 'main', cost: 1200, fireMul: 1.9, color: '#ff8a3a',
       descJa: '低速・高威力の太い弾', desc: 'Slow, heavy bolts',
       icon: '<svg viewBox="0 0 16 16"><rect x="5" y="3" width="6" height="10" rx="3" fill="currentColor"/></svg>' },
-    { id: 'homing', name: 'SEEKER', cost: 1000, fireMul: 1.25, color: '#ff77c8',
-      descJa: '敵を追うホーミング弾', desc: 'Homing missiles',
+    // ----- SUB-slot -----
+    { id: 'homing', name: 'SEEKER', slot: 'sub', cost: 0,   fireMul: 1.25, color: '#ff77c8',
+      descJa: '追尾弾（ピース由来）', desc: 'Homing missiles',
       icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>' },
+    { id: 'option', name: 'OPTION', slot: 'sub', cost: 700, fireMul: 1.2, color: '#aef4ff',
+      descJa: '左右に斜め射撃', desc: 'Angled side shots',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 14 L4 4 M8 14 L12 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
   ];
+  // Keep equipped slots valid for their slot type.
+  (() => {
+    const m = WEAPONS.find(w => w.id === shop.weaponMain);
+    if (!m || m.slot !== 'main') shop.weaponMain = 'std';
+    if (shop.weaponSub !== 'none') {
+      const s = WEAPONS.find(w => w.id === shop.weaponSub);
+      if (!s || s.slot !== 'sub') shop.weaponSub = 'homing';
+    }
+  })();
   function currentSkin()       { return SHIPS.find(s => s.id === shop.ship) || SHIPS[0]; }
   function currentMainWeapon() { return WEAPONS.find(w => w.id === shop.weaponMain) || WEAPONS[0]; }
   function currentSubWeapon()  { return shop.weaponSub === 'none' ? null : (WEAPONS.find(w => w.id === shop.weaponSub) || null); }
-  const WEAPON_MAX_LV = 5;
-  function weaponLevel(id)  { return Math.min(WEAPON_MAX_LV, shop.weaponLv[id] || 1); }
-  function weaponUpCost(id) { return 300 * weaponLevel(id); }   // 300/600/900/1200 for Lv2..5
   function skinPreview(skin) {
     const c = document.createElement('canvas');
     c.width = 30; c.height = 30;
