@@ -88,6 +88,8 @@
   #hud .row.graze   { border-left-color: #ffd066; }
   #hud .row.use     { border-left-color: #88e0ff; }
   #hud .row.dragon  { border-left-color: #ff77c8; }
+  #hud .row.armor   { border-left-color: #88e0ff; }
+  #hud .meter.armor .fill { background: linear-gradient(90deg, #3a7bd5, #88e0ff); }
   #hud .meter.dragon .fill { background: linear-gradient(90deg, #88e0ff, #ff77c8); }
   #hud.crit { animation: hudCrit 0.5s infinite; }
   @keyframes hudCrit {
@@ -431,6 +433,41 @@
     #overlayMsg.howto { grid-template-columns: repeat(2, 1fr); }
     #startBtn, #playBtn { font-size: 16px; padding: 12px 20px; }
   }
+  /* ---------- Touch / responsive hardening ---------- */
+  html, body { overscroll-behavior: none; }
+  #stage { touch-action: none; -webkit-user-select: none; user-select: none; }
+  #stage button { touch-action: manipulation; }
+
+  /* ---------- Co-op DEFENDER: one-time heal-host button ---------- */
+  #healHostBtn {
+    position: absolute;
+    left: 50%; bottom: 14px; transform: translateX(-50%);
+    z-index: 6;
+    font-family: "Press Start 2P", ui-monospace, monospace;
+    font-size: clamp(10px, 2.4vmin, 14px);
+    letter-spacing: 0.08em;
+    padding: 10px 18px;
+    color: #06281f;
+    background: linear-gradient(180deg, #7fffd4, #36b08a);
+    border: 2px solid #d2fff0;
+    box-shadow: 0 0 0 2px #06081a, 0 0 16px rgba(127,255,212,0.5);
+    cursor: pointer;
+    image-rendering: pixelated;
+  }
+  #healHostBtn:active { transform: translateX(-50%) translateY(1px); }
+  #healHostBtn:disabled {
+    opacity: 0.5; cursor: default;
+    background: #2a3a36; color: #8aa6a0; border-color: #3a5a52;
+    box-shadow: 0 0 0 2px #06081a;
+  }
+
+  /* Shrink the HUD + heal button on small / portrait screens */
+  @media (max-width: 600px) {
+    #hud { font-size: 8px; min-width: 104px; padding: 5px 7px; gap: 2px; }
+    #hud .row.lives { font-size: 10px; }
+    #healHostBtn { font-size: 11px; padding: 9px 14px; bottom: 10px; }
+  }
+
   /* ---------- Unified pixel-button system ---------- */
   #overlay button {
     font-family: inherit;
@@ -720,11 +757,16 @@
         <span class="icons" id="powerIcons"></span>
       </div>
       <div class="divider"></div>
-      <div class="row guard">
+      <div class="row guard" id="guardRow">
         <span class="lbl">GUARD</span>
         <span class="val" id="guard">10.0s</span>
       </div>
-      <div class="meter guard"><div class="fill" id="guardBar" style="width:100%"></div></div>
+      <div class="meter guard" id="guardMeter"><div class="fill" id="guardBar" style="width:100%"></div></div>
+      <div class="row armor" id="armorRow" style="display:none">
+        <span class="lbl">ARMOR</span>
+        <span class="val" id="armorText">100%</span>
+      </div>
+      <div class="meter armor" id="armorMeter" style="display:none"><div class="fill" id="armorBar" style="width:100%"></div></div>
       <div class="row graze">
         <span class="lbl">GRAZE</span>
         <span class="val" id="grazeText">0</span>
@@ -747,6 +789,8 @@
     <button id="camBtn" type="button" title="Camera background (C)">CAM</button>
     <button id="muteBtn" type="button" title="Mute (M)">SFX</button>
     <button id="pauseBtn" type="button" title="Pause (P)"><span class="ico"><span></span><span></span></span></button>
+    <!-- Co-op DEFENDER: one-time "heal the host" (hidden outside defender mode) -->
+    <button id="healHostBtn" type="button" style="display:none">♥ HEAL HOST</button>
     <div id="pauseOverlay">
       <div>
         <div class="label" data-i18n="paused">PAUSED</div>
@@ -934,6 +978,12 @@
     powerIcons: document.getElementById('powerIcons'),
     guard: document.getElementById('guard'),
     guardBar: document.getElementById('guardBar'),
+    guardRow: document.getElementById('guardRow'),
+    guardMeter: document.getElementById('guardMeter'),
+    armorRow: document.getElementById('armorRow'),
+    armorMeter: document.getElementById('armorMeter'),
+    armorText: document.getElementById('armorText'),
+    armorBar: document.getElementById('armorBar'),
     grazeText: document.getElementById('grazeText'),
     grazeBar: document.getElementById('grazeBar'),
     boostFlag: document.getElementById('boostFlag'),
@@ -1040,7 +1090,22 @@
     hitsTaken: 0,
     usedBombs: 0,
     rank: 'C',
+    // ---- Co-op / Defender (guest) role ----
+    mode: 'normal',            // 'normal' | 'defender' (co-op guest = defence/tank role)
+    armor: { hp: 100, max: 100 }, // guest tank durability (耐久)
+    stations: [],              // defender: drifting repair stations
+    taunt: { t: 0, cd: 0, prevFist: false }, // tank taunt (pull bullets off host)
+    host: null,                // the remote host player (set when networked)
+    healHostUsed: false,       // guest one-time "heal the host" (co-op)
   };
+
+  // Enter the co-op DEFENDER (guest) role with ?mode=defender (or ?role=guest).
+  // Anything else keeps the normal single-player game completely unchanged.
+  (() => {
+    const q = new URLSearchParams(location.search);
+    const m = (q.get('mode') || q.get('role') || '').toLowerCase();
+    if (m === 'defender' || m === 'guest') state.mode = 'defender';
+  })();
 
   // ---------- i18n ----------
   const STR = {
@@ -1706,7 +1771,7 @@
       const prevFocus = state.focus;
       const prevGuardOn = state.guard.active;
       state.focus = isPeace && state.running;
-      state.guard.active = isFist && state.guard.remaining > 0 && state.running;
+      state.guard.active = isFist && state.guard.remaining > 0 && state.running && state.mode !== 'defender';
 
       if (state.focus && !prevFocus) { showGesture('PEACE', 'FOCUS', '#88e0ff'); SFX.focus(); }
       if (state.guard.active && !prevGuardOn) { showGesture('FIST', 'GUARD', '#7fffd4'); SFX.guard(); }
@@ -1731,7 +1796,12 @@
       const isThumbsUp = thumbExtended && curled === 4 && !isPinch && !isPeace;
       // Re-evaluate fist so thumbs-up wins ambiguity
       const isFistOnly = isFist && !isThumbsUp;
-      state.guard.active = isFistOnly && state.guard.remaining > 0 && state.running;
+      state.guard.active = isFistOnly && state.guard.remaining > 0 && state.running && state.mode !== 'defender';
+      // Co-op tank: FIST = TAUNT (guard is removed for the defender)
+      if (state.mode === 'defender') {
+        if (isFistOnly && !state.taunt.prevFist && state.running) triggerTaunt();
+        state.taunt.prevFist = isFistOnly;
+      }
 
       const isThumbBent = thumbInward && curled === 0 && !isPinch && !isFist && !isPeace;
       if (isThumbBent && !state.thumbBent && state.running) {
@@ -2437,9 +2507,12 @@
     }
     if (state.t % 6 === 0) updateHud();
 
+    // Co-op DEFENDER role: tank armour upkeep (gameplay otherwise = single-player).
+    if (state.mode === 'defender') updateDefender();
+
     // Auto-fire (suppressed while charging DRAGON: thumbs-up posture)
     p.fireCooldown--;
-    if (p.fireCooldown <= 0 && state.handSeen && !state.thumbsUp) {
+    if (p.fireCooldown <= 0 && state.handSeen && !state.thumbsUp && state.mode !== 'defender') {
       playerShot();
       if (state.focus) SFX.shootFocus(); else SFX.shoot();
       p.fireCooldown = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
@@ -2569,7 +2642,7 @@
       // collide with player hitbox (guard also blocks)
       if (p.invuln <= 0 && !state.guard.active && d2p < (b.r + p.hitR) ** 2) {
         state.bullets.splice(i, 1);
-        playerHit();
+        if (state.mode === 'defender') armorHit(DEF.ARMOR_HIT); else playerHit();
       }
     }
 
@@ -2603,6 +2676,13 @@
         } else if (p.invuln > 0) {
           // pass-through during dash / post-hit invuln
           continue;
+        } else if (state.mode === 'defender') {
+          // Tank: a meteor wrecks armour instead of being an instant death.
+          for (let k = 0; k < 30; k++) pushParticle(m.x, m.y, '#88e0ff');
+          state.meteors.splice(i, 1);
+          state.shake = Math.max(state.shake, 24);
+          SFX.bomb();
+          armorHit(DEF.ARMOR_METEOR);
         } else {
           // Instant death
           for (let k = 0; k < 80; k++) pushParticle(p.x, p.y, '#ff7c98');
@@ -2678,6 +2758,192 @@
     if (state.lives <= 0) gameOver();
   }
 
+  // ---------- Co-op DEFENDER (guest) role ----------
+  // Co-op = the normal single-player game with TWO real players. The guest plays
+  // the DEFENCE role: it does not shoot, and instead of dying in one hit it is a
+  // TANK — an armour gauge (耐久) soaks bullets, and only broken armour costs a
+  // life. Enemies / waves / boss / stages / score stay exactly single-player.
+  const DEF = {
+    ARMOR_MAX: 100,       // guest tank armour durability
+    ARMOR_HIT: 25,        // armour spent per bullet hit
+    ARMOR_METEOR: 60,     // armour spent per meteor (instead of instant death)
+    ARMOR_IFRAMES: 30,    // i-frames after an armour hit
+    HEAL_FLAT: 5,         // host HP restored by the one-time guest heal (networked)
+    STATION_CHANCE: 0.0007, // per-frame spawn chance (~once/24s), one at a time
+    STATION_R: 46,        // dwell radius (VW coords)
+    STATION_REPAIR: 240,  // frames inside the station to fully repair (4s @60fps)
+    STATION_VY: 0.55,     // drift speed (slow, meteor-like)
+    TAUNT_DUR: 150,       // taunt duration (frames, ~2.5s)
+    TAUNT_CD: 240,        // cooldown AFTER the taunt ends (frames, ~4s)
+    TAUNT_R: 160,         // bullet-attraction radius (VW coords)
+    TAUNT_PULL: 0.22,     // per-frame steering of bullets toward the tank
+  };
+
+  function startDefenderRound() {
+    state.armor.hp = DEF.ARMOR_MAX;
+    state.stations.length = 0;
+    state.taunt.t = 0; state.taunt.cd = 0; state.taunt.prevFist = false;
+    state.healHostUsed = false;
+    applyModeHud();
+    healHostUpdateBtn();
+  }
+
+  function updateDefender() {
+    updateStations();
+    updateTaunt();
+  }
+
+  // TAUNT (fist): drag nearby enemy bullets toward the tank — off the host —
+  // for a few seconds. The tank soaks them with armour. The guest's signature
+  // co-op move. Works on already-fired bullets, so no enemy-aim change needed.
+  function updateTaunt() {
+    if (state.taunt.cd > 0) state.taunt.cd--;
+    if (state.taunt.t <= 0) return;
+    state.taunt.t--;
+    const p = state.player, R = DEF.TAUNT_R;
+    for (const b of state.bullets) {
+      const dx = p.x - b.x, dy = p.y - b.y;
+      const d = Math.hypot(dx, dy) || 1;
+      if (d < R) {
+        const pull = DEF.TAUNT_PULL * (1 - d / R);
+        b.vx += (dx / d) * pull;
+        b.vy += (dy / d) * pull;
+      }
+    }
+    if (state.t % 3 === 0) {
+      const a = Math.random() * TAU, rr = R * (0.7 + Math.random() * 0.3);
+      pushParticle(p.x + Math.cos(a) * rr, p.y + Math.sin(a) * rr, '#ffb14e');
+    }
+  }
+
+  function triggerTaunt() {
+    if (state.mode !== 'defender' || !state.running) return;
+    if (state.taunt.t > 0 || state.taunt.cd > 0) return;
+    state.taunt.t = DEF.TAUNT_DUR;
+    state.taunt.cd = DEF.TAUNT_DUR + DEF.TAUNT_CD;
+    state.shake = Math.max(state.shake, 6);
+    showGesture('FIST', 'TAUNT', '#ffb14e');
+    SFX.guard();
+  }
+
+  // Guest takes a hit: spend armour. Once armour is gone the tank is exposed and
+  // further hits cost a life (normal single-player flow). No auto-repair — the
+  // only way back is to dock at a repair station.
+  function armorHit(cost) {
+    const p = state.player;
+    if (p.invuln > 0) return;
+    if (state.armor.hp <= 0) { playerHit(); return; }   // exposed -> real hit
+    state.armor.hp -= cost;
+    p.invuln = DEF.ARMOR_IFRAMES;
+    state.shake = Math.max(state.shake, 8);
+    for (let k = 0; k < 12; k++) pushParticle(p.x, p.y, '#88e0ff');
+    SFX.guard();
+    if (state.armor.hp <= 0) { state.armor.hp = 0; armorBreak(); }
+    updateHud();
+  }
+
+  // Armour fully depleted -> plates flake off; the tank is now bare.
+  function armorBreak() {
+    const p = state.player;
+    p.invuln = Math.max(p.invuln, 50);   // a beat to recover as plates blow off
+    state.shake = Math.max(state.shake, 18);
+    for (let k = 0; k < 26; k++) {
+      const c = k % 3 === 0 ? '#b6bcd0' : (k % 3 === 1 ? '#7e84a0' : '#88e0ff');
+      pushParticle(p.x, p.y, c);
+    }
+    pushPopup(p.x, p.y - 26, 'ARMOR BROKEN', '#ff7c98', 12);
+    SFX.playerHit();
+    updateHud();
+  }
+
+  // Rare drifting repair station: dwell 4s to fully restore armour.
+  function updateStations() {
+    if (state.stations.length === 0 && state.t > 180 && Math.random() < DEF.STATION_CHANCE) {
+      state.stations.push({
+        x: rand(80, VW - 80), y: -50,
+        vx: rand(-0.2, 0.2), vy: DEF.STATION_VY,
+        r: DEF.STATION_R, prog: 0, t: 0,
+      });
+    }
+    const p = state.player;
+    for (let i = state.stations.length - 1; i >= 0; i--) {
+      const s = state.stations[i];
+      s.t++; s.x += s.vx; s.y += s.vy;
+      if (dist2(p.x, p.y, s.x, s.y) < s.r * s.r) {
+        s.prog++;
+        if (s.t % 4 === 0) pushParticle(p.x + rand(-10, 10), p.y + rand(-10, 10), '#7fffd4');
+        if (s.prog >= DEF.STATION_REPAIR) {
+          state.armor.hp = state.armor.max;
+          for (let k = 0; k < 40; k++) pushParticle(p.x, p.y, '#7fffd4');
+          pushPopup(p.x, p.y - 30, 'ARMOR RESTORED', '#7fffd4', 14);
+          SFX.grazeMax();
+          updateHud();
+          state.stations.splice(i, 1);
+          continue;
+        }
+      }
+      if (s.y > VH + 60) state.stations.splice(i, 1);
+    }
+  }
+
+  function drawStations() {
+    for (const s of state.stations) {
+      // solar panels
+      ctx.fillStyle = '#3a6ea5';
+      ctx.fillRect(s.x - 26, s.y - 4, 12, 8);
+      ctx.fillRect(s.x + 14, s.y - 4, 12, 8);
+      // hull
+      ctx.fillStyle = '#c9cee0';
+      ctx.fillRect(s.x - 10, s.y - 8, 20, 16);
+      ctx.fillStyle = '#8990b0';
+      ctx.fillRect(s.x - 10, s.y - 8, 20, 3);
+      // docking light (blinks)
+      ctx.fillStyle = (s.t % 30 < 15) ? '#7fffd4' : '#2f6f5a';
+      ctx.fillRect(s.x - 2, s.y - 12, 4, 4);
+      // dwell radius hint
+      ctx.strokeStyle = 'rgba(127,255,212,0.22)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, TAU); ctx.stroke();
+      // repair progress ring
+      if (s.prog > 0) {
+        const f = clamp(s.prog / DEF.STATION_REPAIR, 0, 1);
+        ctx.strokeStyle = '#7fffd4'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, -Math.PI / 2, -Math.PI / 2 + TAU * f); ctx.stroke();
+      }
+      ctx.fillStyle = '#7fffd4'; ctx.font = '7px monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText('REPAIR', s.x, s.y + s.r + 8);
+    }
+  }
+
+  // Swap GUARD (unused for the tank guest) for the ARMOR meter in the HUD.
+  function applyModeHud() {
+    const def = state.mode === 'defender';
+    if (hud.guardRow)   hud.guardRow.style.display   = def ? 'none' : '';
+    if (hud.guardMeter) hud.guardMeter.style.display = def ? 'none' : '';
+    if (hud.armorRow)   hud.armorRow.style.display   = def ? '' : 'none';
+    if (hud.armorMeter) hud.armorMeter.style.display = def ? '' : 'none';
+  }
+
+  // One-time "heal the host". Needs a real host (networked); inert in solo.
+  function healHost() {
+    if (state.mode !== 'defender' || state.healHostUsed || !state.running) return;
+    if (!state.host) return;
+    state.healHostUsed = true;
+    pushPopup(state.player.x, state.player.y - 28, 'HOST +' + DEF.HEAL_FLAT, '#7fffd4', 14);
+    SFX.grazeMax();
+    healHostUpdateBtn();
+    // 2P hook: net && net.send({ type: 'heal', amt: DEF.HEAL_FLAT });
+  }
+
+  function healHostUpdateBtn() {
+    const btn = document.getElementById('healHostBtn');
+    if (!btn) return;
+    // Only meaningful once a real host is connected.
+    btn.style.display = (state.mode === 'defender' && state.running && state.host) ? '' : 'none';
+    btn.disabled = state.healHostUsed;
+    btn.textContent = state.healHostUsed ? '♥ HOST USED' : '♥ HEAL HOST';
+  }
+
   function computeRank() {
     let s = 0;
     s += Math.min(state.score / 5000, 6);    // score weight, cap 6
@@ -2712,6 +2978,7 @@
 
   async function gameOver() {
     state.running = false;
+    healHostUpdateBtn();
     bgm.stop();
     SFX.gameOver();
     state.rank = computeRank();
@@ -2766,6 +3033,12 @@
     hud.guard.className = 'val' + (state.guard.active ? ' warn'
                                   : state.guard.remaining <= 60 ? ' crit' : '');
     hud.guardBar.style.width = (state.guard.remaining / 600 * 100) + '%';
+    if (state.mode === 'defender') {
+      const af = clamp(state.armor.hp / state.armor.max, 0, 1);
+      hud.armorText.textContent = state.armor.hp <= 0 ? 'BROKEN' : Math.round(af * 100) + '%';
+      hud.armorText.className = 'val' + (state.armor.hp <= 0 ? ' crit' : (af <= 0.3 ? ' warn' : ''));
+      hud.armorBar.style.width = (af * 100) + '%';
+    }
     hud.grazeText.textContent = state.graze.boost > 0 ? 'MAX!' : state.graze.value;
     hud.grazeBar.style.width = (state.graze.value / state.graze.max * 100) + '%';
     hud.boostFlag.classList.toggle('on', state.graze.boost > 0);
@@ -3238,6 +3511,8 @@
       ctx.fillText(paused ? 'RAISE YOUR HAND TO RESUME' : 'カメラに手を映してください',
                    VW/2, VH/2 + 14);
     }
+
+    drawDefenderHud();
 
     // ---- Blit low-res buffer to display canvas (nearest neighbor) ----
     displayCtx.imageSmoothingEnabled = false;
@@ -3824,6 +4099,30 @@
     ctx.fillText(label, x + tw + padX, y + 6);
   }
 
+  function drawDefenderHud() {
+    if (state.mode !== 'defender' || !state.running) return;
+    const sx = canvas.width / VW, sy = canvas.height / VH;
+    ctx.setTransform(sx, 0, 0, sy, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    drawStations();
+    // taunt magnet aura (expanding rings) while active
+    const p = state.player;
+    if (state.taunt.t > 0) {
+      ctx.strokeStyle = '#ffb14e'; ctx.lineWidth = 2;
+      for (let r = 0; r < 3; r++) {
+        const rr = (state.t * 3 + r * (DEF.TAUNT_R / 3)) % DEF.TAUNT_R;
+        ctx.globalAlpha = Math.max(0, 1 - rr / DEF.TAUNT_R);
+        ctx.beginPath(); ctx.arc(p.x, p.y, rr, 0, TAU); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+    // taunt status (bottom-left)
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '8px monospace';
+    const ready = state.taunt.t <= 0 && state.taunt.cd <= 0;
+    ctx.fillStyle = state.taunt.t > 0 ? '#ffb14e' : (ready ? '#7fffd4' : '#555a82');
+    ctx.fillText(state.taunt.t > 0 ? 'TAUNT!' : (ready ? 'TAUNT READY (FIST)' : 'TAUNT CD'), 60, VH - 30);
+  }
+
   function drawEnemy(e) {
     if (e.isBoss) {
       const v = getBossVariant();
@@ -3948,11 +4247,13 @@
     SFX.stageStart();
     bgm.play();
     overlay.querySelector('h1').textContent = 'HAND DANMAKU';
+    if (state.mode === 'defender') startDefenderRound();
     updateHud();
   }
 
   startBtn.addEventListener('click', goToReady);
   playBtn.addEventListener('click', () => { if (!playBtn.disabled) start(); });
+  document.getElementById('healHostBtn').addEventListener('click', healHost);
   backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
   backBtn.addEventListener('click', () => { showHomeView(); });
