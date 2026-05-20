@@ -73,9 +73,13 @@
   #cam, #camOverlay { display: none; }
 
   #hud {
-    position: absolute; top: 10px; left: 10px;
+    /* Sit in the empty letterbox margin to the LEFT of the 4:3 stage on wide
+       screens; clamps to the top-left overlay when there's no margin (mobile). */
+    position: fixed; top: 12px;
+    left: max(8px, calc((100vw - min(100vw, 100vh * 4 / 3)) / 2 - 172px));
+    z-index: 12;
     pointer-events: none;
-    display: flex; flex-direction: column; gap: 4px;
+    display: none; flex-direction: column; gap: 4px;
     background: linear-gradient(180deg, rgba(15,18,46,0.85), rgba(8,10,28,0.85));
     border: 2px solid #2a2f55;
     box-shadow: 0 0 0 2px #06081a, 0 0 12px rgba(120,140,255,0.25);
@@ -86,6 +90,8 @@
     line-height: 1.2;
     image-rendering: pixelated;
   }
+  /* HUD shows only during active play (otherwise the margin would show stats on the title) */
+  body.playing #hud { display: flex; }
   #hud .row {
     display: flex; align-items: center; justify-content: space-between;
     gap: 8px;
@@ -767,7 +773,7 @@
   }
   #shopList .item {
     display: grid;
-    grid-template-columns: 1fr auto auto;
+    grid-template-columns: auto 1fr auto auto;
     gap: 10px;
     align-items: center;
     padding: 8px 10px;
@@ -776,6 +782,15 @@
     font-size: 11px;
     line-height: 1.3;
   }
+  #shopList .item .shop-ico {
+    width: 34px; height: 34px;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(8,12,36,0.7);
+    border: 1px solid rgba(136,168,255,0.25);
+    border-radius: 6px;
+    box-shadow: inset 0 0 8px rgba(136,168,255,0.12);
+  }
+  #shopList .item .shop-ico svg { width: 22px; height: 22px; display: block; }
   #shopList .item .name { color: #88e0ff; font-weight: 700; letter-spacing: 0.06em; }
   #shopList .item .desc { color: #cfd2f0; font-size: 10px; }
   #shopList .item .meta { color: #8890b8; font-size: 10px; margin-top: 2px; }
@@ -1424,21 +1439,29 @@
   const SHOP_ITEMS = [
     {
       id: 'bomb', name: 'START +1 BOMB', descKey: 'shopBomb', cost: 200,
+      color: '#ff7c98',
+      icon: '<svg viewBox="0 0 16 16"><circle cx="7" cy="10" r="4.6" fill="currentColor"/><path d="M10 6 L12 4 M12 4 H14 M12 4 V2" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/><circle cx="13.6" cy="2" r="1.1" fill="#ffd066"/></svg>',
       max: () => 1, owned: () => shop.starters.bomb,
       buy: () => { shop.starters.bomb = 1; },
     },
     {
       id: 'life', name: 'START +1 LIFE', descKey: 'shopLife', cost: 400,
+      color: '#ff5f7e',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 14 L2.6 8.6 C0.6 6.6 1.6 3.2 4.6 3.2 C6 3.2 7.3 4.2 8 5.2 C8.7 4.2 10 3.2 11.4 3.2 C14.4 3.2 15.4 6.6 13.4 8.6 Z" fill="currentColor"/></svg>',
       max: () => 1, owned: () => shop.starters.life,
       buy: () => { shop.starters.life = 1; },
     },
     {
       id: 'power', name: 'START AT Lv2', descKey: 'shopPower', cost: 600,
+      color: '#ffd066',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 1 L9.6 6.4 L15 8 L9.6 9.6 L8 15 L6.4 9.6 L1 8 L6.4 6.4 Z" fill="currentColor"/></svg>',
       max: () => 1, owned: () => shop.starters.power,
       buy: () => { shop.starters.power = 1; },
     },
     {
       id: 'charge', name: 'BULLET TIME CHARGE', descKey: 'shopCharge', cost: 100,
+      color: '#88e0ff',
+      icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.2 V8 L10.6 9.6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>',
       max: () => 1, owned: () => shop.charges,
       buy: () => { shop.charges = 1; },
     },
@@ -1463,6 +1486,7 @@
       row.className = 'item' + (maxed ? ' maxed' : '');
       const ownedStr = (lang === 'ja') ? `購入済: ${owned}/${max}` : `Owned: ${owned}/${max}`;
       row.innerHTML = `
+        <span class="shop-ico" style="color:${it.color || '#88e0ff'}">${it.icon || ''}</span>
         <div>
           <div class="name">${it.name}</div>
           <div class="desc">${t(it.descKey)}</div>
@@ -1484,6 +1508,7 @@
   }
   function showHomeView() {
     overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView');
+    document.body.classList.remove('playing');
     coinAmt.textContent = shop.coins;
     syncLoadoutSummary();
   }
@@ -4442,6 +4467,7 @@
   function start() {
     overlay.classList.add('hidden');
     overlayPanel.classList.remove('readyView', 'shopView', 'loadoutView');
+    document.body.classList.add('playing');
     state.readyPalmRecent = 0;
     overlay.querySelector('h1.home-only').textContent = t('titleHome');
     document.getElementById('scoreSummary').innerHTML = '';
