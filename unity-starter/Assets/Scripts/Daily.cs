@@ -44,8 +44,8 @@ public static class Daily
 
 public static class GameRng
 {
-    public static float Float01() => Daily.Enabled ? Daily.NextFloat() : Random.value;
+    public static float Float01() => Daily.Enabled ? Daily.NextFloat() : UnityEngine.Random.value;
     public static float Range(float a, float b) => a + Float01() * (b - a);
     public static int Range(int a, int b) =>
-        Daily.Enabled ? a + Daily.NextInt(Mathf.Max(1, b - a)) : Random.Range(a, b);
+        Daily.Enabled ? a + Daily.NextInt(Mathf.Max(1, b - a)) : UnityEngine.Random.Range(a, b);
 }
