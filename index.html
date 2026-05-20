@@ -2292,7 +2292,8 @@
 
       const isThumbBent = thumbInward && curled === 0 && !isPinch && !isFist && !isPeace;
       if (isThumbBent && !state.thumbBent && state.running) {
-        useActiveItem();
+        if (state.mode === 'defender') triggerShield();   // tank: thumb-in deploys the host shield
+        else useActiveItem();                             // normal: thumb-in uses the active item
       }
       state.thumbBent = isThumbBent;
 
@@ -2309,11 +2310,9 @@
         state.readyHandFrames = 0;
       }
 
-      if (state.mode === 'defender') {
-        // Tank: THUMBS-UP deploys a protective shield on the host (no dragon).
-        if (isThumbsUp && !state.thumbsUp && state.running) triggerShield();
-      } else {
+      if (state.mode !== 'defender') {
         // Dragon: requires a Dragon Crystal to be picked up first.
+        // (The tank has no dragon; its thumb-in gesture deploys the host shield.)
         // Once unlocked, thumbs-up charges the beam; releasing it when full fires.
         const dragonChargeable = state.dragonUnlocked && state.running
           && !state.paused && !state.autoPaused && state.dragonFiring === 0;
@@ -3611,7 +3610,7 @@
     if (state.mode !== 'defender' || !state.running) return;
     if (state.shieldCd > 0) return;
     state.shieldCd = DEF.SHIELD_CD;
-    showGesture('THUMBS UP', 'HOST SHIELD', '#7fdcff');
+    showGesture('THUMB-IN', 'HOST SHIELD', '#7fdcff');
     SFX.guard();
     if (NET.isGuest()) NET.send({ type: 'shield' });
     else state.hostShieldT = DEF.SHIELD_DUR;         // solo test: shield around self
@@ -5152,7 +5151,7 @@
     const shReady = state.shieldCd <= 0;
     ctx.fillStyle = state.hostShieldT > 0 ? '#7fdcff' : (shReady ? '#7fffd4' : '#555a82');
     ctx.fillText(state.hostShieldT > 0 ? 'SHIELD ACTIVE'
-               : shReady ? 'SHIELD READY (THUMB-UP)'
+               : shReady ? 'SHIELD READY (THUMB-IN)'
                : 'SHIELD CD ' + Math.ceil(state.shieldCd / 60) + 's', 60, VH - 30);
 
     // HEAL HOST (PEACE) — one-time
