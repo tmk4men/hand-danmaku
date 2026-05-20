@@ -32,7 +32,8 @@ set "RC=%ERRORLEVEL%"
 if "%RC%"=="0" (
   echo.
   echo [OK] Build done -^> %PROJECT%Builds\Web
-  echo Next: zip the contents of Builds\Web and upload to unityroom.
+  echo [OK] Upload-ready zip -^> %PROJECT%Builds\HandDanmaku_unityroom.zip
+  echo Next: upload that zip to unityroom (no manual zipping needed).
 ) else (
   echo.
   echo [FAILED] exit code %RC% - scroll up for the Unity error.

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
@@ -49,6 +50,8 @@ public static class BuildScript
         {
             Debug.Log($"[BuildScript] WebGL build OK -> {summary.outputPath} " +
                       $"({summary.totalSize / 1024 / 1024.0:0.0} MB)");
+            string zipPath = ZipForUnityroom(outDir);
+            Debug.Log($"[BuildScript] unityroom zip ready -> {zipPath}");
             if (Application.isBatchMode) EditorApplication.Exit(0);
         }
         else
@@ -93,6 +96,17 @@ public static class BuildScript
 
         EditorSceneManager.SaveScene(scene, ScenePath);
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
+    }
+
+    // Zip the build's CONTENTS (index.html at zip root) — the layout unityroom wants.
+    static string ZipForUnityroom(string buildDir)
+    {
+        string full = Path.GetFullPath(buildDir);
+        string parent = Path.GetDirectoryName(full);
+        string zipPath = Path.Combine(parent, "HandDanmaku_unityroom.zip");
+        if (File.Exists(zipPath)) File.Delete(zipPath);
+        ZipFile.CreateFromDirectory(full, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+        return zipPath;
     }
 
     static string GetArg(string name)

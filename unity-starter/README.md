@@ -54,6 +54,7 @@ build_webgl.bat "C:\Program Files\Unity\Hub\Editor\6000.4.7f1\Editor\Unity.exe"
 - WebGL Template = **MediaPipe** / Compression = **Gzip** /
   Decompression Fallback = **OFF** / Color Space = **Gamma** / 960×720 / コードストリップ
 - プラットフォームを WebGL に切替えて `Builds/Web/` に出力
+- **`Builds/HandDanmaku_unityroom.zip` を自動生成**（index.html がzip直下＝unityroom にそのままアップできる形）
 
 ### GUI で操作したい人向け
 Unity Hub → **Open** → このフォルダを選択 → メニュー **Build ▸ WebGL (unityroom)**。
@@ -73,7 +74,8 @@ python3 -m http.server 8080
 
 ## 3. unityroom 投稿
 
-1. `Builds/Web/` の**中身**を zip 化（index.html がルートに来るように）
+1. ビルドで自動生成された **`Builds/HandDanmaku_unityroom.zip`** をそのまま使う
+   （手動 zip 不要。中身を作り直したい場合は `Builds/Web/` の中身を index.html がルートに来るよう zip）
 2. https://unityroom.com にログイン → **ゲームを投稿する**
 3. zip をアップロード
 4. メタデータ:
