@@ -105,7 +105,8 @@ public static class BuildScript
         string parent = Path.GetDirectoryName(full);
         string zipPath = Path.Combine(parent, "HandDanmaku_unityroom.zip");
         if (File.Exists(zipPath)) File.Delete(zipPath);
-        ZipFile.CreateFromDirectory(full, zipPath, CompressionLevel.Optimal, includeBaseDirectory: false);
+        ZipFile.CreateFromDirectory(full, zipPath,
+            System.IO.Compression.CompressionLevel.Optimal, includeBaseDirectory: false);
         return zipPath;
     }
 
