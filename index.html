@@ -4,12 +4,12 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>HAND DANMAKU — 手で操る弾幕シューティング</title>
-<meta name="description" content="手のジェスチャだけで操る弾幕シューティング。人差し指で移動、ピンチでボム、ピースで追尾射撃、グーでガード、指振りでダッシュ。ブラウザだけで動作。" />
+<meta name="description" content="手のジェスチャだけで操る弾幕シューティング。人差し指で移動、パーでメイン射撃、ピースでサブ射撃、ピンチでボム、グーでガード。ブラウザだけで動作。" />
 
 <!-- Open Graph -->
 <meta property="og:type" content="website" />
 <meta property="og:title" content="HAND DANMAKU — 手で操る弾幕シューティング" />
-<meta property="og:description" content="MOVE / BOMB / GUARD / FOCUS / DASH / USE — 手のジェスチャだけで弾幕を捌くブラウザゲーム。" />
+<meta property="og:description" content="MOVE / MAIN / SUB / BOMB / GUARD — 手のジェスチャだけで弾幕を捌くブラウザゲーム。" />
 <meta property="og:image" content="https://tmk4men.github.io/hand-danmaku/og.png" />
 <meta property="og:image:width" content="1200" />
 <meta property="og:image:height" content="630" />
@@ -938,8 +938,7 @@
     <button id="camBtn" type="button" title="Camera background (C)">CAM</button>
     <button id="muteBtn" type="button" title="Mute (M)">SFX</button>
     <button id="pauseBtn" type="button" title="Pause (P)"><span class="ico"><span></span><span></span></span></button>
-    <!-- Co-op DEFENDER: one-time "heal the host" (hidden outside defender mode) -->
-    <button id="healHostBtn" type="button" style="display:none">♥ HEAL HOST</button>
+    <!-- Co-op DEFENDER: one-time "heal the host" is now the PEACE gesture (no button) -->
     <div id="pauseOverlay">
       <div>
         <div class="label" data-i18n="paused">PAUSED</div>
@@ -974,10 +973,6 @@
           <div class="row" style="color:#88e0ff">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 13 L7 2 M11 13 L9 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" fill="none"/></svg></span>
             <b>SUB</b><em data-i18n="focusDesc">ピースでサブ武器を発射</em>
-          </div>
-          <div class="row" style="color:#aef4ff">
-            <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 8 H12 M9 5 L12 8 L9 11" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/><path d="M13.5 6 H15 M13.5 10 H15" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg></span>
-            <b>DASH</b><em data-i18n="dashDesc">指先を素早く振る</em>
           </div>
           <div class="row" style="color:#ffd066">
             <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 3 V11 H12 V9 L9 6 L11 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 6 H11" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>
@@ -2259,7 +2254,10 @@
       state.peace = isPeace && state.running;
       state.guard.active = isFist && state.guard.remaining > 0 && state.running && state.mode === 'normal';
 
-      if (state.peace && !prevPeace) { showGesture('PEACE', 'SUB', '#88e0ff'); SFX.shootFocus(); }
+      if (state.peace && !prevPeace) {
+        if (state.mode === 'defender') healHost();          // tank: PEACE = one-time heal the host
+        else { showGesture('PEACE', 'SUB', '#88e0ff'); SFX.shootFocus(); }
+      }
       if (state.guard.active && !prevGuardOn) { showGesture('FIST', 'GUARD', '#7fffd4'); SFX.guard(); }
 
       if (isPinch && !state.pinch.active && state.running) {
@@ -2340,19 +2338,7 @@
       // Track raw target for viewer-facing aim reticle
       state.handAim = { x: state.player.tx, y: state.player.ty };
 
-      // Swipe-dash detection from fingertip velocity
-      if (state.handPrev && state.running && state.player.dashCd <= 0
-          && !isFist && !isPinch) {
-        const dx = tip.x - state.handPrev.x;
-        const dy = tip.y - state.handPrev.y;
-        const sp = Math.hypot(dx, dy);
-        if (sp > 0.085) {
-          triggerDash(dx / sp, dy / sp);
-          showGesture('SWIPE', 'DASH', '#aef4ff');
-          SFX.dash();
-        }
-      }
-      state.handPrev = { x: tip.x, y: tip.y };
+      // Swipe-dash removed (was triggering accidentally on normal hand movement).
 
       // Draw landmarks
       if (window.drawConnectors && window.HAND_CONNECTIONS) {
@@ -3743,14 +3729,15 @@
     if (hud.armorMeter) hud.armorMeter.style.display = def ? '' : 'none';
   }
 
-  // One-time "heal the host". Needs a real host (networked); inert in solo.
+  // One-time "heal the host" — triggered by the PEACE gesture. Needs a real host
+  // (networked); inert in solo (no host).
   function healHost() {
     if (state.mode !== 'defender' || state.healHostUsed || !state.running) return;
     if (!state.host) return;
     state.healHostUsed = true;
+    showGesture('PEACE', 'HEAL HOST', '#7fffd4');
     pushPopup(state.player.x, state.player.y - 28, 'HEAL HOST', '#7fffd4', 14);
     SFX.grazeMax();
-    healHostUpdateBtn();
     if (NET.isGuest()) NET.send({ type: 'heal' });   // host gains +1 life
   }
 
@@ -5148,25 +5135,31 @@
       }
       ctx.globalAlpha = 1;
     }
-    // taunt status (bottom-left)
+    // ability status stack (bottom-left)
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '8px monospace';
     const ready = state.taunt.t <= 0 && state.taunt.cd <= 0;
     ctx.fillStyle = state.taunt.t > 0 ? '#ffb14e' : (ready ? '#7fffd4' : '#555a82');
-    ctx.fillText(state.taunt.t > 0 ? 'TAUNT!' : (ready ? 'TAUNT READY (FIST)' : 'TAUNT CD'), 60, VH - 44);
+    ctx.fillText(state.taunt.t > 0 ? 'TAUNT!' : (ready ? 'TAUNT READY (FIST)' : 'TAUNT CD'), 60, VH - 58);
 
     // OVERLOAD gauge (soak bullets to fill; PINCH to release the nova)
     const of = clamp(state.overload.value / state.overload.max, 0, 1);
-    ctx.fillStyle = '#22243a'; ctx.fillRect(60, VH - 30, 90, 4);
-    ctx.fillStyle = of >= 1 ? '#ffd066' : '#ff8a3a'; ctx.fillRect(60, VH - 30, 90 * of, 4);
+    ctx.fillStyle = '#22243a'; ctx.fillRect(60, VH - 44, 90, 4);
+    ctx.fillStyle = of >= 1 ? '#ffd066' : '#ff8a3a'; ctx.fillRect(60, VH - 44, 90 * of, 4);
     ctx.fillStyle = of >= 1 ? '#ffd066' : '#9aa0c0';
-    ctx.fillText(of >= 1 ? 'OVERLOAD READY (PINCH)' : 'OVERLOAD ' + Math.round(of * 100) + '%', 156, VH - 26);
+    ctx.fillText(of >= 1 ? 'OVERLOAD READY (PINCH)' : 'OVERLOAD ' + Math.round(of * 100) + '%', 156, VH - 40);
 
     // HOST SHIELD (THUMB-UP) readiness
     const shReady = state.shieldCd <= 0;
     ctx.fillStyle = state.hostShieldT > 0 ? '#7fdcff' : (shReady ? '#7fffd4' : '#555a82');
     ctx.fillText(state.hostShieldT > 0 ? 'SHIELD ACTIVE'
                : shReady ? 'SHIELD READY (THUMB-UP)'
-               : 'SHIELD CD ' + Math.ceil(state.shieldCd / 60) + 's', 60, VH - 16);
+               : 'SHIELD CD ' + Math.ceil(state.shieldCd / 60) + 's', 60, VH - 30);
+
+    // HEAL HOST (PEACE) — one-time
+    if (state.host) {
+      ctx.fillStyle = state.healHostUsed ? '#555a82' : '#ff8ab0';
+      ctx.fillText(state.healHostUsed ? '♥ HEAL USED' : '♥ HEAL HOST READY (PEACE)', 60, VH - 16);
+    }
     // Co-op: host's world stalled (disconnect / paused / lag) — guest is frozen.
     if (NET.isGuest() && NET.stalled) {
       ctx.fillStyle = 'rgba(6,8,26,0.55)'; ctx.fillRect(0, VH / 2 - 14, VW, 28);
@@ -5310,7 +5303,6 @@
 
   startBtn.addEventListener('click', goToReady);
   playBtn.addEventListener('click', () => { if (!playBtn.disabled) start(); });
-  document.getElementById('healHostBtn').addEventListener('click', healHost);
   backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
   document.getElementById('coopBtn').addEventListener('click', () => { showCoopView(); });
