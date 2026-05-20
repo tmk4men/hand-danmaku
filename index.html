@@ -621,16 +621,33 @@
   #startBtn, #playBtn { /* legacy ids still pick up cta + lg via JS-added classes */ }
   #overlay .panel.shopView .home-only,
   #overlay .panel.readyView .home-only,
-  #overlay .panel.loadoutView .home-only { display: none; }
+  #overlay .panel.loadoutView .home-only,
+  #overlay .panel.coopView .home-only { display: none; }
   #overlay .panel:not(.shopView) .shop-only { display: none; }
   #overlay .panel:not(.readyView) .ready-only { display: none; }
   #overlay .panel:not(.loadoutView) .loadout-only { display: none; }
-  #overlay .panel.shopView .ready-only,
-  #overlay .panel.shopView .loadout-only,
-  #overlay .panel.readyView .shop-only,
-  #overlay .panel.readyView .loadout-only,
-  #overlay .panel.loadoutView .shop-only,
-  #overlay .panel.loadoutView .ready-only { display: none; }
+  #overlay .panel:not(.coopView) .coop-only { display: none; }
+  #overlay .panel.shopView .ready-only, #overlay .panel.shopView .loadout-only, #overlay .panel.shopView .coop-only,
+  #overlay .panel.readyView .shop-only, #overlay .panel.readyView .loadout-only, #overlay .panel.readyView .coop-only,
+  #overlay .panel.loadoutView .shop-only, #overlay .panel.loadoutView .ready-only, #overlay .panel.loadoutView .coop-only,
+  #overlay .panel.coopView .shop-only, #overlay .panel.coopView .ready-only, #overlay .panel.coopView .loadout-only { display: none; }
+  /* CO-OP lobby */
+  #coopView { text-align: left; }
+  #coopView h1 { text-align: center; }
+  #coopRoom {
+    width: 100%; box-sizing: border-box; margin: 8px 0;
+    font-family: inherit; font-size: 20px; letter-spacing: 0.3em; text-align: center; text-transform: uppercase;
+    padding: 10px; background: #0a0d28; border: 2px solid #2a3570; color: #fff;
+  }
+  #coopView .role-row { display: flex; gap: 8px; margin: 8px 0; }
+  #coopView .role-btn {
+    flex: 1; padding: 12px 6px; font-family: inherit; font-weight: 700; font-size: 12px;
+    background: #10163a; border: 1px solid #2a2f55; color: #8890b8; cursor: pointer; line-height: 1.4;
+  }
+  #coopView .role-btn small { display: block; font-size: 9px; opacity: 0.8; letter-spacing: 0; margin-top: 3px; }
+  #coopView .role-btn.on { background: linear-gradient(180deg, #4a60d8, #2a3a9a); color: #fff; border-color: #88a8ff; }
+  #coopStatus { font-size: 11px; color: #88e0ff; margin: 8px 0 2px; min-height: 14px; }
+  #coopMeta { font-size: 10px; color: #8890b8; margin-bottom: 8px; }
 
   #loadoutList {
     display: grid;
@@ -989,6 +1006,7 @@
           <span><span data-i18n="coinsLabel">COINS</span> <span class="coins" id="coinAmt">0</span></span>
           <button type="button" id="loadoutBtn" data-i18n="loadoutBtn">LOADOUT</button>
           <button type="button" id="shopBtn" data-i18n="shopBtn">SHOP</button>
+          <button type="button" id="coopBtn">🌐 CO-OP</button>
         </div>
         <div id="loadoutSummary" class="home-only">
           <span data-i18n="startLabel">START</span> &nbsp;<span class="kv">LIFE <b id="sumLife">5</b></span>
@@ -1020,6 +1038,25 @@
           <div style="display:flex; align-items:center; justify-content:space-between;">
             <span style="font-size:12px;"><span data-i18n="coinsLabel">COINS</span> <span style="color:#ffd066; font-weight:700;" id="coinAmt2">0</span></span>
             <button type="button" id="backBtn" class="btn-ghost" data-i18n="backBtn">◀ BACK</button>
+          </div>
+        </div>
+
+        <div class="coop-only" id="coopView">
+          <h1 style="font-size:22px; margin:0 0 4px;">🌐 CO-OP</h1>
+          <p style="font-size:11px; color:#8890b8; margin:0 0 6px;">合言葉を決めて2人で同じ部屋へ。役割を選んで接続。</p>
+          <input id="coopRoom" maxlength="8" placeholder="合言葉 (例 ABCD)" value="" />
+          <div class="role-row">
+            <button type="button" class="role-btn on" id="roleOffense">OFFENSE<small>撃つ・回避</small></button>
+            <button type="button" class="role-btn" id="roleDefense">DEFENSE<small>装甲・タウント・回復</small></button>
+          </div>
+          <div id="coopStatus">未接続</div>
+          <div id="coopMeta"></div>
+          <div style="display:flex; gap:8px; align-items:center;">
+            <button type="button" id="coopConnectBtn" class="btn-good" style="flex:1;">接続</button>
+            <button type="button" id="coopStartBtn" class="btn-cta" style="flex:1;" disabled>▶ 開始</button>
+          </div>
+          <div style="display:flex; justify-content:flex-end; margin-top:8px;">
+            <button type="button" id="coopBack" class="btn-ghost" data-i18n="backBtn">◀ BACK</button>
           </div>
         </div>
 
@@ -1657,8 +1694,90 @@
       });
     }
   }
-  function showHomeView() {
+  // ---------- CO-OP networking (Cloudflare Durable Objects relay) ----------
+  const RELAY_URL = new URLSearchParams(location.search).get('relay')
+    || 'wss://danmaku-relay.CHANGE-ME.workers.dev';
+  const NET = {
+    ws: null, connRole: null, active: false, connected: false, peerHere: false,
+    gameRole: 'offense', partnerRole: null,
+    partner: { x: VW * 0.5, y: VH * 0.4, seen: false, lastT: 0 },
+    ping: 0, _pingAt: 0, _sendT: 0, partnerStarted: false,
+    setStatus(msg) { const el = document.getElementById('coopStatus'); if (el) el.textContent = msg; },
+    setMeta() {
+      const el = document.getElementById('coopMeta');
+      if (el) {
+        const parts = ['自分: ' + (this.gameRole === 'defense' ? 'DEFENSE' : 'OFFENSE'),
+          '相手: ' + (this.peerHere ? (this.partnerRole ? this.partnerRole.toUpperCase() : '接続済') : '未接続')];
+        if (this.connected) parts.push('PING ' + this.ping + 'ms');
+        el.textContent = parts.join('  /  ');
+      }
+      const sb = document.getElementById('coopStartBtn');
+      if (sb) sb.disabled = !(this.connected && this.peerHere);
+    },
+    connect(room) {
+      if (!room) { this.setStatus('合言葉を入力してね'); return; }
+      try { if (this.ws) this.ws.close(); } catch (e) {}
+      this.active = true; this.connected = false; this.peerHere = false;
+      this.connRole = null; this.partnerRole = null; this.partner.seen = false; this.partnerStarted = false;
+      if (RELAY_URL.indexOf('CHANGE-ME') >= 0) {
+        this.setStatus('worker未設定: RELAY_URL を設定するか ?relay=wss://… を付けて');
+        return;
+      }
+      this.setStatus('接続中…');
+      let ws;
+      try { ws = new WebSocket(RELAY_URL + '?room=' + encodeURIComponent(String(room).toUpperCase())); }
+      catch (e) { this.setStatus('URLエラー: ' + e.message); return; }
+      this.ws = ws;
+      ws.onopen = () => { this.connected = true; this.setStatus('接続OK・相手待ち'); this.send({ type: 'hello', role: this.gameRole }); this.setMeta(); };
+      ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } this.onMsg(m); };
+      ws.onclose = () => { this.connected = false; this.peerHere = false; this.setStatus('切断'); this.setMeta(); };
+      ws.onerror = () => { this.setStatus('接続エラー（URL/デプロイ確認）'); };
+    },
+    onMsg(m) {
+      switch (m.type) {
+        case 'role': this.connRole = m.role; this.send({ type: 'hello', role: this.gameRole }); break;
+        case 'peer-joined': this.peerHere = true; this.send({ type: 'hello', role: this.gameRole }); this.setStatus('相手が参加'); this.setMeta(); break;
+        case 'peer-left': this.peerHere = false; this.partner.seen = false; this.setStatus('相手が退出'); this.setMeta(); break;
+        case 'hello': this.peerHere = true; this.partnerRole = m.role; this.setMeta(); break;
+        case 'ping': this.send({ type: 'pong', t: m.t }); break;
+        case 'pong': this.ping = Math.round(performance.now() - m.t); this.setMeta(); break;
+        case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t; break;
+        case 'start': this.partnerStarted = true; break;
+      }
+    },
+    send(o) { if (this.ws && this.ws.readyState === 1) { try { this.ws.send(JSON.stringify(o)); return true; } catch (e) {} } return false; },
+    tick() {
+      if (!this.active || !this.connected) return;
+      const now = performance.now();
+      if (now - this._pingAt > 1500) { this._pingAt = now; this.send({ type: 'ping', t: now }); }
+      if (state.running && state.t - this._sendT >= 2) {
+        this._sendT = state.t;
+        this.send({ type: 'pos', x: Math.round(state.player.x), y: Math.round(state.player.y) });
+      }
+    },
+  };
+
+  function showCoopView() {
+    overlayPanel.classList.add('coopView');
     overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView');
+    document.body.classList.remove('playing');
+    NET.setStatus(NET.connected ? '接続OK' : '未接続');
+    NET.setMeta();
+  }
+
+  function drawPartner() {
+    if (!NET.active || !NET.partner.seen) return;
+    const px = NET.partner.x, py = NET.partner.y;
+    drawSprite(SHIP_SPRITE, PARTNER_PAL, px, py, 3.2);
+    ctx.strokeStyle = '#ffd066'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(px, py, 14, 0, TAU); ctx.stroke();
+    ctx.fillStyle = '#ffd066'; ctx.font = '7px monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    ctx.fillText('P2', px, py - 16);
+  }
+
+  function showHomeView() {
+    overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView', 'coopView');
     document.body.classList.remove('playing');
     coinAmt.textContent = shop.coins;
     syncLoadoutSummary();
@@ -2822,6 +2941,7 @@
       }
     }
     if (state.running && !state.paused && !state.autoPaused) update(dt);
+    NET.tick();
     draw();
     requestAnimationFrame(loop);
   }
@@ -3691,6 +3811,7 @@
 
     // player
     drawPlayer();
+    drawPartner();
 
     // boss HP bar — intentionally hidden (player-facing change)
 
@@ -4069,6 +4190,9 @@
   const SHIP_PAL = {
     '#': '#3563d6', 'B': '#1a2a78', 'C': '#9ad8ff',
     'W': '#ffffff', 'E': '#ffd066',
+  };
+  const PARTNER_PAL = {
+    '#': '#d6a52b', 'B': '#7a5a10', 'C': '#ffe9a0', 'W': '#ffffff', 'E': '#ff8a3a',
   };
 
   // Equippable MACHINE skins (shared shape, palette swap) + WEAPONS (mount any).
@@ -4827,6 +4951,31 @@
   document.getElementById('healHostBtn').addEventListener('click', healHost);
   backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
+  document.getElementById('coopBtn').addEventListener('click', () => { showCoopView(); });
+  document.getElementById('coopBack').addEventListener('click', () => { showHomeView(); });
+  document.getElementById('roleOffense').addEventListener('click', () => {
+    NET.gameRole = 'offense';
+    document.getElementById('roleOffense').classList.add('on');
+    document.getElementById('roleDefense').classList.remove('on');
+    if (NET.connected) NET.send({ type: 'hello', role: NET.gameRole });
+    NET.setMeta();
+  });
+  document.getElementById('roleDefense').addEventListener('click', () => {
+    NET.gameRole = 'defense';
+    document.getElementById('roleDefense').classList.add('on');
+    document.getElementById('roleOffense').classList.remove('on');
+    if (NET.connected) NET.send({ type: 'hello', role: NET.gameRole });
+    NET.setMeta();
+  });
+  document.getElementById('coopConnectBtn').addEventListener('click', () => {
+    NET.connect(document.getElementById('coopRoom').value.trim());
+  });
+  document.getElementById('coopStartBtn').addEventListener('click', () => {
+    if (!(NET.connected && NET.peerHere)) return;
+    NET.send({ type: 'start' });
+    state.mode = NET.gameRole === 'defense' ? 'defender' : 'offense';
+    start();
+  });
   backBtn.addEventListener('click', () => { showHomeView(); });
   document.getElementById('loadoutBtn').addEventListener('click', () => { showLoadoutView(); });
   document.getElementById('loadoutBack').addEventListener('click', () => { showHomeView(); });
