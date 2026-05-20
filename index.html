@@ -1172,7 +1172,7 @@
     t: 0,             // frames
     score: 0,
     lives: 5,
-    bombs: 4,
+    bombs: 2,
     stageNo: 1,
     stageTimer: 0,
     bossFight: false,
@@ -2251,12 +2251,11 @@
       }
     } else if (wid === 'homing') {
       const mk = (ox, vx) => state.shots.push({
-        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 2,
+        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 1,
         kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
       });
       mk(0, 0);
-      if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }
-      if (lv >= 3) { mk(-11, -2); mk(11, 2); }
+      if (lv >= 3) { mk(-7, -1.2); mk(7, 1.2); }   // max 3 missiles
     } else if (wid === 'option') {
       const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
       for (let i = 1; i <= n; i++) {
@@ -2408,7 +2407,7 @@
         SFX.pickup();
       }
     } else if (type === 'bomb') {
-      state.bombs = Math.min(state.bombs + 1, 6);
+      state.bombs = Math.min(state.bombs + 1, 4);
       state.score += 200;
       pushPopup(p.x, p.y - 20, 'BOMB +1', '#ff7c98', 10);
       SFX.pickup();
@@ -2984,7 +2983,7 @@
           state.boss = null;
           state.stageNo++;
           state.stageTimer = 0;
-          state.bombs = Math.min(state.bombs + 1, 6);
+          state.bombs = Math.min(state.bombs + 1, 4);
           state.shake = 28;
           state.themeIndex = (state.stageNo - 1) % STAGE_THEMES.length;
           pickStageMod();
@@ -4765,7 +4764,7 @@
     state.t = 0;
     state.score = 0;
     state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + (currentSkin().lifeBonus || 0);
-    state.bombs = 4 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
+    state.bombs = 2 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
     state.guard.remaining = 600;
     state.guard.active = false;
     state.stageNo = 1;
