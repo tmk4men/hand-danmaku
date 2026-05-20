@@ -1274,6 +1274,9 @@
     taunt: { t: 0, cd: 0, prevFist: false }, // tank taunt (pull bullets off host)
     host: null,                // the remote host player (set when networked)
     healHostUsed: false,       // guest one-time "heal the host" (co-op)
+    overload: { value: 0, max: 100 }, // defender: soaking bullets charges this; PINCH = nova
+    shieldCd: 0,               // defender: cooldown on the THUMB-UP host shield
+    hostShieldT: 0,            // frames remaining of the protective shield on the HOST ship
   };
 
   // Enter the co-op DEFENDER (guest) role with ?mode=defender (or ?role=guest).
@@ -1760,6 +1763,8 @@
         // ---- shared-world co-op ----
         case 'snap':   if (this.isGuest()) this.applySnap(m); break;          // guest: adopt host's world
         case 'taunt':  if (this.isHost()) this.guestTauntT = DEF.TAUNT_DUR; break; // host: pull bullets to guest
+        case 'nova':   if (this.isHost()) hostNova(m.x, m.y); break;          // host: guest's overload nova
+        case 'shield': if (this.isHost()) state.hostShieldT = DEF.SHIELD_DUR; break; // host: guest deployed a shield on us
         case 'heal':   if (this.isHost()) hostReceiveHeal(); break;           // host: +1 life from guest
         case 'damage': if (this.isHost()) playerHit(); break;                 // host: guest's exposed hit costs a life
         case 'gameover': if (this.isGuest() && state.running) gameOver(); break; // guest: host went down
@@ -1814,7 +1819,7 @@
       this.send({
         type: 'snap', f: state.t, ti: state.themeIndex, mn: state.mod.name,
         sc: state.score, lv: state.lives, st: state.stageNo, bm: state.bombs, pw: state.power,
-        bw: state.bossWarning, sb: state.stageBanner,
+        bw: state.bossWarning, sb: state.stageBanner, sd: state.hostShieldT | 0,
         px: state.player.x | 0, py: state.player.y | 0,
         bl, bp, en, bo, me, it, sh,
       });
@@ -1824,6 +1829,7 @@
       this.partner.x = m.px; this.partner.y = m.py; this.partner.seen = true; this.partner.lastT = state.t;
       state.score = m.sc; state.lives = m.lv; state.stageNo = m.st; state.bombs = m.bm;
       state.power = m.pw; state.bossWarning = m.bw; state.stageBanner = m.sb; state.themeIndex = m.ti;
+      state.hostShieldT = m.sd || 0;
       state.mod.name = m.mn;
       const bl = m.bl, bp = m.bp, ba = [];
       for (let i = 0; i < bl.length; i += 6)
@@ -2257,8 +2263,8 @@
       if (state.guard.active && !prevGuardOn) { showGesture('FIST', 'GUARD', '#7fffd4'); SFX.guard(); }
 
       if (isPinch && !state.pinch.active && state.running) {
-        triggerBomb();
-        showGesture('PINCH', 'BOMB', '#ff7c98');
+        if (state.mode === 'defender') triggerNova();    // tank: PINCH releases the OVERLOAD nova
+        else { triggerBomb(); showGesture('PINCH', 'BOMB', '#ff7c98'); }
       }
       state.pinch.active = isPinch;
 
@@ -2305,23 +2311,28 @@
         state.readyHandFrames = 0;
       }
 
-      // Dragon: requires a Dragon Crystal to be picked up first.
-      // Once unlocked, thumbs-up charges the beam; releasing it when full fires.
-      const dragonChargeable = state.dragonUnlocked && state.running
-        && !state.paused && !state.autoPaused && state.dragonFiring === 0;
-      if (isThumbsUp && dragonChargeable) {
-        state.dragonCharge = Math.min(600, state.dragonCharge + 1);
-      }
-      if (state.thumbsUp && !isThumbsUp && state.dragonCharge >= 600
-          && state.running && !state.paused && !state.autoPaused
-          && state.dragonFiring === 0) {
-        fireDragon();
-      }
-      if (isThumbsUp && !state.thumbsUp && state.running) {
-        if (state.dragonUnlocked) {
-          showGesture('THUMBS UP', 'CHARGING DRAGON', '#ffd066');
-        } else {
-          showGesture('THUMBS UP', 'NEED DRAGON CRYSTAL', '#888888');
+      if (state.mode === 'defender') {
+        // Tank: THUMBS-UP deploys a protective shield on the host (no dragon).
+        if (isThumbsUp && !state.thumbsUp && state.running) triggerShield();
+      } else {
+        // Dragon: requires a Dragon Crystal to be picked up first.
+        // Once unlocked, thumbs-up charges the beam; releasing it when full fires.
+        const dragonChargeable = state.dragonUnlocked && state.running
+          && !state.paused && !state.autoPaused && state.dragonFiring === 0;
+        if (isThumbsUp && dragonChargeable) {
+          state.dragonCharge = Math.min(600, state.dragonCharge + 1);
+        }
+        if (state.thumbsUp && !isThumbsUp && state.dragonCharge >= 600
+            && state.running && !state.paused && !state.autoPaused
+            && state.dragonFiring === 0) {
+          fireDragon();
+        }
+        if (isThumbsUp && !state.thumbsUp && state.running) {
+          if (state.dragonUnlocked) {
+            showGesture('THUMBS UP', 'CHARGING DRAGON', '#ffd066');
+          } else {
+            showGesture('THUMBS UP', 'NEED DRAGON CRYSTAL', '#888888');
+          }
         }
       }
       state.thumbsUp = isThumbsUp;
@@ -3114,6 +3125,16 @@
       }
     }
 
+    // Co-op HOST: a shield the guest deployed on us eats incoming bullets.
+    if (state.hostShieldT > 0) {
+      state.hostShieldT--;
+      const sx = state.player.x, sy = state.player.y, R = DEF.SHIELD_R;
+      for (let i = state.bullets.length - 1; i >= 0; i--) {
+        const b = state.bullets[i];
+        if (dist2(b.x, b.y, sx, sy) < (R + b.r) ** 2) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
+      }
+    }
+
     // Co-op DEFENDER role: tank armour upkeep (gameplay otherwise = single-player).
     if (state.mode === 'defender') updateDefender();
 
@@ -3487,6 +3508,15 @@
     TAUNT_CD: 240,        // cooldown AFTER the taunt ends (frames, ~4s)
     TAUNT_R: 160,         // bullet-attraction radius (VW coords)
     TAUNT_PULL: 0.22,     // per-frame steering of bullets toward the tank
+    // OVERLOAD (PINCH): soaking bullets charges a gauge; full -> screen-clear nova.
+    OVERLOAD_PER_HIT: 16, // gauge gained per absorbed bullet (~7 hits to fill 100)
+    NOVA_R: 190,          // nova clear/damage radius (VW coords)
+    NOVA_DMG: 8,          // nova damage to a normal enemy
+    NOVA_DMG_BOSS: 3,     // nova damage to the boss
+    // HOST SHIELD (THUMB-UP): a bubble on the host ship that eats bullets.
+    SHIELD_DUR: 180,      // shield lifetime (frames, ~3s)
+    SHIELD_R: 58,         // shield radius (VW coords)
+    SHIELD_CD: 600,       // shield cooldown (frames, ~10s)
   };
 
   function startDefenderRound() {
@@ -3494,6 +3524,7 @@
     state.stations.length = 0;
     state.taunt.t = 0; state.taunt.cd = 0; state.taunt.prevFist = false;
     state.healHostUsed = false;
+    state.overload.value = 0; state.shieldCd = 0; state.hostShieldT = 0;
     applyModeHud();
     healHostUpdateBtn();
   }
@@ -3501,6 +3532,7 @@
   function updateDefender() {
     updateStations();
     updateTaunt();
+    if (state.shieldCd > 0) state.shieldCd--;
   }
 
   // TAUNT (fist): drag nearby enemy bullets toward the tank — off the host —
@@ -3542,6 +3574,63 @@
     if (NET.isGuest()) NET.send({ type: 'taunt' });   // host pulls its bullets toward us
   }
 
+  // OVERLOAD nova (PINCH): once the gauge is full from soaking bullets, release a
+  // shockwave that erases nearby enemy bullets and damages enemies. The tank's
+  // payoff for tanking — and its contribution to actually killing things.
+  function triggerNova() {
+    if (state.mode !== 'defender' || !state.running) return;
+    if (state.overload.value < state.overload.max) {
+      pushPopup(state.player.x, state.player.y - 28, 'OVERLOAD NOT READY', '#888888', 10);
+      return;
+    }
+    const p = state.player;
+    state.overload.value = 0;
+    p.bombFx = 40;                                   // reuse the bomb ring visual
+    p.invuln = Math.max(p.invuln, 40);
+    state.shake = Math.max(state.shake, 18);
+    pushPopup(p.x, p.y - 30, 'OVERLOAD BURST!', '#ffd066', 14);
+    showGesture('PINCH', 'OVERLOAD', '#ffd066');
+    SFX.bomb();
+    // Immediate local clear so it feels responsive; the host's authoritative clear
+    // + enemy damage comes back on the next snapshot (avoids double-damage).
+    const R2 = DEF.NOVA_R * DEF.NOVA_R;
+    for (let i = state.bullets.length - 1; i >= 0; i--) {
+      const b = state.bullets[i];
+      if (dist2(b.x, b.y, p.x, p.y) < R2) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
+    }
+    if (NET.isGuest()) NET.send({ type: 'nova', x: Math.round(p.x), y: Math.round(p.y) });
+    else novaDamageEnemies(p.x, p.y);               // solo test: no host, so damage locally
+  }
+  function novaDamageEnemies(x, y) {
+    const R2 = DEF.NOVA_R * DEF.NOVA_R;
+    for (const e of state.enemies) {
+      if (dist2(e.x, e.y, x, y) < R2) e.hp -= e.isBoss ? DEF.NOVA_DMG_BOSS : DEF.NOVA_DMG;
+    }
+  }
+  // Host applies the guest's nova to the authoritative world.
+  function hostNova(x, y) {
+    const R2 = DEF.NOVA_R * DEF.NOVA_R;
+    for (let i = state.bullets.length - 1; i >= 0; i--) {
+      const b = state.bullets[i];
+      if (dist2(b.x, b.y, x, y) < R2) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
+    }
+    novaDamageEnemies(x, y);
+    state.shake = Math.max(state.shake, 14);
+    for (let k = 0; k < 24; k++) pushParticle(x, y, '#ffd066');
+  }
+
+  // HOST SHIELD (THUMB-UP): deploy a protective bubble on the OFFENSE ship that
+  // eats incoming bullets for a few seconds. The defender's gift to the host.
+  function triggerShield() {
+    if (state.mode !== 'defender' || !state.running) return;
+    if (state.shieldCd > 0) return;
+    state.shieldCd = DEF.SHIELD_CD;
+    showGesture('THUMBS UP', 'HOST SHIELD', '#7fdcff');
+    SFX.guard();
+    if (NET.isGuest()) NET.send({ type: 'shield' });
+    else state.hostShieldT = DEF.SHIELD_DUR;         // solo test: shield around self
+  }
+
   // Guest takes a hit: spend armour. Once armour is gone the tank is exposed and
   // further hits cost a life (normal single-player flow). No auto-repair — the
   // only way back is to dock at a repair station.
@@ -3565,6 +3654,7 @@
     state.armor.hp -= cost;
     p.invuln = DEF.ARMOR_IFRAMES;
     state.shake = Math.max(state.shake, 8);
+    state.overload.value = Math.min(state.overload.max, state.overload.value + DEF.OVERLOAD_PER_HIT); // soak -> charge nova
     for (let k = 0; k < 12; k++) pushParticle(p.x, p.y, '#88e0ff');
     SFX.guard();
     if (state.armor.hp <= 0) { state.armor.hp = 0; armorBreak(); }
@@ -4035,6 +4125,24 @@
         const a = (i / segs) * TAU + state.t * 0.04;
         ctx.fillRect(p.x + Math.cos(a) * R - 2.5,
                      p.y + Math.sin(a) * R - 2.5, 5, 5);
+      }
+      ctx.restore();
+    }
+
+    // co-op host shield — protective bubble on the OFFENSE ship (host=self, guest=partner)
+    if (state.hostShieldT > 0) {
+      const hx = NET.isGuest() ? NET.partner.x : state.player.x;
+      const hy = NET.isGuest() ? NET.partner.y : state.player.y;
+      const fade = Math.min(1, state.hostShieldT / 20);          // fade out in the last ~0.3s
+      const pulse = 0.5 + 0.5 * Math.sin(state.t * 0.3);
+      ctx.save();
+      ctx.fillStyle = `rgba(127,220,255,${0.12 * fade})`;
+      ctx.beginPath(); ctx.arc(hx, hy, DEF.SHIELD_R, 0, TAU); ctx.fill();
+      ctx.fillStyle = `rgba(127,220,255,${(0.55 + 0.35 * pulse) * fade})`;
+      const segs = 30;
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * TAU + state.t * 0.03;
+        ctx.fillRect(hx + Math.cos(a) * DEF.SHIELD_R - 2, hy + Math.sin(a) * DEF.SHIELD_R - 2, 4, 4);
       }
       ctx.restore();
     }
@@ -5044,7 +5152,21 @@
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.font = '8px monospace';
     const ready = state.taunt.t <= 0 && state.taunt.cd <= 0;
     ctx.fillStyle = state.taunt.t > 0 ? '#ffb14e' : (ready ? '#7fffd4' : '#555a82');
-    ctx.fillText(state.taunt.t > 0 ? 'TAUNT!' : (ready ? 'TAUNT READY (FIST)' : 'TAUNT CD'), 60, VH - 30);
+    ctx.fillText(state.taunt.t > 0 ? 'TAUNT!' : (ready ? 'TAUNT READY (FIST)' : 'TAUNT CD'), 60, VH - 44);
+
+    // OVERLOAD gauge (soak bullets to fill; PINCH to release the nova)
+    const of = clamp(state.overload.value / state.overload.max, 0, 1);
+    ctx.fillStyle = '#22243a'; ctx.fillRect(60, VH - 30, 90, 4);
+    ctx.fillStyle = of >= 1 ? '#ffd066' : '#ff8a3a'; ctx.fillRect(60, VH - 30, 90 * of, 4);
+    ctx.fillStyle = of >= 1 ? '#ffd066' : '#9aa0c0';
+    ctx.fillText(of >= 1 ? 'OVERLOAD READY (PINCH)' : 'OVERLOAD ' + Math.round(of * 100) + '%', 156, VH - 26);
+
+    // HOST SHIELD (THUMB-UP) readiness
+    const shReady = state.shieldCd <= 0;
+    ctx.fillStyle = state.hostShieldT > 0 ? '#7fdcff' : (shReady ? '#7fffd4' : '#555a82');
+    ctx.fillText(state.hostShieldT > 0 ? 'SHIELD ACTIVE'
+               : shReady ? 'SHIELD READY (THUMB-UP)'
+               : 'SHIELD CD ' + Math.ceil(state.shieldCd / 60) + 's', 60, VH - 16);
     // Co-op: host's world stalled (disconnect / paused / lag) — guest is frozen.
     if (NET.isGuest() && NET.stalled) {
       ctx.fillStyle = 'rgba(6,8,26,0.55)'; ctx.fillRect(0, VH / 2 - 14, VW, 28);
