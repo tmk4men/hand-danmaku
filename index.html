@@ -1308,6 +1308,7 @@
     enemies: [],
     items: [],           // pickups
     meteors: [],         // falling crushing obstacles
+    hazards: [],         // lingering ground hazards (TOXIC boss acid pools)
     particles: [],
     power: 1,            // weapon level 1..3
     powerFlash: 0,
@@ -2485,9 +2486,155 @@
       pattern: 0,
       laser: { charge: 0, fire: 0, angle: 0, cardShown: false },
       charge: { phase: 'idle', t: 0, cd: rand(540, 900) },
+      gim: {},   // per-boss signature gimmick state (keyed by themeIndex)
     };
     state.enemies.push({ ...state.boss, isBoss: true, ref: state.boss });
     state.bossFight = true;
+  }
+
+  // Per-boss SIGNATURE GIMMICK — one distinct mechanic per theme so the 10 bosses
+  // play differently, not just recolours. Layered on top of the shared patterns.
+  const GIMMICK_NAMES = [
+    'SAFE-GAP RINGS',   // 0 NEBULA
+    'BERSERK',          // 1 CRIMSON
+    'DRONE SUMMON',     // 2 EMERALD
+    'TIME STOP',        // 3 AMBER
+    'GRAVITY WELL',     // 4 COSMIC
+    'PHANTOM BLINK',    // 5 VIOLET
+    'ICE SHATTER',      // 6 GLACIER
+    'FLAME WALL',       // 7 INFERNO
+    'ACID POOLS',       // 8 TOXIC
+    'VOID COLLAPSE',    // 9 VOID
+  ];
+  function updateBossGimmick(b) {
+    const ti = state.themeIndex, p = state.player, g = b.gim;
+    switch (ti) {
+      case 0: { // NEBULA — slow rings with one rotating safe gap (teaches gap-reading)
+        if (b.t % 150 === 30) {
+          const n = 30, gap = (b.t * 0.03) % TAU, half = 0.55;
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * TAU;
+            const d = Math.abs(((a - gap + Math.PI) % TAU) - Math.PI);
+            if (d < half) continue;
+            fireBullet(b.x, b.y, a, 1.7, '#88a8ff', 5);
+          }
+        }
+        break;
+      }
+      case 1: { // CRIMSON — berserk at half HP (visible gear change + fast aimed fire)
+        if (!g.enraged && b.hp <= b.maxHp * 0.5) {
+          g.enraged = true;
+          pushPopup(b.x, b.y - 34, '!! ENRAGE !!', '#ff3060', 14);
+          state.shake = Math.max(state.shake, 14); SFX.warning();
+        }
+        if (g.enraged && b.t % 22 === 0) {
+          const aim = Math.atan2(p.y - b.y, p.x - b.x);
+          for (let i = -1; i <= 1; i++) fireBullet(b.x, b.y, aim + i * 0.12, 3.6, '#ff3060', 6);
+        }
+        break;
+      }
+      case 2: { // EMERALD — summons drones you must clear (or eat crossfire)
+        const adds = state.enemies.reduce((s, en) => s + (en.fromBoss ? 1 : 0), 0);
+        if (adds < 2 && b.t % 360 === 120) {
+          for (const sx of [-72, 72]) {
+            const d = spawnEnemy('spinner', clamp(b.x + sx, 40, VW - 40), b.y + 18,
+              { vy: 0.25, hp: 10 + state.stageNo, radius: 14, fireRate: 64, pattern: 'fan', score: 300 });
+            d.fromBoss = true;
+          }
+          pushPopup(b.x, b.y - 30, 'SUMMON', '#7fffd4', 11);
+        }
+        break;
+      }
+      case 3: { // AMBER — freeze all bullets mid-air, then re-launch them at the player
+        if (!g.fz) g.fz = { state: 'idle', t: 0, cd: 320 };
+        const f = g.fz;
+        if (f.state === 'idle') {
+          if (--f.cd <= 0 && state.bullets.length > 6) {
+            f.state = 'hold'; f.t = 55;
+            for (const bl of state.bullets) { bl._sp = Math.hypot(bl.vx, bl.vy) || 2.4; bl._fz = 1; bl.vx = 0; bl.vy = 0; }
+            pushPopup(b.x, b.y - 30, 'TIME STOP', '#ffd066', 12); SFX.warning();
+          }
+        } else {
+          if (--f.t <= 0) {
+            for (const bl of state.bullets) if (bl._fz) {
+              const a = Math.atan2(p.y - bl.y, p.x - bl.x), sp = Math.max(2.4, bl._sp);
+              bl.vx = Math.cos(a) * sp; bl.vy = Math.sin(a) * sp; bl._fz = 0;
+            }
+            f.state = 'idle'; f.cd = 380; SFX.bomb();
+          }
+        }
+        break;
+      }
+      case 4: { // COSMIC — gravity well drags your ship toward the boss (fight it by hand)
+        const dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy) || 1;
+        const pull = 1.0 * (1 - clamp(d / 340, 0, 1));
+        state.smoothX += (dx / d) * pull;
+        state.smoothY += (dy / d) * pull;
+        if (b.t % 7 === 0) pushParticle(p.x + (dx / d) * 18, p.y + (dy / d) * 18, '#88e0ff');
+        break;
+      }
+      case 5: { // VIOLET — phantom blink: teleport then aimed burst from the new spot
+        if (g.blinkCd == null) g.blinkCd = 240;
+        if (--g.blinkCd <= 0) {
+          for (let k = 0; k < 18; k++) pushParticle(b.x, b.y, '#c89bff');
+          b.x = rand(VW * 0.22, VW * 0.78); b.y = rand(70, 160); b.tx = b.x; b.ty = b.y;
+          const aim = Math.atan2(p.y - b.y, p.x - b.x);
+          for (let i = -2; i <= 2; i++) fireBullet(b.x, b.y, aim + i * 0.14, 2.8, '#c89bff', 5);
+          g.blinkCd = rand(220, 320); SFX.dash();
+        }
+        break;
+      }
+      case 6: { // GLACIER — slow ice shards that shatter into a radial spray (2-stage dodge)
+        if (b.t % 150 === 60) {
+          for (let i = -2; i <= 2; i++)
+            state.bullets.push({ x: b.x + i * 22, y: b.y + 16, vx: i * 0.3, vy: 1.0, r: 9, color: '#aef4ff', life: 0, grazed: false, _ice: 90 });
+        }
+        let shattered = false;
+        for (const bl of state.bullets) {
+          if (bl._ice && --bl._ice <= 0) {
+            bl._dead = true; shattered = true;
+            for (let i = 0; i < 10; i++) fireBullet(bl.x, bl.y, (i / 10) * TAU, 2.0, '#aef4ff', 4);
+          }
+        }
+        if (shattered) { for (let i = state.bullets.length - 1; i >= 0; i--) if (state.bullets[i]._dead) state.bullets.splice(i, 1); }
+        break;
+      }
+      case 7: { // INFERNO — a horizontal flame wall sweeps down with one gap to slip through
+        if (b.t % 220 === 80) {
+          const gapX = rand(VW * 0.2, VW * 0.8), gapW = 74;
+          for (let x = 10; x < VW; x += 16) {
+            if (Math.abs(x - gapX) < gapW / 2) continue;
+            state.bullets.push({ x, y: -8, vx: 0, vy: 1.7, r: 6, color: '#ff8a3a', life: 0, grazed: false });
+          }
+          pushPopup(VW / 2, VH * 0.18, 'FLAME WALL', '#ff8a3a', 12); SFX.warning();
+        }
+        break;
+      }
+      case 8: { // TOXIC — acid pools linger and shrink your safe space
+        if (b.t % 200 === 90) {
+          state.hazards.push({ x: rand(60, VW - 60), y: rand(VH * 0.42, VH * 0.86), r: 0, rMax: rand(46, 70), t: 360 });
+          pushPopup(b.x, b.y - 30, 'ACID', '#b6ff3a', 11);
+        }
+        break;
+      }
+      case 9: { // VOID (final) — expanding ring waves + a desperation phase under 40% HP
+        if (b.t % 200 === 50) {
+          for (let w = 0; w < 3; w++) {
+            const n = 26, off = w * 0.12 + b.t * 0.01;
+            for (let i = 0; i < n; i++) fireBullet(b.x, b.y, (i / n) * TAU + off, 1.4 + w * 0.5, '#c0c4e0', 5);
+          }
+          SFX.bomb();
+        }
+        if (!g.enraged && b.hp <= b.maxHp * 0.4) {
+          g.enraged = true; pushPopup(b.x, b.y - 34, 'VOID COLLAPSE', '#ffffff', 14); state.shake = Math.max(state.shake, 18);
+        }
+        if (g.enraged && b.t % 6 === 0) {
+          const base = b.t * 0.2;
+          for (let k = 0; k < 4; k++) fireBullet(b.x, b.y, base + k * TAU / 4, 2.4, '#ffffff', 4);
+        }
+        break;
+      }
+    }
   }
 
   // ---------- Bullet helpers ----------
@@ -2800,6 +2947,7 @@
     state.meteors.length = 0;
     state.enemies.length = 0;
     state.items.length = 0;
+    state.hazards.length = 0;
     state.stageChoices = buildChoices();
     const el = document.getElementById('stageSelect');
     document.getElementById('ssTitle').textContent = 'STAGE ' + state.stageNo + ' CLEAR';
@@ -2880,6 +3028,7 @@
       for (let k = 0; k < 24; k++) pushParticle(m.x, m.y, '#c8a878');
     }
     state.meteors.length = 0;
+    state.hazards.length = 0;
     if (erased > 0) {
       pushPopup(state.player.x, state.player.y - 28,
                 `BULLET ERASE x${erased}`, '#ffd066', 12);
@@ -2969,6 +3118,7 @@
       state.bossWarning = 110;     // ~1.8s warning
       state.shake = Math.max(state.shake, 6);
       pushPopup(VW / 2, VH * 0.4, getBossVariant().name, '#ff77c8', 14);
+      pushPopup(VW / 2, VH * 0.4 + 18, '◆ ' + GIMMICK_NAMES[state.themeIndex], '#ffd066', 10);
     }
   }
 
@@ -3046,6 +3196,8 @@
 
       e.x = b.x; e.y = b.y;
       b.hp = e.hp;  // keep state.boss.hp in sync (e is authoritative for damage)
+
+      updateBossGimmick(b);   // per-boss signature mechanic (layered on the patterns)
 
       // Patterns: more of them, and denser fire, as the stage rises.
       const lvl = state.stageNo;
@@ -3498,6 +3650,20 @@
           return;
         }
       }
+    }
+
+    // Acid pools (TOXIC boss): grow, linger, then fade — standing in one costs a hit.
+    for (let i = state.hazards.length - 1; i >= 0; i--) {
+      const h = state.hazards[i];
+      h.t--;
+      if (h.r < h.rMax) h.r = Math.min(h.rMax, h.r + 2);
+      if (h.t <= 0) { state.hazards.splice(i, 1); continue; }
+      if (h.t < 60) h.r = Math.max(0, h.r - 1);   // shrink as it fades
+      const pl = state.player;
+      if (pl.invuln <= 0 && dist2(pl.x, pl.y, h.x, h.y) < (h.r + pl.hitR) ** 2) {
+        if (state.mode === 'defender') armorHit(DEF.ARMOR_HIT); else playerHit();
+      }
+      if (state.t % 5 === 0) pushParticle(h.x + rand(-h.r, h.r) * 0.7, h.y + rand(-h.r, h.r) * 0.5, '#b6ff3a');
     }
 
     // Particles
@@ -4105,6 +4271,17 @@
       ctx.fillRect(pa.x - 1.25, pa.y - 1.25, 2.5, 2.5);
     }
     ctx.restore();
+
+    // acid pools (TOXIC boss) — translucent green hazard zones on the floor
+    for (const h of state.hazards) {
+      const fade = clamp(h.t / 60, 0, 1);
+      ctx.save();
+      ctx.fillStyle = `rgba(120,200,40,${0.18 * fade})`;
+      ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(182,255,58,${0.7 * fade})`; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(h.x, h.y, h.r, 0, TAU); ctx.stroke();
+      ctx.restore();
+    }
 
     // enemies
     for (const e of state.enemies) {
@@ -5436,6 +5613,7 @@
     state.enemies.length = 0;
     state.items.length = 0;
     state.meteors.length = 0;
+    state.hazards.length = 0;
     state.particles.length = 0;
     state.player.invuln = 60;
     state.player.dashCd = 0;
