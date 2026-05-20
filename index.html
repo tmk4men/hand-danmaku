@@ -3334,19 +3334,9 @@
     last = now;
     // Refresh READY status dots only when on ready view
     if (overlayPanel.classList.contains('readyView')) syncReadyDots();
-    // Auto-pause when hand is out of frame for ~0.75s
-    if (state.running) {
-      if (state.handSeen) {
-        state.noHandFrames = 0;
-        if (state.autoPaused) { state.autoPaused = false; if (!state.paused) bgm.resume(); }
-      } else if (!state.paused) {
-        state.noHandFrames++;
-        if (state.noHandFrames > 45 && !state.autoPaused) {
-          state.autoPaused = true;
-          bgm.pause();
-        }
-      }
-    }
+    // No auto-pause: if the hand leaves the frame the ship just holds its last
+    // position (player.tx/ty stop updating) and the game keeps running — including
+    // in online co-op, so one player's tracking drop never freezes the other.
     if (state.running && !state.paused && !state.autoPaused && !state.selecting) {
       if (NET.isGuest()) updateGuest(dt);   // thin client: render host's world, run own ship
       else update(dt);                       // solo / co-op host: authoritative sim
@@ -4682,24 +4672,17 @@
       ctx.fillRect(x, y + H - 2, W * remain, 2);
     }
 
-    // no-hand notice / auto-pause indicator
+    // Small, non-blocking hint when tracking is lost. The game keeps running and the
+    // ship holds its last position — no pause — so the notice must NOT cover the field.
     if (state.running && !state.handSeen) {
-      const paused = state.autoPaused;
-      ctx.fillStyle = paused ? 'rgba(0,0,0,0.75)' : 'rgba(0,0,0,0.55)';
-      ctx.fillRect(VW/2 - 220, VH/2 - 36, 440, 72);
-      const accent = paused ? '#ff7c98' : '#ffeb6e';
-      ctx.fillStyle = accent;
-      ctx.fillRect(VW/2 - 220, VH/2 - 36, 440, 4);
-      ctx.fillRect(VW/2 - 220, VH/2 + 32, 440, 4);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = paused ? '16px monospace' : '14px monospace';
+      const blink = Math.floor(state.t / 18) % 2 === 0;
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(VW / 2 - 92, 5, 184, 15);
+      ctx.fillStyle = blink ? '#ffeb6e' : '#c89a3a';
+      ctx.font = '9px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(paused ? 'AUTO-PAUSED' : 'SHOW YOUR HAND', VW/2, VH/2 - 8);
-      ctx.fillStyle = accent;
-      ctx.font = '9px monospace';
-      ctx.fillText(paused ? 'RAISE YOUR HAND TO RESUME' : 'カメラに手を映してください',
-                   VW/2, VH/2 + 14);
+      ctx.fillText('✋ カメラに手を映してね', VW / 2, 13);
     }
 
     drawDefenderHud();
