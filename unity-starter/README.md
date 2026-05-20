@@ -20,9 +20,10 @@ GameBootstrap / SpriteFactory / ProceduralSFX により、シーン配置・画�
 ## 0. 前提（人間がやる唯一の準備）
 
 1. **Unity Hub** をインストール — https://unity.com/download
-2. **Unity 2022.3 LTS** + **WebGL Build Support** モジュールを追加
-   - `ProjectSettings/ProjectVersion.txt` に `2022.3.62f1` を指定済み。
-     別の 2022.3 LTS を入れている場合はこの1行を手持ちのバージョンに書き換えるだけでOK。
+2. **Unity 6 LTS（6000.x、推奨）** または 2022.3 LTS + **WebGL Build Support** モジュールを追加
+   - `ProjectSettings/ProjectVersion.txt` に `6000.4.7f1` を指定済み。
+     別バージョンを入れた場合はこの1行を手持ちの番号に書き換えるだけでOK
+     （Unity 6 系・2022.3 LTS どちらでもビルドできます）。
 
 > Claude（自分）は Unity エディタを起動できないため、ここから先のビルドは
 > 人間が下記コマンドを1回叩く形になります。設定・シーン・ビルドはすべて
@@ -34,7 +35,7 @@ GameBootstrap / SpriteFactory / ProceduralSFX により、シーン配置・画�
 このフォルダの **`build_webgl.bat` をダブルクリック**。以上。
 （Unity の場所が自動検出できない場合は exe パスを引数で渡す）
 ```bat
-build_webgl.bat "C:\Program Files\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe"
+build_webgl.bat "C:\Program Files\Unity\Hub\Editor\6000.4.7f1\Editor\Unity.exe"
 ```
 
 ### macOS / Linux
@@ -91,7 +92,7 @@ python3 -m http.server 8080
 
 | 症状 | 対処 |
 |---|---|
-| Hub で「エディタが見つからない」 | `ProjectVersion.txt` を手持ちの 2022.3 LTS に書き換える |
+| Hub で「エディタが見つからない」 | `ProjectVersion.txt` を手持ちのバージョン（Unity 6 系 or 2022.3 LTS）に書き換える |
 | `build_webgl.bat` が Unity を見つけられない | exe のフルパスを第1引数で渡す |
 | `Hands is not defined` | WebGL Template が MediaPipe でない。BuildScript 経由でビルドし直す |
 | カメラ許可が出ない | `file://` で開いている。`http://localhost` か `https://` で |
