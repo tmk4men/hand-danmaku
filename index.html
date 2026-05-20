@@ -90,6 +90,9 @@
   #hud .row.dragon  { border-left-color: #ff77c8; }
   #hud .row.armor   { border-left-color: #88e0ff; }
   #hud .meter.armor .fill { background: linear-gradient(90deg, #3a7bd5, #88e0ff); }
+  #hud .cntwrap { display: flex; align-items: center; gap: 6px; }
+  #hud .cnt { color: #ff9bb0; font-weight: bold; font-size: 13px; min-width: 16px; text-align: right; }
+  #hud .cnt.crit { color: #ff5050; }
   #hud .meter.dragon .fill { background: linear-gradient(90deg, #88e0ff, #ff77c8); }
   #hud.crit { animation: hudCrit 0.5s infinite; }
   @keyframes hudCrit {
@@ -750,7 +753,7 @@
       </div>
       <div class="row bomb">
         <span class="lbl">BOMB</span>
-        <span class="icons" id="bombIcons"></span>
+        <span class="cntwrap"><b class="cnt" id="bombCount">4</b><span class="icons" id="bombIcons"></span></span>
       </div>
       <div class="row power">
         <span class="lbl">PWR</span>
@@ -975,6 +978,7 @@
     hiscore: document.getElementById('hiscore'),
     livesIcons: document.getElementById('livesIcons'),
     bombIcons: document.getElementById('bombIcons'),
+    bombCount: document.getElementById('bombCount'),
     powerIcons: document.getElementById('powerIcons'),
     guard: document.getElementById('guard'),
     guardBar: document.getElementById('guardBar'),
@@ -1104,7 +1108,8 @@
   (() => {
     const q = new URLSearchParams(location.search);
     const m = (q.get('mode') || q.get('role') || '').toLowerCase();
-    if (m === 'defender' || m === 'guest') state.mode = 'defender';
+    if (m === 'defender' || m === 'defense' || m === 'guest') state.mode = 'defender';
+    else if (m === 'offense' || m === 'attack' || m === 'host') state.mode = 'offense';
   })();
 
   // ---------- i18n ----------
@@ -1771,7 +1776,7 @@
       const prevFocus = state.focus;
       const prevGuardOn = state.guard.active;
       state.focus = isPeace && state.running;
-      state.guard.active = isFist && state.guard.remaining > 0 && state.running && state.mode !== 'defender';
+      state.guard.active = isFist && state.guard.remaining > 0 && state.running && state.mode === 'normal';
 
       if (state.focus && !prevFocus) { showGesture('PEACE', 'FOCUS', '#88e0ff'); SFX.focus(); }
       if (state.guard.active && !prevGuardOn) { showGesture('FIST', 'GUARD', '#7fffd4'); SFX.guard(); }
@@ -1796,7 +1801,7 @@
       const isThumbsUp = thumbExtended && curled === 4 && !isPinch && !isPeace;
       // Re-evaluate fist so thumbs-up wins ambiguity
       const isFistOnly = isFist && !isThumbsUp;
-      state.guard.active = isFistOnly && state.guard.remaining > 0 && state.running && state.mode !== 'defender';
+      state.guard.active = isFistOnly && state.guard.remaining > 0 && state.running && state.mode === 'normal';
       // Co-op tank: FIST = TAUNT (guard is removed for the defender)
       if (state.mode === 'defender') {
         if (isFistOnly && !state.taunt.prevFist && state.running) triggerTaunt();
@@ -3027,6 +3032,8 @@
     document.getElementById('livesRow').classList.toggle('crit', state.lives <= 1);
     document.getElementById('hud').classList.toggle('crit', state.lives <= 1 && state.running);
     renderPips(hud.bombIcons, state.bombs, 6, 'bomb');
+    hud.bombCount.textContent = state.bombs;
+    hud.bombCount.className = 'cnt' + (state.bombs <= 0 ? ' crit' : '');
     renderPips(hud.powerIcons, state.power, 3, '');
     const sec = (state.guard.remaining / 60).toFixed(1);
     hud.guard.textContent = sec + 's';
