@@ -1795,11 +1795,12 @@
         owned: true, equipped: shop.ally === 'none', cost: 0,
         name: ja ? 'なし' : 'NONE', desc: ja ? '友軍を連れて行かない' : 'No wingman',
         iconColor: '#8890b8',
+        iconHtml: '<svg viewBox="0 0 16 16"><line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2"/></svg>',
         onBuy: () => { shop.ally = 'none'; }, onEquip: () => { shop.ally = 'none'; },
       });
       for (const al of ALLIES) addEquipRow({
         owned: shop.allies.includes(al.id), equipped: shop.ally === al.id, cost: al.cost,
-        name: '🛩 ' + al.name, desc: ja ? al.descJa : al.desc, iconColor: al.color,
+        name: al.name, desc: ja ? al.descJa : al.desc, iconHtml: al.icon, iconColor: al.color,
         onBuy: () => { shop.allies.push(al.id); shop.ally = al.id; },
         onEquip: () => { shop.ally = al.id; },
       });
@@ -1829,7 +1830,7 @@
       hdr(ja ? 'ドラゴン / DRAGON' : 'DRAGON');
       for (const dr of DRAGONS) addEquipRow({
         owned: shop.dragons.includes(dr.id), equipped: shop.dragon === dr.id, cost: dr.cost,
-        name: '🐉 ' + dr.name, desc: ja ? dr.descJa : dr.desc, iconColor: dr.color,
+        name: dr.name, desc: ja ? dr.descJa : dr.desc, iconHtml: dr.icon, iconColor: dr.color,
         onBuy: () => { shop.dragons.push(dr.id); shop.dragon = dr.id; },
         onEquip: () => { shop.dragon = dr.id; },
       });
@@ -5221,9 +5222,11 @@
   // ----- DRAGON ultimates (chosen in the shop; fired via the thumbs-up charge) -----
   const DRAGONS = [
     { id: 'beam', name: 'BEAM',  cost: 0,    color: '#ff77c8',
-      descJa: '正面に極太ビーム・縦一列を消し飛ばす', desc: 'Giant forward beam — clears a column' },
+      descJa: '正面に極太ビーム・縦一列を消し飛ばす', desc: 'Giant forward beam — clears a column',
+      icon: '<svg viewBox="0 0 16 16"><rect x="6" y="1" width="4" height="14" fill="currentColor"/><rect x="7" y="1" width="2" height="14" fill="#fff"/></svg>' },
     { id: 'nova', name: 'NOVA',  cost: 900,  color: '#88e0ff',
-      descJa: '全方位の波動・画面全体を継続クリア', desc: 'Radial waves — clears the whole screen' },
+      descJa: '全方位の波動・画面全体を継続クリア', desc: 'Radial waves — clears the whole screen',
+      icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>' },
   ];
   function currentDragon() { return DRAGONS.find(d => d.id === shop.dragon) || DRAGONS[0]; }
   // ----- WINGMEN (友軍): solo-only NPC escorts. Pricey, low DPS, but "better than
@@ -5231,16 +5234,20 @@
   const ALLIES = [
     { id: 'wisp',   name: 'WISP',   cost: 1500, color: '#88e0ff', dmg: 1, cd: 46, kind: 'straight',
       descJa: 'たまに弱い直進弾を撃つ随伴機', desc: 'Trails you; occasional weak bolt',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 2 L11 13 H5 Z" fill="currentColor"/></svg>',
       pal: { '#': '#2a9bd6', 'B': '#15506e', 'C': '#aef4ff', 'W': '#ffffff', 'E': '#88e0ff' } },
     { id: 'drone',  name: 'DRONE',  cost: 2200, color: '#ff77c8', dmg: 1, cd: 80, kind: 'homing',
       descJa: 'たまに弱い追尾弾を撃つ随伴機', desc: 'Trails you; occasional weak homing',
+      icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="1.6" fill="currentColor"/></svg>',
       pal: { '#': '#d64aa0', 'B': '#6e1550', 'C': '#ffc0e6', 'W': '#ffffff', 'E': '#ff77c8' } },
     { id: 'gemini', name: 'GEMINI', cost: 2800, color: '#b6ff3a', dmg: 1, cd: 38, kind: 'twin',
       descJa: '弱い2連弾をやや速めに撃つ随伴機', desc: 'Trails you; weak twin bolts, a bit faster',
+      icon: '<svg viewBox="0 0 16 16"><rect x="4.5" y="3" width="2" height="10" fill="currentColor"/><rect x="9.5" y="3" width="2" height="10" fill="currentColor"/></svg>',
       pal: { '#': '#7ac82b', 'B': '#3a6e15', 'C': '#dcff9a', 'W': '#ffffff', 'E': '#b6ff3a' } },
     { id: 'aegis',  name: 'AEGIS',  cost: 3200, color: '#7fffd4', kind: 'armor',
       armorMax: 8, regen: 42, blockR: 24,   // defense-specialised: no guns, eats nearby bullets
       descJa: '装甲特化・近くの敵弾を防ぐ（耐久制・自動回復）', desc: 'Armor escort: blocks nearby bullets, regenerates',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 1 L14 4 V8 C14 12 8 15 8 15 C8 15 2 12 2 8 V4 Z" fill="currentColor"/></svg>',
       pal: { '#': '#1c8c70', 'B': '#0d4a3a', 'C': '#aef7e0', 'W': '#ffffff', 'E': '#7fffd4' } },
   ];
   function currentAlly() { return shop.ally === 'none' ? null : (ALLIES.find(a => a.id === shop.ally) || null); }
