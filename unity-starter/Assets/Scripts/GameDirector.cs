@@ -1,8 +1,13 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 public class GameDirector : MonoBehaviour
 {
     public static GameDirector Instance { get; private set; }
+
+    /// <summary>Survives the scene reload used by Restart() so RETRY skips the
+    /// title screen and drops straight back into play.</summary>
+    public static bool ResumeImmediately;
 
     public int Score { get; private set; }
     public int HiScore { get; private set; }
@@ -20,7 +25,22 @@ public class GameDirector : MonoBehaviour
     {
         Score = 0;
         Running = true;
-        if (HUD.Instance) HUD.Instance.Refresh();
+        if (HUD.Instance)
+        {
+            HUD.Instance.HideTitle();
+            HUD.Instance.HideGameOver();
+            HUD.Instance.Refresh();
+        }
+        ProceduralSFX.StageStart();
+        StageBanner.Show(Strings.T("title"), new Color(0.55f, 0.88f, 1f), 2f);
+    }
+
+    /// <summary>Reload the scene and resume play immediately (RETRY button).</summary>
+    public void Restart()
+    {
+        ResumeImmediately = true;
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
     public void GameOver()

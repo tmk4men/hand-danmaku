@@ -20,7 +20,9 @@ public static class Strings
         { "stage",       "STAGE" },
         { "chain",       "CHAIN" },
         { "gameOver",    "GAME OVER" },
-        { "retry",       "もう一度遊ぶ" },
+        { "retry",       "↻ もう一度遊ぶ" },
+        { "start",       "▶ スタート" },
+        { "titleHint",   "人差し指で機体を操作 ／ ✊ガード 🤏ボム ／ カメラに手をかざしてね" },
         { "showHand",    "手をかざして開始" },
         { "warning",     "!! WARNING !!" },
         { "bossApproaching", "ボス出現" },
@@ -50,7 +52,9 @@ public static class Strings
         { "stage",       "STAGE" },
         { "chain",       "CHAIN" },
         { "gameOver",    "GAME OVER" },
-        { "retry",       "PLAY AGAIN" },
+        { "retry",       "↻ PLAY AGAIN" },
+        { "start",       "▶ START" },
+        { "titleHint",   "Index finger moves your ship ／ ✊ guard 🤏 bomb ／ show your hand to the camera" },
         { "showHand",    "Show hand to start" },
         { "warning",     "!! WARNING !!" },
         { "bossApproaching", "BOSS APPROACHING" },
@@ -73,7 +77,11 @@ public static class Strings
 
     public static void Load()
     {
-        Current = (Lang)Mathf.Clamp(Persistence.LangId, 0, 1);
+        // The WebGL build only ships the built-in Latin font (Arial), which has
+        // no CJK glyphs in-browser — Japanese would render as blank boxes. Force
+        // EN until a Japanese font asset is added, then restore the line below.
+        //   Current = (Lang)Mathf.Clamp(Persistence.LangId, 0, 1);
+        Current = Lang.EN;
     }
     public static void SetLang(Lang l)
     {

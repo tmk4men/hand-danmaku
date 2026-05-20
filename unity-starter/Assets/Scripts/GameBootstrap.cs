@@ -35,9 +35,16 @@ public class GameBootstrap : MonoBehaviour
 
         if (dailyChallenge) Daily.EnableToday();
         GameDirector.Instance.Player = player.transform;
-        GameDirector.Instance.StartGame();
-        ProceduralSFX.StageStart();
-        StageBanner.Show(Strings.T("title"), new Color(0.55f, 0.88f, 1f), 2f);
+
+        if (GameDirector.ResumeImmediately)
+        {
+            GameDirector.ResumeImmediately = false;   // RETRY: skip title, play now
+            GameDirector.Instance.StartGame();
+        }
+        else
+        {
+            HUD.Instance.ShowTitle();                  // first load: wait for START
+        }
     }
 
     void SetupCombo()
