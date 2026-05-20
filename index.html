@@ -4757,34 +4757,66 @@
     return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
   }
 
+  // Optional custom background image (画像/背景.png). One image, re-tinted per theme
+  // (hue-rotate) and cached so all 10 themes still look different. Falls back to the
+  // procedural sky/nebula/planet if the file is missing.
+  const bgImg = new Image();
+  let bgReady = false;
+  bgImg.onload = () => { bgReady = true; };
+  bgImg.onerror = () => { bgReady = false; };
+  bgImg.src = encodeURI('画像/背景.png');
+  // Per-theme hue rotation (degrees); VOID is desaturated for a colourless void.
+  const BG_HUE = [0, 300, 130, 35, 210, 275, 185, 18, 95, 0];
+  let _bgCache = null, _bgCacheTheme = -1;
+  function getThemedBg() {
+    const ti = state.themeIndex;
+    if (_bgCache && _bgCacheTheme === ti) return _bgCache;
+    if (!_bgCache) { _bgCache = document.createElement('canvas'); }
+    const w = bgImg.naturalWidth || 512, h = bgImg.naturalHeight || 512;
+    _bgCache.width = w; _bgCache.height = h;
+    const c = _bgCache.getContext('2d');
+    c.clearRect(0, 0, w, h);
+    const sat = ti === 9 ? 0.2 : 1.15;
+    c.filter = `hue-rotate(${BG_HUE[ti % BG_HUE.length]}deg) saturate(${sat}) brightness(0.55)`;
+    c.drawImage(bgImg, 0, 0, w, h);
+    c.filter = 'none';
+    _bgCacheTheme = ti;
+    return _bgCache;
+  }
+
   function drawBackground() {
     const theme = STAGE_THEMES[state.themeIndex];
-    // Sky bands — semi-transparent so the camera (when on) bleeds through.
-    const bands = theme.sky;
-    const bh = VH / bands.length;
-    const skyAlpha = camBg.state === 'on' ? 0.74 : 1.0;
-    for (let i = 0; i < bands.length; i++) {
-      ctx.fillStyle = hexToRgba(bands[i], skyAlpha);
-      ctx.fillRect(0, i * bh, VW, bh + 1);
-    }
-
-    // Nebula clouds — concentric squares of decreasing alpha, drift slowly
-    ctx.save();
-    for (const n of nebulae) {
-      n.y += n.vy;
-      if (n.y - n.r > VH) { n.y = -n.r; n.x = rand(0, VW); }
-      for (let k = 3; k >= 0; k--) {
-        const rr = n.r * (0.4 + k * 0.2);
-        ctx.globalAlpha = 0.06 + (3 - k) * 0.04;
-        ctx.fillStyle = theme.neb;
-        ctx.fillRect(n.x - rr, n.y - rr, rr * 2, rr * 2);
+    if (bgReady) {
+      // Custom image base, themed + darkened (kept dim so bright bullets read).
+      ctx.globalAlpha = camBg.state === 'on' ? 0.6 : 1.0;
+      const prevSmooth = ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(getThemedBg(), 0, 0, VW, VH);
+      ctx.imageSmoothingEnabled = prevSmooth;
+      ctx.globalAlpha = 1;
+    } else {
+      // Procedural fallback: sky bands + nebula + planet.
+      const bands = theme.sky;
+      const bh = VH / bands.length;
+      const skyAlpha = camBg.state === 'on' ? 0.74 : 1.0;
+      for (let i = 0; i < bands.length; i++) {
+        ctx.fillStyle = hexToRgba(bands[i], skyAlpha);
+        ctx.fillRect(0, i * bh, VW, bh + 1);
       }
+      ctx.save();
+      for (const n of nebulae) {
+        n.y += n.vy;
+        if (n.y - n.r > VH) { n.y = -n.r; n.x = rand(0, VW); }
+        for (let k = 3; k >= 0; k--) {
+          const rr = n.r * (0.4 + k * 0.2);
+          ctx.globalAlpha = 0.06 + (3 - k) * 0.04;
+          ctx.fillStyle = theme.neb;
+          ctx.fillRect(n.x - rr, n.y - rr, rr * 2, rr * 2);
+        }
+      }
+      ctx.globalAlpha = 1;
+      ctx.restore();
+      drawPlanet(theme);
     }
-    ctx.globalAlpha = 1;
-    ctx.restore();
-
-    // Slow planet (drifts down across multiple stages)
-    drawPlanet(theme);
 
     // Parallax stars
     for (const layer of starLayers) {
