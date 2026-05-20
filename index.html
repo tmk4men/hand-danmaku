@@ -833,8 +833,15 @@
   #shopList .shop-rows { display: grid; gap: 6px; max-height: 48vh; overflow-y: auto; }
   #shopList .shop-note { color: #8890b8; font-size: 10px; letter-spacing: 0.04em; padding: 0 2px 2px; }
   #shopList .item.wpn { grid-template-columns: auto 1fr auto; }
-  #shopList .wpn-ctrl { display: flex; gap: 4px; align-items: center; }
-  #shopList .wpn-ctrl .cost { min-width: 40px; }
+  #shopList .wpn-ctrl { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
+  #shopList .slot-row { display: flex; gap: 4px; justify-content: flex-end; }
+  #shopList .wpn-ctrl .cost { min-width: 40px; text-align: right; }
+  #shopList .lvup-btn {
+    padding: 5px 8px; font-size: 10px; font-weight: 700; font-family: inherit;
+    background: linear-gradient(180deg, #c89a3a, #7a5a20); border: 1px solid #ffd066;
+    color: #06081a; cursor: pointer; white-space: nowrap;
+  }
+  #shopList .lvup-btn:disabled { background: #2a2f55; border-color: #2a2f55; color: #555a82; cursor: default; }
   #shopList .slot-btn {
     width: 30px; padding: 7px 0; margin: 0; font-size: 12px; font-weight: 700;
     background: #10163a; border: 1px solid #2a2f55; color: #8890b8;
@@ -1461,7 +1468,9 @@
     weapons:    loadJSON('hd_weapons', ['std']),    // owned weapon ids
     weaponMain: localStorage.getItem('hd_weapon_main') || localStorage.getItem('hd_weapon') || 'std',
     weaponSub:  localStorage.getItem('hd_weapon_sub') || 'none',
+    weaponLv:   loadJSON('hd_weaponlv', {}),    // per-weapon persistent level
   };
+  if (typeof shop.weaponLv !== 'object' || !shop.weaponLv) shop.weaponLv = {};
   if (!Array.isArray(shop.ships)) shop.ships = ['vanguard'];
   if (!shop.ships.includes('vanguard')) shop.ships.unshift('vanguard');
   if (!Array.isArray(shop.weapons)) shop.weapons = ['std'];
@@ -1517,6 +1526,7 @@
       localStorage.setItem('hd_weapons', JSON.stringify(shop.weapons));
       localStorage.setItem('hd_weapon_main', shop.weaponMain);
       localStorage.setItem('hd_weapon_sub', shop.weaponSub);
+      localStorage.setItem('hd_weaponlv', JSON.stringify(shop.weaponLv));
     } catch {}
   }
   function skinStatLine(sk) {
@@ -1632,7 +1642,8 @@
         const ico = document.createElement('span');
         ico.className = 'shop-ico'; ico.style.color = wp.color || '#88e0ff'; ico.innerHTML = wp.icon;
         const mid = document.createElement('div');
-        mid.innerHTML = `<div class="name">${wp.name}</div><div class="desc">${(lang === 'ja') ? wp.descJa : wp.desc}</div>`;
+        const lvMeta = owned ? `<div class="meta">LV ${weaponLevel(wp.id)}/${WEAPON_MAX_LV}</div>` : '';
+        mid.innerHTML = `<div class="name">${wp.name}</div><div class="desc">${(lang === 'ja') ? wp.descJa : wp.desc}</div>${lvMeta}`;
         const ctrl = document.createElement('div');
         ctrl.className = 'wpn-ctrl';
         if (!owned) {
@@ -1663,7 +1674,22 @@
             else if (shop.weaponMain !== wp.id) shop.weaponSub = wp.id;
             saveShop(); renderShop(); SFX.pickup();
           });
-          ctrl.append(mb, sb);
+          const slotRow = document.createElement('div'); slotRow.className = 'slot-row';
+          slotRow.append(mb, sb);
+          const wl = weaponLevel(wp.id);
+          const up = document.createElement('button'); up.type = 'button'; up.className = 'lvup-btn';
+          if (wl >= WEAPON_MAX_LV) { up.textContent = 'MAX'; up.disabled = true; }
+          else {
+            const c = weaponUpCost(wp.id);
+            up.textContent = ((lang === 'ja') ? '強化 ' : 'LV↑ ') + c;
+            up.disabled = shop.coins < c;
+            up.addEventListener('click', () => {
+              if (shop.coins < c) return;
+              shop.coins -= c; shop.weaponLv[wp.id] = wl + 1;
+              saveShop(); renderShop(); SFX.pickup();
+            });
+          }
+          ctrl.append(slotRow, up);
         }
         row.append(ico, mid, ctrl);
         rows.appendChild(row);
@@ -2240,28 +2266,33 @@
     }
   }
 
-  // One volley of a weapon — used by both the MAIN fire and the SUB slot.
+  // One volley of a weapon. Scaled by run power (state.power) AND the weapon's
+  // persistent shop level (wlv): higher level = more damage / extra projectiles.
   function emitWeapon(wid) {
-    const p = state.player, lv = state.power;
+    const p = state.player, lv = state.power, wlv = weaponLevel(wid);
     if (wid === 'spread') {
-      const rays = lv === 1 ? 3 : lv === 2 ? 5 : 7;
+      const rays = (lv === 1 ? 3 : lv === 2 ? 5 : 7) + (wlv - 1);
       const half = (rays - 1) / 2;
+      const dmg = 1 + Math.floor((wlv - 1) / 2);
       for (let i = -half; i <= half; i++) {
-        state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg: 1, kind: 'std' });
+        state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg, kind: 'std' });
       }
     } else if (wid === 'heavy') {
       const lanes = lv >= 3 ? [-7, 0, 7] : lv === 2 ? [-5, 5] : [0];
+      const dmg = 3 + (wlv - 1) * 2;
       for (const ox of lanes) {
-        state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg: 3, kind: 'std' });
+        state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg, kind: 'std' });
       }
     } else if (wid === 'homing') {
+      const dmg = 2 + (wlv - 1);
       const mk = (ox, vx) => state.shots.push({
-        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 2,
+        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg,
         kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
       });
       mk(0, 0);
       if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }
       if (lv >= 3) mk(0, 0);
+      if (wlv >= 4) { mk(-11, -2); mk(11, 2); }
     } else {
       // 'std' (TWIN). Guard active = only center bolt.
       let lanes;
@@ -2269,8 +2300,13 @@
       else if (lv === 1) lanes = [[-6, 0], [6, 0]];
       else if (lv === 2) lanes = [[-8, 0], [0, -2], [8, 0]];
       else lanes = [[-10, 0], [-4, -2], [4, -2], [10, 0]];
+      const dmg = 1 + Math.floor((wlv - 1) / 2);
       for (const [ox, oy] of lanes) {
-        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
+        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg, kind: 'std' });
+      }
+      if (wlv >= 5 && !state.guard.active) {
+        state.shots.push({ x: p.x - 12, y: p.y - 8, vx: -1.2, vy: -9, r: 3, dmg, kind: 'std' });
+        state.shots.push({ x: p.x + 12, y: p.y - 8, vx:  1.2, vy: -9, r: 3, dmg, kind: 'std' });
       }
     }
   }
@@ -4099,6 +4135,9 @@
   function currentSkin()       { return SHIPS.find(s => s.id === shop.ship) || SHIPS[0]; }
   function currentMainWeapon() { return WEAPONS.find(w => w.id === shop.weaponMain) || WEAPONS[0]; }
   function currentSubWeapon()  { return shop.weaponSub === 'none' ? null : (WEAPONS.find(w => w.id === shop.weaponSub) || null); }
+  const WEAPON_MAX_LV = 5;
+  function weaponLevel(id)  { return Math.min(WEAPON_MAX_LV, shop.weaponLv[id] || 1); }
+  function weaponUpCost(id) { return 300 * weaponLevel(id); }   // 300/600/900/1200 for Lv2..5
   function skinPreview(skin) {
     const c = document.createElement('canvas');
     c.width = 30; c.height = 30;
