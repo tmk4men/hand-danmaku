@@ -9,11 +9,22 @@ public class GestureController : MonoBehaviour
     private bool prevPinch, prevFist, prevPeace, prevThumbBent, prevThumbsUp;
     private float lastTipX = 0.5f, lastTipY = 0.5f;
     private float lastDashAt = -10;
+    private float lastSpeed;            // fingertip speed, for debug overlay
+    private SpriteRenderer playerSr;    // for guard tint
+
+    /// <summary>On-screen live gesture readout. Set false for the final build.</summary>
+    public static bool ShowDebug = true;
+    public static float DashSpeed = 0.065f;   // fingertip speed to trigger DASH
 
     [Header("References (auto-wired in GameBootstrap)")]
     public PlayerHealth health;
     public PlayerShooter shooter;
     public DragonBeam dragon;
+
+    void Start()
+    {
+        if (health) playerSr = health.GetComponent<SpriteRenderer>();
+    }
 
     void Update()
     {
@@ -36,8 +47,9 @@ public class GestureController : MonoBehaviour
 
         // BOMB: pinch rising edge
         if (pinch && !prevPinch) FireBomb();
-        // GUARD: held while fist
+        // GUARD: held while fist (+ visible cyan tint so it's obvious)
         if (health) health.SetGuarding(fist);
+        if (playerSr) playerSr.color = fist ? new Color(0.4f, 0.9f, 1f) : Color.white;
         // DRAGON: thumbs-up posture is also the charge gate; firing happens
         // on the falling edge with full charge (handled inside DragonBeam).
         if (shooter) shooter.Suppressed = thumbsUp;
@@ -47,10 +59,12 @@ public class GestureController : MonoBehaviour
         var tip = lm[8];
         float dx = tip.x - lastTipX, dy = tip.y - lastTipY;
         float sp = Mathf.Sqrt(dx * dx + dy * dy);
-        if (sp > 0.085f && Time.time - lastDashAt > 0.5f && !fist && !pinch)
+        lastSpeed = sp;
+        if (sp > DashSpeed && Time.time - lastDashAt > 0.5f && !fist && !pinch)
         {
             lastDashAt = Time.time;
             DoDash(new Vector2(dx / sp, -dy / sp));   // y is flipped to world
+            CameraShake.Pulse(0.2f, 0.12f);           // visible dash feedback
         }
         lastTipX = tip.x; lastTipY = tip.y;
 
@@ -69,6 +83,21 @@ public class GestureController : MonoBehaviour
         CameraShake.Pulse(0.5f, 0.35f);
         ProceduralSFX.Bomb();
         if (GameDirector.Instance) GameDirector.Instance.AddScore(50);
+    }
+
+    void OnGUI()
+    {
+        if (!ShowDebug) return;
+        var style = new GUIStyle { fontSize = 18, normal = { textColor = Color.white } };
+        GUI.Box(new Rect(6, 6, 560, 70), GUIContent.none);
+        var hm = HandManager.Instance;
+        if (hm == null) { GUI.Label(new Rect(12, 12, 560, 30), "HandManager: null", style); return; }
+        if (!hm.HandSeen) { GUI.Label(new Rect(12, 12, 560, 30), "hand: NOT seen — show your hand to the camera", style); return; }
+        var lm = hm.Landmarks;
+        string l1 = $"pinchRatio={GestureClassifier.PinchRatioNow(lm):0.00} (fires < {GestureClassifier.PinchRatio:0.00})   tipSpeed={lastSpeed:0.000} (dash > {DashSpeed:0.000})   curls={GestureClassifier.CurledCount(lm)}";
+        string l2 = $"PINCH={GestureClassifier.IsPinch(lm)}  FIST={GestureClassifier.IsFist(lm)}  PEACE={GestureClassifier.IsPeace(lm)}  THUMBSUP={GestureClassifier.IsThumbsUp(lm)}  BENT={GestureClassifier.IsThumbBent(lm)}";
+        GUI.Label(new Rect(12, 12, 560, 30), l1, style);
+        GUI.Label(new Rect(12, 40, 560, 30), l2, style);
     }
 
     void DoDash(Vector2 dir)

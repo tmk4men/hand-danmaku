@@ -22,9 +22,21 @@ public static class GestureClassifier
     public const int PNK_MCP = 17;
     public const int MID_MCP = 9;
 
+    /// <summary>Pinch threshold as a fraction of hand span (scale-invariant).
+    /// Tune this one number if pinch is too eager / too strict.</summary>
+    public static float PinchRatio = 0.50f;
+
     public static bool IsPinch(Vector3[] lm)
     {
-        return Dist2D(lm[IDX_T], lm[THUMB_T]) < 0.06f;
+        float span = Mathf.Max(0.0001f, HandSpan(lm));
+        return Dist2D(lm[IDX_T], lm[THUMB_T]) < span * PinchRatio;
+    }
+
+    /// <summary>index-thumb gap / hand span — exposed for the debug overlay.</summary>
+    public static float PinchRatioNow(Vector3[] lm)
+    {
+        float span = Mathf.Max(0.0001f, HandSpan(lm));
+        return Dist2D(lm[IDX_T], lm[THUMB_T]) / span;
     }
 
     /// <summary>Count of curled non-thumb fingers (0..4).</summary>
