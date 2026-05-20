@@ -50,8 +50,10 @@
   }
   #stage {
     position: relative;
-    width: min(100vw, calc(100vh * 4 / 3));
-    height: min(100vh, calc(100vw * 3 / 4));
+    /* Use dvh (dynamic viewport) so mobile address/tool bars don't make the
+       4:3 stage taller than the visible area and crop it (esp. in landscape). */
+    width: min(100vw, calc(100dvh * 4 / 3));
+    height: min(100dvh, calc(100vw * 3 / 4));
     background: radial-gradient(ellipse at 50% 30%, #131638 0%, #05060a 75%);
     border: 1px solid #2b2f55;
     box-shadow: 0 0 60px rgba(80, 100, 255, 0.25) inset;
@@ -76,7 +78,7 @@
     /* Sit in the empty letterbox margin to the LEFT of the 4:3 stage on wide
        screens; clamps to the top-left overlay when there's no margin (mobile). */
     position: fixed; top: 12px;
-    left: max(8px, calc((100vw - min(100vw, 100vh * 4 / 3)) / 2 - 172px));
+    left: max(8px, calc((100vw - min(100vw, 100dvh * 4 / 3)) / 2 - 172px));
     z-index: 12;
     pointer-events: none;
     display: none; flex-direction: column; gap: 4px;
@@ -552,6 +554,23 @@
     #healHostBtn { font-size: 11px; padding: 9px 14px; bottom: 10px; }
   }
 
+  /* Short viewports (landscape phones): the menu would overflow the 4:3 stage and
+     get cropped top/bottom — let it fit + scroll, and compact the HUD. The
+     max-width:600px rules don't fire in landscape because the width is large. */
+  @media (max-height: 560px) {
+    #overlay { align-items: flex-start; }
+    #overlay .panel {
+      max-height: calc(100dvh - 12px);
+      overflow-y: auto;
+      padding: 12px 14px;
+      margin: 6px 0;
+    }
+    #overlay h1 { font-size: 22px; }
+    #overlay .kicker { font-size: 9px; }
+    #overlayMsg.howto { grid-template-columns: repeat(3, 1fr); gap: 4px; }
+    #hud { font-size: 8px; min-width: 104px; padding: 5px 7px; gap: 2px; }
+  }
+
   /* ---------- Unified pixel-button system ---------- */
   #overlay button {
     font-family: inherit;
@@ -872,6 +891,51 @@
     font-size: 12px; color: #7e83b8;
     pointer-events: none;
   }
+
+  /* ---------- Campaign stage-select ---------- */
+  #stageSelect {
+    position: absolute; inset: 0; z-index: 14;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(ellipse at 50% 40%, rgba(8,12,40,0.82), rgba(2,3,10,0.92));
+    font-family: "Press Start 2P", ui-monospace, monospace;
+    padding: 12px;
+  }
+  #stageSelect.hidden { display: none; }
+  #stageSelect .ss-panel { width: 100%; max-width: 560px; text-align: center; }
+  #ssTitle {
+    font-size: clamp(14px, 3.4vmin, 22px); color: #ffd066;
+    letter-spacing: 0.12em; text-shadow: 0 2px 0 #06081a; margin-bottom: 4px;
+  }
+  #stageSelect .ss-sub { font-size: clamp(8px, 1.8vmin, 11px); color: #cfd2f0; margin-bottom: 14px; }
+  #stageSelect .ss-cards { display: flex; gap: 10px; justify-content: center; }
+  #stageSelect .ss-card {
+    --accent: #88a8ff;
+    flex: 1 1 0; min-width: 0; max-width: 168px;
+    display: flex; flex-direction: column; align-items: center; gap: 7px;
+    padding: 16px 8px;
+    background: linear-gradient(165deg, #141a44, #0a0d28);
+    border: 2px solid var(--accent);
+    box-shadow: 0 0 0 2px #06081a, 0 0 16px color-mix(in srgb, var(--accent) 35%, transparent);
+    color: #e6e6ff; cursor: pointer; font-family: inherit;
+    transition: transform 0.08s, box-shadow 0.12s;
+  }
+  #stageSelect .ss-card:hover, #stageSelect .ss-card:focus {
+    transform: translateY(-3px);
+    box-shadow: 0 0 0 2px #06081a, 0 0 26px color-mix(in srgb, var(--accent) 65%, transparent);
+    outline: none;
+  }
+  #stageSelect .ss-card:active { transform: translateY(0); }
+  #stageSelect .ss-num { font-size: 8px; color: #8890b8; letter-spacing: 0.06em; }
+  #stageSelect .ss-theme { font-size: clamp(11px, 2.6vmin, 16px); color: var(--accent); letter-spacing: 0.08em; }
+  #stageSelect .ss-perk { font-size: clamp(9px, 1.9vmin, 12px); }
+  #stageSelect .ss-key { font-size: 9px; color: #555a82; }
+  #stageSelect .ss-hint { margin-top: 14px; font-size: clamp(7px, 1.5vmin, 9px); color: #7e83b8; }
+  @media (max-height: 420px) {
+    #stageSelect .ss-card { padding: 10px 6px; gap: 4px; }
+    #ssTitle { margin-bottom: 2px; }
+    #stageSelect .ss-sub { margin-bottom: 8px; }
+    #stageSelect .ss-hint { margin-top: 8px; }
+  }
 </style>
 </head>
 <body>
@@ -947,6 +1011,20 @@
     </div>
 
     <div id="status">model: loading…</div>
+
+    <!-- Campaign: pick the next stage after clearing a boss -->
+    <div id="stageSelect" class="hidden">
+      <div class="ss-panel">
+        <div id="ssTitle">STAGE CLEAR</div>
+        <div class="ss-sub">次のステージを選択</div>
+        <div class="ss-cards">
+          <button type="button" class="ss-card" data-i="0"></button>
+          <button type="button" class="ss-card" data-i="1"></button>
+          <button type="button" class="ss-card" data-i="2"></button>
+        </div>
+        <div class="ss-hint">タップ / クリック、またはキー [1] [2] [3]</div>
+      </div>
+    </div>
 
     <div id="overlay">
       <div class="panel" id="overlayPanel">
@@ -1209,6 +1287,9 @@
     stageTimer: 0,
     bossFight: false,
     boss: null,
+    selecting: false,     // campaign: stage-select screen open (sim paused)
+    stageChoices: null,   // current 3 next-stage options
+    won: false,           // campaign: cleared the final stage
     player: {
       x: VW * 0.5, y: VH * 0.78,
       vx: 0, vy: 0,
@@ -2260,7 +2341,7 @@
       }
       if (state.guard.active && !prevGuardOn) { showGesture('FIST', 'GUARD', '#7fffd4'); SFX.guard(); }
 
-      if (isPinch && !state.pinch.active && state.running) {
+      if (isPinch && !state.pinch.active && state.running && !state.selecting) {
         if (state.mode === 'defender') triggerNova();    // tank: PINCH releases the OVERLOAD nova
         else { triggerBomb(); showGesture('PINCH', 'BOMB', '#ff7c98'); }
       }
@@ -2291,7 +2372,7 @@
       }
 
       const isThumbBent = thumbInward && curled === 0 && !isPinch && !isFist && !isPeace;
-      if (isThumbBent && !state.thumbBent && state.running) {
+      if (isThumbBent && !state.thumbBent && state.running && !state.selecting) {
         if (state.mode === 'defender') triggerShield();   // tank: thumb-in deploys the host shield
         else useActiveItem();                             // normal: thumb-in uses the active item
       }
@@ -2315,7 +2396,7 @@
         // (The tank has no dragon; its thumb-in gesture deploys the host shield.)
         // Once unlocked, thumbs-up charges the beam; releasing it when full fires.
         const dragonChargeable = state.dragonUnlocked && state.running
-          && !state.paused && !state.autoPaused && state.dragonFiring === 0;
+          && !state.paused && !state.autoPaused && !state.selecting && state.dragonFiring === 0;
         if (isThumbsUp && dragonChargeable) {
           state.dragonCharge = Math.min(600, state.dragonCharge + 1);
         }
@@ -2673,6 +2754,87 @@
     state.mod = mods[Math.floor(gameRand() * mods.length)];
   }
 
+  // ---------- Campaign: finite 10-stage solo run with a stage-select between stages ----------
+  const CAMPAIGN_STAGES = 10;
+  // Campaign mode applies to the SOLO, non-daily game only (co-op stays host-synced
+  // endless; daily stays a comparable score attack).
+  function CAMPAIGN_ON() { return !NET.active && !state.daily; }
+
+  const PERKS = [
+    { id: 'life',  icon: '❤', label: 'LIFE +1',    color: '#ff8ab0' },
+    { id: 'bomb',  icon: '💣', label: 'BOMB +1',    color: '#ff7c98' },
+    { id: 'power', icon: '⚡', label: 'POWER +1',   color: '#ffd066' },
+    { id: 'coins', icon: '🪙', label: 'COINS +5',   color: '#ffd066' },
+    { id: 'guard', icon: '🛡', label: 'GUARD FULL', color: '#7fffd4' },
+  ];
+
+  function shuffled(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [a[i], a[j]] = [a[j], a[i]]; }
+    return a;
+  }
+
+  // Build 3 distinct next-stage cards: each = a theme/boss + a perk reward.
+  function buildChoices() {
+    const themes = shuffled(STAGE_THEMES.map((_, i) => i)).slice(0, 3);
+    const perks = shuffled(PERKS).slice(0, 3);
+    return themes.map((t, i) => ({ theme: t, perk: perks[i] }));
+  }
+
+  function applyPerk(perk) {
+    switch (perk.id) {
+      case 'life':  state.lives = Math.min(state.lives + 1, 7); break;
+      case 'bomb':  state.bombs = Math.min(state.bombs + 1, 6); break;
+      case 'power': state.power = Math.min(state.power + 1, 3); state.powerFlash = 30; break;
+      case 'coins': shop.coins += 5; saveShop(); coinAmt.textContent = shop.coins; break;
+      case 'guard': state.guard.remaining = 600; break;
+    }
+  }
+
+  // Boss cleared (stages 1..9): freeze the run and show the next-stage picker.
+  function openStageSelect() {
+    state.selecting = true;
+    // clean the screen for the transition
+    for (const b of state.bullets) pushParticle(b.x, b.y, b.color);
+    state.bullets.length = 0;
+    state.meteors.length = 0;
+    state.enemies.length = 0;
+    state.items.length = 0;
+    state.stageChoices = buildChoices();
+    const el = document.getElementById('stageSelect');
+    document.getElementById('ssTitle').textContent = 'STAGE ' + state.stageNo + ' CLEAR';
+    const cards = el.querySelectorAll('.ss-card');
+    state.stageChoices.forEach((c, idx) => {
+      const th = STAGE_THEMES[c.theme];
+      const card = cards[idx];
+      card.style.setProperty('--accent', th.accent);
+      card.innerHTML =
+        '<div class="ss-num">STAGE ' + (state.stageNo + 1) + ' / ' + CAMPAIGN_STAGES + '</div>' +
+        '<div class="ss-theme">' + th.name + '</div>' +
+        '<div class="ss-perk" style="color:' + c.perk.color + '">' + c.perk.icon + ' ' + c.perk.label + '</div>' +
+        '<div class="ss-key">[' + (idx + 1) + ']</div>';
+    });
+    el.classList.remove('hidden');
+  }
+
+  function chooseStage(idx) {
+    if (!state.selecting || !state.stageChoices) return;
+    const c = state.stageChoices[idx];
+    if (!c) return;
+    document.getElementById('stageSelect').classList.add('hidden');
+    state.selecting = false;
+    state.stageChoices = null;
+    applyPerk(c.perk);
+    state.stageNo++;
+    state.themeIndex = c.theme;
+    state.stageTimer = 0;
+    pickStageMod();
+    state.stageBanner = 150;
+    state.player.invuln = Math.max(state.player.invuln, 90);  // safe re-entry
+    updateHud();
+    SFX.stageStart();
+  }
+
   function fireDragon() {
     state.dragonFiring = 180;          // 3s at 60fps
     state.dragonCharge = 0;
@@ -2740,6 +2902,7 @@
 
   // ---------- Stage scripting ----------
   function stageTick() {
+    if (state.selecting) return;   // frozen during the campaign stage-select
     state.stageTimer++;
     if (state.bossFight) return;
 
@@ -3037,7 +3200,7 @@
         }
       }
     }
-    if (state.running && !state.paused && !state.autoPaused) {
+    if (state.running && !state.paused && !state.autoPaused && !state.selecting) {
       if (NET.isGuest()) updateGuest(dt);   // thin client: render host's world, run own ship
       else update(dt);                       // solo / co-op host: authoritative sim
     }
@@ -3223,15 +3386,23 @@
         if (e.isBoss) {
           state.bossFight = false;
           state.boss = null;
+          state.shake = 28;
+          for (let k = 0; k < 60; k++) pushParticle(e.x, e.y, '#ffffff');
+          SFX.bossDie();
+          if (CAMPAIGN_ON()) {
+            // Finite campaign: clear stage 10 => win; otherwise choose the next stage.
+            updateHud();
+            if (state.stageNo >= CAMPAIGN_STAGES) { gameOver(true); return; }
+            openStageSelect();
+            continue;
+          }
+          // co-op / daily: original endless auto-advance
           state.stageNo++;
           state.stageTimer = 0;
           state.bombs = Math.min(state.bombs + 1, 4);
-          state.shake = 28;
           state.themeIndex = (state.stageNo - 1) % STAGE_THEMES.length;
           pickStageMod();
           state.stageBanner = 150;
-          for (let k = 0; k < 60; k++) pushParticle(e.x, e.y, '#ffffff');
-          SFX.bossDie();
           setTimeout(() => SFX.stageStart(), 800);
         } else {
           state.shake = Math.max(state.shake, 4);
@@ -3790,24 +3961,31 @@
     ].filter(Boolean).join('\n');
   }
 
-  async function gameOver() {
+  async function gameOver(won = false) {
     if (NET.isHost()) NET.send({ type: 'gameover' });   // co-op: end the guest's run too
     state.running = false;
+    state.won = won;
+    state.selecting = false;
+    document.getElementById('stageSelect').classList.add('hidden');
     healHostUpdateBtn();
     bgm.stop();
-    SFX.gameOver();
-    state.rank = computeRank();
+    if (won) { SFX.bossDie(); setTimeout(() => SFX.stageStart(), 300); } else SFX.gameOver();
+    state.rank = won ? computeRank() : computeRank();
+    if (won) state.rank = 'S';   // clearing the whole campaign is always top rank
     if (state.score > state.hiScore) {
       state.hiScore = state.score;
       try { localStorage.setItem('hd_hi', String(state.hiScore)); } catch {}
     }
-    const earned = awardCoinsFromRun();
+    let earned = awardCoinsFromRun();
+    if (won) { shop.coins += 30; saveShop(); earned += 30; }   // clear bonus
     overlay.classList.remove('hidden');
     showHomeView();
-    overlay.querySelector('h1.home-only').textContent = t('titleGameOver');
+    overlay.querySelector('h1.home-only').textContent = won ? 'ALL CLEAR!' : t('titleGameOver');
     const noHit = state.hitsTaken === 0 ? '<span class="nohit">★NO HIT</span>' : '';
     const noBomb = state.usedBombs === 0 ? '<span class="nobomb">★NO BOMB</span>' : '';
+    const clearLine = won ? `<div class="result-line"><span class="accent">⭐ CAMPAIGN CLEAR ⭐</span></div>` : '';
     document.getElementById('scoreSummary').innerHTML =
+      clearLine +
       `<div class="rank-badge rank-${state.rank}">${state.rank}</div>` +
       `<div class="result-line">SCORE <span class="accent">${state.score}</span>  /  HI ${state.hiScore}</div>` +
       `<div class="result-line">STAGE ${state.stageNo}  /  CHAIN ${state.combo.best}  /  <span class="accent">+${earned} ${t('coinsLabel')}</span></div>` +
@@ -5089,8 +5267,9 @@
   }
 
   function drawModBanner() {
+    const stageLabel = CAMPAIGN_ON() ? `STAGE ${state.stageNo}/${CAMPAIGN_STAGES}` : `STAGE ${state.stageNo}`;
     const label = (state.daily ? `DAILY ${state.dailyKey}  ` : '')
-                + `STAGE ${state.stageNo}  ${state.mod.name}`;
+                + `${stageLabel}  ${state.mod.name}`;
     ctx.font = 'bold 12px monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'top';
@@ -5248,6 +5427,10 @@
     state.stageTimer = 0;
     state.bossFight = false;
     state.boss = null;
+    state.selecting = false;
+    state.stageChoices = null;
+    state.won = false;
+    document.getElementById('stageSelect').classList.add('hidden');
     state.bullets.length = 0;
     state.shots.length = 0;
     state.enemies.length = 0;
@@ -5402,7 +5585,14 @@
       audio.init(); audio.setMuted(!audio.muted); syncMuteBtn();
     } else if (e.key === 'c' || e.key === 'C') {
       toggleCamBg();
+    } else if (state.selecting && (e.key === '1' || e.key === '2' || e.key === '3')) {
+      chooseStage(parseInt(e.key, 10) - 1);
     }
+  });
+
+  // Campaign stage-select cards (tap / click)
+  document.querySelectorAll('#stageSelect .ss-card').forEach((card) => {
+    card.addEventListener('click', () => chooseStage(parseInt(card.dataset.i, 10)));
   });
 
   function syncCamBtn() {
