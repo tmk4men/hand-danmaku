@@ -1,147 +1,89 @@
-# Unity スターター — HAND DANMAKU 移植
+# Unity スターター — HAND DANMAKU 移植（unityroom 投稿用）
 
-unityroom 投稿に向けた **動くプロトタイプ一式**。Unity 2022.3 LTS の
-新規 2D プロジェクトに `Assets/` を丸ごとコピーし、シーンに
-`GameBootstrap` を1つ置いて WebGL ビルドすれば下記が動きます:
+**このフォルダ自体がそのまま Unity プロジェクトです。** 新規プロジェクトを
+作って `Assets/` をコピーする昔の手順はもう不要。Unity Hub でこのフォルダを
+開く → ビルドコマンド1発 → zip を unityroom にアップ、で完了します。
 
-- 人差し指で機体追従（PlayerShip）
-- 自動射撃（PlayerShooter）
-- 敵スポーン・追尾弾・スプレッド・回転弾（Enemy, EnemySpawner）
-- 隕石（Meteor、即死、GUARD/DASH で回避）
-- ピンチ→ボム、握り→ガード、指振り→ダッシュ、親指立て10秒→ドラゴンビーム
-- HUD（SCORE / HI / LIVES）、ゲームオーバー画面
-- カメラシェイク
-- PlayerPrefs によるハイスコア保存
+GameBootstrap / SpriteFactory / ProceduralSFX により、シーン配置・画像インポート・
+音声ファイルはすべてコード生成。手作業の GUI 操作はほぼゼロです。
 
-JS 版の核となる挙動は移植済み。Phase 1 だけでも遊べる状態です。
+実装済みの遊び:
+- 人差し指で機体追従、自動射撃、敵スポーン（追尾/スプレッド/回転弾）
+- 隕石（即死、GUARD/DASH で回避）、ボス（14ウェーブ毎・4パターン）
+- ジェスチャ: ピンチ→ボム / 握り→ガード / ピース→フォーカス / 指振り→ダッシュ
+  / 親指曲げ→バレットタイム / 親指立て10秒→ドラゴンビーム
+- HUD（SCORE/HI/LIVES）、コンボ、ポップアップ、ステージバナー
+- アイテム6種・コイン・ショップ、PlayerPrefs 永続化、JA/EN 切替、デイリー
 
-## 0. 前提
+---
 
-- **Unity Hub** インストール済（https://unity.com/download）
-- **Unity 2022.3 LTS** + **WebGL Build Support** モジュール
-- 何かしらのテキストエディタ（VS Code / Rider / Visual Studio）
+## 0. 前提（人間がやる唯一の準備）
 
-> Unity 6 でも動きますが LTS のほうが unityroom 配布実績多数。
+1. **Unity Hub** をインストール — https://unity.com/download
+2. **Unity 2022.3 LTS** + **WebGL Build Support** モジュールを追加
+   - `ProjectSettings/ProjectVersion.txt` に `2022.3.62f1` を指定済み。
+     別の 2022.3 LTS を入れている場合はこの1行を手持ちのバージョンに書き換えるだけでOK。
 
-## 1. 新規プロジェクト作成
+> Claude（自分）は Unity エディタを起動できないため、ここから先のビルドは
+> 人間が下記コマンドを1回叩く形になります。設定・シーン・ビルドはすべて
+> `Assets/Editor/BuildScript.cs` が自動でやります。
 
-1. Unity Hub → **New Project**
-2. テンプレート: **2D (Built-In Render Pipeline)**
-3. プロジェクト名: `HandDanmaku`
-4. **Create project**
+## 1. ビルド（コマンド1発）
 
-エディタが開いたら一旦そのまま置いて、次のステップへ。
-
-## 2. ファイル配置
-
-このディレクトリの中身を、新規プロジェクトの `Assets/` 配下に **そのままコピー**します。
-
-```
-unity-starter/Assets/        ↓ コピー
-HandDanmaku/Assets/
-  WebGLTemplates/MediaPipe/index.html
-  Plugins/WebGL/MediaPipeBridge.jslib
-  Scripts/HandManager.cs
-  Scripts/PlayerShip.cs
-  Scripts/GestureClassifier.cs
+### Windows
+このフォルダの **`build_webgl.bat` をダブルクリック**。以上。
+（Unity の場所が自動検出できない場合は exe パスを引数で渡す）
+```bat
+build_webgl.bat "C:\Program Files\Unity\Hub\Editor\2022.3.62f1\Editor\Unity.exe"
 ```
 
-ファイラ（Windowsエクスプローラ/Finder）で `Assets` フォルダにドラッグ＆ドロップでOK。
-
-Unity エディタ側に戻ると自動でインポートされる。
-
-## 3. シーンセットアップ — 1コンポーネントで全部組む
-
-スターターには **GameBootstrap** という万能セットアップが入ってます。
-Awake() でカメラ、自機、HUD、敵スポーナー、ジェスチャ制御、ドラゴンビーム、
-カメラシェイクを全部生成するので、シーンに置く GameObject は1つだけでOK。
-
-1. **Hierarchy** で右クリック → Create Empty → 名前 `Bootstrap`
-2. Inspector → **Add Component** → `Game Bootstrap`
-3. **File → Save Scene** → 名前 `Main`、保存先 `Assets/Scenes/`
-
-スプライトもコードで生成（`SpriteFactory.cs`）なので、画像インポート作業
-ゼロ。Play すれば即「指先を追う機体 + 敵スポーン + 弾幕 + 隕石 + ドラゴン
-ビーム + HUD」が走ります。
-
-### 手動で組みたい場合
-
-各コンポーネントは個別に使えます:
-- `HandManager`（GameObject 名は必ず `HandManager`）
-- `PlayerShip` + `PlayerShooter` + `PlayerHealth` + `DragonBeam` を自機に
-- `EnemySpawner` 空オブジェクト
-- `GameDirector` 空オブジェクト
-- `HUD` 空オブジェクト
-- `GestureController` 空オブジェクト
-- カメラに `CameraShake`
-
-## 4. WebGL ビルド設定
-
-**Edit → Project Settings → Player → WebGL**
-
-### Resolution and Presentation
-- Default Canvas Width: `960`
-- Default Canvas Height: `720`
-- **WebGL Template**: **MediaPipe** を選択 (`Assets/WebGLTemplates/MediaPipe/` を自動認識)
-
-### Other Settings
-- Color Space: `Gamma`
-
-### Publishing Settings
-- Compression Format: **Gzip** （unityroom 推奨）
-- ☐ Decompression Fallback: OFF
-- ☑ Strip Engine Code: ON
-
-### Player → General
-- Active Input Handling: `Input Manager (Old)` または `Both`
-
-## 5. プラットフォーム切替
-
-**File → Build Settings**
-1. Platform 一覧 → **WebGL** をクリック
-2. 右下 **Switch Platform**（数分かかる）
-3. Scenes In Build に `Scenes/Main` が含まれていることを確認（なければ Add Open Scenes）
-
-## 6. ビルド
-
-1. Build Settings → **Build** をクリック
-2. 出力先フォルダを作成（例: `Builds/Web/`）
-3. ビルド完了まで数分
-
-完了したら出力フォルダの `index.html` を **HTTPS or localhost** 経由でブラウザに開く（直接 `file://` だとカメラAPIが拒否される）。
-
-### ローカルで動作確認する簡単な方法
-
-ビルド出力フォルダで:
+### macOS / Linux
 ```sh
+./build_webgl.sh
+```
+
+### 手で叩く場合（中身はこれだけ）
+```sh
+"<Unity.exe>" -quit -batchmode -projectPath "<このフォルダ>" \
+  -buildTarget WebGL -executeMethod BuildScript.BuildWebGL -logFile -
+```
+
+`BuildScript.BuildWebGL` が自動で:
+- `Assets/Scenes/Main.unity` を生成（空オブジェクト + GameBootstrap）
+- WebGL Template = **MediaPipe** / Compression = **Gzip** /
+  Decompression Fallback = **OFF** / Color Space = **Gamma** / 960×720 / コードストリップ
+- プラットフォームを WebGL に切替えて `Builds/Web/` に出力
+
+### GUI で操作したい人向け
+Unity Hub → **Open** → このフォルダを選択 → メニュー **Build ▸ WebGL (unityroom)**。
+同じ処理が走ります。
+
+## 2. 動作確認（ローカル）
+
+`file://` 直開きはカメラAPIが拒否されるので HTTP で:
+```sh
+cd Builds/Web
 python3 -m http.server 8080
 ```
+ブラウザで `http://localhost:8080` → カメラ許可 → 人差し指で機体が動けばOK。
 
-ブラウザで `http://localhost:8080` → カメラ許可 → 人差し指で黄色い四角が動けば成功。
+> エディタの ▶ 再生では MediaPipe は動きません（`UNITY_WEBGL && !UNITY_EDITOR`
+> でガードしているため）。確認は必ず WebGL ビルドで。
 
-## 7. unityroom 投稿
+## 3. unityroom 投稿
 
-1. 出力フォルダ（index.html を含む丸ごと）を **zip 化**
-2. https://unityroom.com にアカウント作成 / ログイン
-3. **ゲーム投稿** → zip アップロード
+1. `Builds/Web/` の**中身**を zip 化（index.html がルートに来るように）
+2. https://unityroom.com にログイン → **ゲームを投稿する**
+3. zip をアップロード
 4. メタデータ:
    - タイトル: `HAND DANMAKU`
-   - タグ: `弾幕`, `ハンドトラッキング`, `MediaPipe`, `カメラ`
-   - 画面サイズ: 960×720
-   - 遊び方: 「カメラに手を映し、人差し指で機体を動かして弾幕を避けるシューティング」
-5. 公開
-
-## 8. 次の Phase
-
-このスターターは Phase 1（手で機体が動く）のみ。
-
-- Phase 2: ジェスチャ群（GestureClassifier.cs に Bomb/Guard/Focus 等の判定済み）
-- Phase 3: 敵スポーン・弾幕・衝突判定
-- Phase 4: ボス・隕石・アイテム
-- Phase 5: HUD・スコア・コイン・ショップ
-- Phase 6: unityroom 用最終調整
-
-リポジトリ ルートの `UNITY_PORT.md` に Phase 2 以降の詳細あり。
+   - 画面サイズ: **960 × 720**
+   - タグ: `弾幕` `ハンドトラッキング` `MediaPipe` `カメラ` `シューティング`
+   - 遊び方: 「カメラに手を映し、人差し指で機体を操作。ピンチでボム、握りでガード。
+     弾幕と隕石を避けてハイスコアを狙え」
+   - **カメラを使用する旨を概要に明記**（iframe 内で許可ダイアログを出すため）
+5. サムネはリポジトリ ルートの `unityroom_banner.png`（960×540）
+6. 公開
 
 ---
 
@@ -149,10 +91,25 @@ python3 -m http.server 8080
 
 | 症状 | 対処 |
 |---|---|
-| `Hands is not defined` がコンソールに | WebGL Template が **MediaPipe** になっていない。Player Settings で再選択 |
-| カメラ許可ダイアログが出ない | `file://` で開いている。`http://localhost:xxx` または `https://` で実行 |
-| 動作が重い・FPS落ちる | `MediaPipeBridge.jslib` 内の `modelComplexity: 1` を `0` に下げる（精度低下と引き換えに高速化） |
-| Player が動かない | コンソールでエラー確認。`HandManager` GameObject が存在するか、名前が完全一致か（`SendMessage` は名前で送る） |
-| ビルドが失敗（Brotli/Gzip error） | Publishing Settings の Compression Format を Gzip に固定、Decompression Fallback OFF |
-| iframe 内で動かない | unityroom 側で camera permission が必要。ゲーム概要に「カメラ使用」と明記 |
-| エディタ実行（▶︎）では動かない | これは仕様。WebGL ビルドでのみ MediaPipe が動く（`#if UNITY_WEBGL && !UNITY_EDITOR` で囲んでいるため） |
+| Hub で「エディタが見つからない」 | `ProjectVersion.txt` を手持ちの 2022.3 LTS に書き換える |
+| `build_webgl.bat` が Unity を見つけられない | exe のフルパスを第1引数で渡す |
+| `Hands is not defined` | WebGL Template が MediaPipe でない。BuildScript 経由でビルドし直す |
+| カメラ許可が出ない | `file://` で開いている。`http://localhost` か `https://` で |
+| 重い / FPS 低下 | `Assets/Plugins/WebGL/MediaPipeBridge.jslib` の `modelComplexity:1` を `0` に |
+| Player が動かない | `HandManager` という名前の GameObject が必要（`SendMessage` は名前で送る） |
+| Brotli/Gzip エラー | Compression=Gzip / Decompression Fallback=OFF（BuildScript で設定済み） |
+| ▶ 再生で動かない | 仕様。WebGL ビルドでのみ MediaPipe が動く |
+
+## ファイル構成
+
+```
+unity-starter/                ← Unity Hub でこのフォルダを開く
+  build_webgl.bat / .sh       ← ビルド launcher
+  Packages/manifest.json      ← 依存パッケージ（2D Built-In 相当）
+  ProjectSettings/ProjectVersion.txt
+  Assets/
+    Editor/BuildScript.cs     ← シーン生成 + 全設定 + WebGL ビルドを自動化
+    Scripts/                  ← ゲーム本体 22 ファイル（GameBootstrap が全部組む）
+    Plugins/WebGL/MediaPipeBridge.jslib   ← MediaPipe Hands → Unity ブリッジ
+    WebGLTemplates/MediaPipe/index.html   ← MediaPipe をロードする WebGL テンプレート
+```

@@ -1,5 +1,6 @@
-# Unity meta files and project files should be added separately when you set up
-# a real project. This starter is just source files to copy into Assets/.
+# Full Unity project. Open this folder directly in Unity Hub (do NOT make a new
+# project and copy Assets/ — that workflow is obsolete). Generated/local folders
+# below are ignored; Assets/, Packages/, ProjectSettings/ are committed.
 .DS_Store
 Thumbs.db
 *.csproj
