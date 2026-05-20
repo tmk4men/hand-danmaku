@@ -2416,13 +2416,23 @@
     } else if (ch.phase === 'dash') {
       b.x += (VW / 2 - b.x) * 0.18;
       b.y += (VH / 2 - b.y) * 0.18;
-      if (Math.hypot(VW / 2 - b.x, VH / 2 - b.y) < 8) { ch.phase = 'burst'; ch.t = 26; }
-    } else if (ch.phase === 'burst') {
-      if (ch.t === 26) {
-        const n = 28;
-        for (let i = 0; i < n; i++) fireBullet(b.x, b.y, (i / n) * TAU + b.t * 0.02, 2.6, '#ff8a3a', 5);
+      if (Math.hypot(VW / 2 - b.x, VH / 2 - b.y) < 8) {
+        ch.phase = 'burst';
+        ch.t = 150 + Math.min(state.stageNo, 8) * 8;   // stay & attack ~2.5–3.4s
         state.shake = Math.max(state.shake, 18);
         SFX.bomb();
+        const n0 = 28;   // entry shockwave
+        for (let i = 0; i < n0; i++) fireBullet(b.x, b.y, (i / n0) * TAU + b.t * 0.02, 2.8, '#ff8a3a', 5);
+      }
+    } else if (ch.phase === 'burst') {
+      // Parked at centre: keep up a rotating radial barrage + aimed volleys.
+      if (ch.t % 10 === 0) {
+        const n = 18, off = b.t * 0.06;
+        for (let i = 0; i < n; i++) fireBullet(b.x, b.y, (i / n) * TAU + off, 2.3, '#ffb14e', 5);
+      }
+      if (ch.t % 26 === 13) {
+        const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+        for (let i = -1; i <= 1; i++) fireBullet(b.x, b.y, aim + i * 0.18, 3.0, '#ff5050', 6);
       }
       ch.t--;
       if (ch.t <= 0) ch.phase = 'return';
