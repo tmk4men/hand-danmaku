@@ -14,8 +14,8 @@ public class GestureController : MonoBehaviour
     private SpriteRenderer guardRing;   // visible shield ring while guarding
     private PlayerShip playerShip;      // for FOCUS movement smoothing
 
-    /// <summary>On-screen live gesture readout. Set false for the final build.</summary>
-    public static bool ShowDebug = true;
+    /// <summary>On-screen live gesture readout. Off for release builds.</summary>
+    public static bool ShowDebug = false;
     public static float DashSpeed = 0.065f;   // fingertip speed to trigger DASH
 
     [Header("References (auto-wired in GameBootstrap)")]
