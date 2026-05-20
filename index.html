@@ -812,6 +812,15 @@
     color: #555a82; cursor: not-allowed;
   }
   #shopList .item.maxed { opacity: 0.6; }
+  #shopList .shop-section {
+    color: #88e0ff; font-weight: 700; letter-spacing: 0.14em;
+    font-size: 10px; margin: 10px 2px 2px; opacity: 0.85;
+  }
+  #shopList .item.equipped {
+    border-color: #7fffd4;
+    box-shadow: inset 0 0 10px rgba(127,255,212,0.18);
+  }
+  #shopList .item .shop-ico canvas { display: block; image-rendering: pixelated; }
   #status {
     position: absolute; left: 12px; bottom: 12px;
     font-size: 12px; color: #7e83b8;
@@ -1424,7 +1433,15 @@
     coins:    parseInt(localStorage.getItem('hd_coins') || '0', 10),
     starters: loadJSON('hd_starters', { bomb: 0, life: 0, power: 0 }),
     charges:  parseInt(localStorage.getItem('hd_charges') || '0', 10),
+    ships:    loadJSON('hd_ships', ['vanguard']),   // owned machine (skin) ids
+    ship:     localStorage.getItem('hd_ship') || 'vanguard',     // equipped skin
+    weapons:  loadJSON('hd_weapons', ['std']),      // owned weapon ids
+    weapon:   localStorage.getItem('hd_weapon') || 'std',        // equipped weapon
   };
+  if (!Array.isArray(shop.ships)) shop.ships = ['vanguard'];
+  if (!shop.ships.includes('vanguard')) shop.ships.unshift('vanguard');
+  if (!Array.isArray(shop.weapons)) shop.weapons = ['std'];
+  if (!shop.weapons.includes('std')) shop.weapons.unshift('std');
   // Cap any pre-existing inventory to 1 per type (new rule).
   shop.starters.bomb  = Math.min(1, shop.starters.bomb  || 0);
   shop.starters.life  = Math.min(1, shop.starters.life  || 0);
@@ -1471,6 +1488,10 @@
       localStorage.setItem('hd_coins', String(shop.coins));
       localStorage.setItem('hd_starters', JSON.stringify(shop.starters));
       localStorage.setItem('hd_charges', String(shop.charges));
+      localStorage.setItem('hd_ships', JSON.stringify(shop.ships));
+      localStorage.setItem('hd_ship', shop.ship);
+      localStorage.setItem('hd_weapons', JSON.stringify(shop.weapons));
+      localStorage.setItem('hd_weapon', shop.weapon);
     } catch {}
   }
   function renderShop() {
@@ -1505,6 +1526,56 @@
       });
       shopList.appendChild(row);
     }
+
+    // ----- Equippable MACHINE skins & WEAPONS -----
+    function addShopSection(label) {
+      const d = document.createElement('div');
+      d.className = 'shop-section'; d.textContent = label;
+      shopList.appendChild(d);
+    }
+    function addEquipRow(o) {
+      const buyable = !o.owned && shop.coins >= o.cost;
+      const row = document.createElement('div');
+      row.className = 'item' + (o.equipped ? ' equipped' : '');
+      const ico = document.createElement('span');
+      ico.className = 'shop-ico';
+      if (o.preview) ico.appendChild(o.preview);
+      else if (o.iconHtml) { ico.style.color = o.iconColor || '#88e0ff'; ico.innerHTML = o.iconHtml; }
+      const mid = document.createElement('div');
+      mid.innerHTML = `<div class="name">${o.name}</div><div class="desc">${o.desc}</div>`;
+      const cost = document.createElement('div');
+      cost.className = 'cost'; cost.textContent = o.owned ? '—' : o.cost;
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'btn-cta';
+      if (o.equipped) { btn.textContent = (lang === 'ja') ? '装備中' : 'EQUIPPED'; btn.disabled = true; }
+      else if (o.owned) { btn.textContent = (lang === 'ja') ? '装備' : 'EQUIP'; }
+      else { btn.textContent = t('buy'); btn.disabled = !buyable; }
+      btn.addEventListener('click', () => {
+        if (o.equipped) return;
+        if (o.owned) { o.onEquip(); }
+        else { if (!buyable) return; shop.coins -= o.cost; o.onBuy(); }
+        saveShop(); renderShop(); SFX.pickup();
+      });
+      row.append(ico, mid, cost, btn);
+      shopList.appendChild(row);
+    }
+
+    addShopSection((lang === 'ja') ? '機体 / MACHINE' : 'MACHINE');
+    for (const sk of SHIPS) addEquipRow({
+      owned: shop.ships.includes(sk.id), equipped: shop.ship === sk.id, cost: sk.cost,
+      name: sk.name, desc: (lang === 'ja') ? sk.descJa : sk.desc, preview: skinPreview(sk),
+      onBuy: () => { shop.ships.push(sk.id); shop.ship = sk.id; },
+      onEquip: () => { shop.ship = sk.id; },
+    });
+
+    addShopSection((lang === 'ja') ? '武器 / WEAPON' : 'WEAPON');
+    for (const wp of WEAPONS) addEquipRow({
+      owned: shop.weapons.includes(wp.id), equipped: shop.weapon === wp.id, cost: wp.cost,
+      name: wp.name, desc: (lang === 'ja') ? wp.descJa : wp.desc,
+      iconHtml: wp.icon, iconColor: wp.color,
+      onBuy: () => { shop.weapons.push(wp.id); shop.weapon = wp.id; },
+      onEquip: () => { shop.weapon = wp.id; },
+    });
   }
   function showHomeView() {
     overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView');
@@ -2067,19 +2138,37 @@
       if (lv >= 2) { mk(-7, -8, -1.2); mk(7, -8, 1.2); }
       if (lv >= 3) { mk(0, -20, 0); }
     } else {
-      // Standard fire scaled by power level. Guard active = only center bolt.
-      let lanes;
-      if (state.guard.active) {
-        lanes = [[0, 0]];
-      } else if (lv === 1) {
-        lanes = [[-6, 0], [6, 0]];
-      } else if (lv === 2) {
-        lanes = [[-8, 0], [0, -2], [8, 0]];
+      // Fire depends on the equipped WEAPON, scaled by power level.
+      const w = currentWeapon().id;
+      if (w === 'spread') {
+        const rays = lv === 1 ? 3 : lv === 2 ? 5 : 7;
+        const half = (rays - 1) / 2;
+        for (let i = -half; i <= half; i++) {
+          state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg: 1, kind: 'std' });
+        }
+      } else if (w === 'heavy') {
+        const lanes = lv >= 3 ? [-7, 0, 7] : lv === 2 ? [-5, 5] : [0];
+        for (const ox of lanes) {
+          state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg: 3, kind: 'std' });
+        }
+      } else if (w === 'homing') {
+        const mk = (ox, vx) => state.shots.push({
+          x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 2,
+          kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
+        });
+        mk(0, 0);
+        if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }
+        if (lv >= 3) mk(0, 0);
       } else {
-        lanes = [[-10, 0], [-4, -2], [4, -2], [10, 0]];
-      }
-      for (const [ox, oy] of lanes) {
-        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
+        // 'std' (TWIN) — original behaviour. Guard active = only center bolt.
+        let lanes;
+        if (state.guard.active) lanes = [[0, 0]];
+        else if (lv === 1) lanes = [[-6, 0], [6, 0]];
+        else if (lv === 2) lanes = [[-8, 0], [0, -2], [8, 0]];
+        else lanes = [[-10, 0], [-4, -2], [4, -2], [10, 0]];
+        for (const [ox, oy] of lanes) {
+          state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
+        }
       }
       if (boosted) {
         // graze-boost adds a 3-way spread on top of normal fire
@@ -2698,7 +2787,8 @@
     if (p.fireCooldown <= 0 && state.handSeen && !state.thumbsUp && state.mode !== 'defender') {
       playerShot();
       if (state.focus) SFX.shootFocus(); else SFX.shoot();
-      p.fireCooldown = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
+      const baseCd = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
+      p.fireCooldown = state.focus ? baseCd : Math.round(baseCd * (currentWeapon().fireMul || 1));
     }
 
     // Player shots
@@ -3864,6 +3954,47 @@
     '#': '#3563d6', 'B': '#1a2a78', 'C': '#9ad8ff',
     'W': '#ffffff', 'E': '#ffd066',
   };
+
+  // Equippable MACHINE skins (shared shape, palette swap) + WEAPONS (mount any).
+  const SHIPS = [
+    { id: 'vanguard', name: 'VANGUARD', cost: 0,    descJa: '標準カラー',     desc: 'Default colours', pal: SHIP_PAL },
+    { id: 'viper',    name: 'VIPER',    cost: 600,  descJa: 'グリーン迷彩',   desc: 'Green livery',
+      pal: { '#': '#2bbf6a', 'B': '#125a34', 'C': '#aef7c8', 'W': '#ffffff', 'E': '#b6ff3a' } },
+    { id: 'crimson',  name: 'CRIMSON',  cost: 800,  descJa: 'レッドカラー',   desc: 'Crimson livery',
+      pal: { '#': '#d6452b', 'B': '#7a1a10', 'C': '#ffc0a0', 'W': '#ffffff', 'E': '#ffd066' } },
+    { id: 'nebula',   name: 'NEBULA',   cost: 1000, descJa: 'パープル発光',   desc: 'Violet glow',
+      pal: { '#': '#7a5ad6', 'B': '#2a1a6a', 'C': '#c8b6ff', 'W': '#ffffff', 'E': '#88e0ff' } },
+  ];
+  const WEAPONS = [
+    { id: 'std',    name: 'TWIN',   cost: 0,    fireMul: 1.0, color: '#9ad8ff',
+      descJa: 'バランス型・標準2連', desc: 'Balanced twin shots',
+      icon: '<svg viewBox="0 0 16 16"><rect x="5" y="2" width="2" height="12" fill="currentColor"/><rect x="9" y="2" width="2" height="12" fill="currentColor"/></svg>' },
+    { id: 'spread', name: 'SPREAD', cost: 800,  fireMul: 1.1, color: '#b6ff3a',
+      descJa: '横に広がる拡散弾', desc: 'Wide spread fire',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 14 L3 3 M8 14 L8 2 M8 14 L13 3" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>' },
+    { id: 'heavy',  name: 'CANNON', cost: 1200, fireMul: 1.9, color: '#ff8a3a',
+      descJa: '低速・高威力の太い弾', desc: 'Slow, heavy bolts',
+      icon: '<svg viewBox="0 0 16 16"><rect x="5" y="3" width="6" height="10" rx="3" fill="currentColor"/></svg>' },
+    { id: 'homing', name: 'SEEKER', cost: 1000, fireMul: 1.25, color: '#ff77c8',
+      descJa: '敵を追うホーミング弾', desc: 'Homing missiles',
+      icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>' },
+  ];
+  function currentSkin()   { return SHIPS.find(s => s.id === shop.ship)     || SHIPS[0]; }
+  function currentWeapon() { return WEAPONS.find(w => w.id === shop.weapon) || WEAPONS[0]; }
+  function skinPreview(skin) {
+    const c = document.createElement('canvas');
+    c.width = 30; c.height = 30;
+    const cx = c.getContext('2d'); cx.imageSmoothingEnabled = false;
+    const grid = SHIP_SPRITE, pal = skin.pal, cell = 2.4;
+    const x0 = (c.width - grid[0].length * cell) / 2, y0 = (c.height - grid.length * cell) / 2;
+    for (let y = 0; y < grid.length; y++) for (let x = 0; x < grid[y].length; x++) {
+      const ch = grid[y][x]; if (ch === '.') continue;
+      cx.fillStyle = pal[ch] || '#fff';
+      cx.fillRect(x0 + x * cell, y0 + y * cell, cell, cell);
+    }
+    return c;
+  }
+
   function drawSprite(grid, palette, cx, cy, cell) {
     const w = grid[0].length, h = grid.length;
     const x0 = cx - (w / 2) * cell;
@@ -4055,7 +4186,7 @@
       }
     }
 
-    if (!blink) drawSprite(SHIP_SPRITE, SHIP_PAL, p.x, p.y, 3.5);
+    if (!blink) drawSprite(SHIP_SPRITE, currentSkin().pal, p.x, p.y, 3.5);
 
     // focus indicator: narrow ring of dim cyan dots
     if (state.focus) {
