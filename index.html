@@ -2758,38 +2758,34 @@
         state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg, kind: 'std' });
       }
     } else if (wid === 'homing') {
-      // SEEKER: missile count AND tracking both grow with the power level.
-      const dmg = lv;                       // lv1=1 .. lv3=3 per missile
-      const turn = 0.08 + lv * 0.03;        // higher level = sharper tracking
+      // SEEKER: low-dmg auto-aim. Leveling adds ONE missile per level (modest);
+      // damage and tracking stay constant so it never snowballs.
       const mk = (ox, vx) => state.shots.push({
-        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg,
-        kind: 'homing', maxSp: 5 + lv, turn, life: 0,
+        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 1,
+        kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
       });
       mk(0, 0);
-      if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }   // lv1=1, lv2=3, lv3=5 missiles
-      if (lv >= 3) { mk(-12, -2.0); mk(12, 2.0); }
+      if (lv >= 2) mk(-7, -1.2);
+      if (lv >= 3) mk(7, 1.2);              // lv1=1, lv2=2, lv3=3 missiles, dmg 1 each
     } else if (wid === 'option') {
-      const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
-      const dmg = lv;                       // angled shots also scale: lv1=1 .. lv3=3
+      const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;   // pairs scale; damage stays 1
       for (let i = 1; i <= n; i++) {
         const sp = 0.4 + i * 0.6;
-        state.shots.push({ x: p.x - 11, y: p.y - 6, vx: -sp, vy: -7.5, r: 3, dmg, kind: 'std' });
-        state.shots.push({ x: p.x + 11, y: p.y - 6, vx:  sp, vy: -7.5, r: 3, dmg, kind: 'std' });
+        state.shots.push({ x: p.x - 11, y: p.y - 6, vx: -sp, vy: -7.5, r: 3, dmg: 1, kind: 'std' });
+        state.shots.push({ x: p.x + 11, y: p.y - 6, vx:  sp, vy: -7.5, r: 3, dmg: 1, kind: 'std' });
       }
     } else if (wid === 'pierce') {
-      // LANCE: piercing bolts that punch THROUGH a column of enemies (anti-boss / lines).
+      // LANCE: piercing bolts (anti-boss / lines). Lanes scale; damage fixed.
       const lanes = lv >= 3 ? [-9, 0, 9] : lv === 2 ? [-6, 6] : [0];
-      const dmg = 1 + lv;                   // lv1=2 .. lv3=4 per pierce-tick
       for (const ox of lanes)
-        state.shots.push({ x: p.x + ox, y: p.y - 14, vy: -15, r: 3, dmg, kind: 'pierce', pierce: true });
+        state.shots.push({ x: p.x + ox, y: p.y - 14, vy: -15, r: 3, dmg: 2, kind: 'pierce', pierce: true });
     } else if (wid === 'boomer') {
-      // BOOMERANG: arcs up, falls back through the field — pierces on the way out AND back.
+      // BOOMERANG: arcs up, falls back — pierces both ways. Pairs scale; damage fixed.
       const pairs = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
-      const dmg = lv;                       // lv1=1 .. lv3=3
       for (let i = 0; i < pairs; i++) {
         const sx = 1.5 + i * 1.2;
-        state.shots.push({ x: p.x, y: p.y - 10, vx: -sx, vy: -8.5, r: 4, dmg, kind: 'boomer', pierce: true });
-        state.shots.push({ x: p.x, y: p.y - 10, vx:  sx, vy: -8.5, r: 4, dmg, kind: 'boomer', pierce: true });
+        state.shots.push({ x: p.x, y: p.y - 10, vx: -sx, vy: -8.5, r: 4, dmg: 1, kind: 'boomer', pierce: true });
+        state.shots.push({ x: p.x, y: p.y - 10, vx:  sx, vy: -8.5, r: 4, dmg: 1, kind: 'boomer', pierce: true });
       }
     } else {
       // 'std' (TWIN). Guard active = only center bolt.
@@ -2811,7 +2807,7 @@
     if (!ally || NET.active) return;   // solo only — no escort in co-op
     const p = state.player;
     state.wingmen.push({
-      id: ally.id, x: p.x - 32, y: p.y + 20, side: -1,
+      id: ally.id, x: p.x - 32, y: p.y + 20, vx: 0, vy: 0, phase: Math.random() * Math.PI * 2,
       fireCd: ally.cd || 0,
       armor: ally.armorMax || 0, regenCd: ally.regen || 0, flash: 0,
     });
@@ -2833,11 +2829,34 @@
     for (const w of state.wingmen) {
       const ally = ALLIES.find(a => a.id === w.id);
       if (!ally) continue;
-      // trail beside/behind the player with a soft lag
-      const tx = clamp(p.x + (w.side || -1) * 32, 10, VW - 10);
-      const ty = clamp(p.y + 20, 10, VH - 10);
-      w.x += (tx - w.x) * 0.12;
-      w.y += (ty - w.y) * 0.12;
+      // ---- autonomous target: where this escort decides to be this frame ----
+      let tx, ty;
+      if (ally.kind === 'armor') {
+        // interpose between the player and the nearest incoming bullet (else nearest enemy)
+        let bx = null, by = null, best = 200 * 200;
+        for (const b of state.bullets) { const d2 = dist2(b.x, b.y, p.x, p.y); if (d2 < best) { best = d2; bx = b.x; by = b.y; } }
+        if (bx === null) { let nd = 280 * 280; for (const e of state.enemies) { const d2 = dist2(e.x, e.y, p.x, p.y); if (d2 < nd) { nd = d2; bx = e.x; by = e.y; } } }
+        if (bx !== null) {
+          const dx = bx - p.x, dy = by - p.y, d = Math.hypot(dx, dy) || 1, stand = Math.min(46, d * 0.7);
+          tx = p.x + (dx / d) * stand; ty = p.y + (dy / d) * stand;
+        } else { tx = p.x; ty = p.y - 26; }   // idle: hover just above the player
+      } else {
+        // hunt: line up under the nearest enemy so its upward shots connect
+        let e = null, nd = Infinity;
+        for (const en of state.enemies) { const d2 = dist2(en.x, en.y, w.x, w.y); if (d2 < nd) { nd = d2; e = en; } }
+        if (e) { tx = e.x; ty = e.y + 64; }
+        else { tx = p.x + Math.sin(state.t * 0.03 + w.phase) * 90; ty = p.y - 70; }   // patrol weave
+      }
+      // leash so it never abandons the player
+      const LEASH = 175, lx = tx - p.x, ly = ty - p.y, ld = Math.hypot(lx, ly) || 1;
+      if (ld > LEASH) { tx = p.x + (lx / ld) * LEASH; ty = p.y + (ly / ld) * LEASH; }
+      // ---- steer with its own momentum (autonomous feel) ----
+      w.vx = w.vx * 0.86 + (tx - w.x) * 0.045;
+      w.vy = w.vy * 0.86 + (ty - w.y) * 0.045;
+      const sp = Math.hypot(w.vx, w.vy), MAXV = 6.5;
+      if (sp > MAXV) { w.vx = w.vx / sp * MAXV; w.vy = w.vy / sp * MAXV; }
+      w.x = clamp(w.x + w.vx, 8, VW - 8);
+      w.y = clamp(w.y + w.vy, 8, VH - 8);
       if (ally.kind === 'armor') {
         //装甲特化: regenerate armor, then eat enemy bullets that drift close
         if (w.armor < ally.armorMax && --w.regenCd <= 0) { w.armor++; w.regenCd = ally.regen; }
