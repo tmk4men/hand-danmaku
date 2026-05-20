@@ -1309,6 +1309,7 @@
     powerFlash: 0,
     hiScore: parseInt(localStorage.getItem('hd_hi') || '0', 10),
     pinch: { active: false, lastUsed: -9999 },
+    _curl: [false, false, false, false],   // per-finger curl memory (gesture hysteresis)
     guard: { active: false, remaining: 600 }, // up to 10 seconds (60fps)
     handSeen: false,
     handPrev: null,      // previous normalized tip pos for swipe detection
@@ -2306,18 +2307,23 @@
       state.player.ty = ny * VH;
       state.handSeen = true;
 
-      // Pinch detection
+      // Pinch detection — light hysteresis: a tighter "engage" than "release"
+      // threshold so the on/off state doesn't flicker right at the boundary
+      // (which caused accidental bombs). No frame delay; engages instantly.
       const pinchD = Math.hypot(tip.x - thumb.x, tip.y - thumb.y);
-      const isPinch = pinchD < 0.06;
+      const isPinch = pinchD < (state.pinch.active ? 0.070 : 0.056);
 
-      // Per-finger curl: tip closer to wrist than PIP = curled.
+      // Per-finger curl with the same light hysteresis (drives fist/peace/palm).
       const wrist = lm[0];
       const fingerPairs = [[8, 6], [12, 10], [16, 14], [20, 18]];
-      const curlBits = fingerPairs.map(([tipI, pipI]) => {
+      const curlBits = fingerPairs.map(([tipI, pipI], idx) => {
         const t = lm[tipI], p = lm[pipI];
         const dt = Math.hypot(t.x - wrist.x, t.y - wrist.y);
         const dp = Math.hypot(p.x - wrist.x, p.y - wrist.y);
-        return dt < dp * 1.05;
+        const ratio = state._curl[idx] ? 1.10 : 1.02;   // looser to release, tighter to engage
+        const c = dt < dp * ratio;
+        state._curl[idx] = c;
+        return c;
       });
       const curled = curlBits.filter(Boolean).length;
       const isFist  = curled >= 3 && !isPinch;
