@@ -2446,17 +2446,17 @@
     if (e.isBoss) {
       const b = e.ref;
       b.t++;
-      // entry / drift toward target
-      b.x += (b.tx - b.x) * 0.04;
-      b.y += (b.ty - b.y) * 0.04;
-      // After a few stages, the boss occasionally strafes left/right.
-      if (state.stageNo >= 3 && b.t > 120 && b.t % 90 === 0 && gameRand() < 0.5) {
-        b.tx = VW * (0.22 + gameRand() * 0.56);
-      }
-
-      // Occasional CHARGE to screen centre (stage 2+).
       const ch = b.charge;
+
+      // Normal drift/strafe + charge trigger ONLY while idle. (During a charge,
+      // updateBossCharge owns the position — otherwise the home-drift fights the
+      // dash and the boss stalls short of centre and never resumes attacking.)
       if (ch.phase === 'idle') {
+        b.x += (b.tx - b.x) * 0.04;
+        b.y += (b.ty - b.y) * 0.04;
+        if (state.stageNo >= 3 && b.t > 120 && b.t % 90 === 0 && gameRand() < 0.5) {
+          b.tx = VW * (0.22 + gameRand() * 0.56);
+        }
         if (ch.cd > 0) ch.cd--;
         if (ch.cd <= 0 && state.stageNo >= 2 && b.t > 200 && b.y > 60 && b.y < 220) {
           ch.phase = 'warn'; ch.t = 50;
@@ -2466,7 +2466,7 @@
           SFX.warning();
         }
       }
-      if (ch.phase !== 'idle') { e.x = b.x; e.y = b.y; updateBossCharge(b, e); return; }
+      if (ch.phase !== 'idle') { updateBossCharge(b, e); return; }
 
       e.x = b.x; e.y = b.y;
       b.hp = e.hp;  // keep state.boss.hp in sync (e is authoritative for damage)
