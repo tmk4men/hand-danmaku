@@ -2232,9 +2232,13 @@
     if (e.isBoss) {
       const b = e.ref;
       b.t++;
-      // entry
+      // entry / drift toward target
       b.x += (b.tx - b.x) * 0.04;
       b.y += (b.ty - b.y) * 0.04;
+      // After a few stages, the boss occasionally strafes left/right.
+      if (state.stageNo >= 3 && b.t > 120 && b.t % 90 === 0 && gameRand() < 0.5) {
+        b.tx = VW * (0.22 + gameRand() * 0.56);
+      }
       e.x = b.x; e.y = b.y;
       e.hp = Math.min(e.hp, b.hp = e.hp); // sync
 
@@ -3024,34 +3028,7 @@
     // player
     drawPlayer();
 
-    // boss HP bar with frame + end caps
-    if (state.bossFight && state.boss) {
-      const b = state.boss;
-      const w = VW * 0.62, h = 10;
-      const x = (VW - w) / 2, y = 38;
-      ctx.fillStyle = '#0a0c20';
-      ctx.fillRect(x - 3, y - 3, w + 6, h + 6);
-      ctx.fillStyle = '#3a3f6e';
-      ctx.fillRect(x, y, w, h);
-      const filled = w * clamp(b.hp / b.maxHp, 0, 1);
-      ctx.fillStyle = '#ff77a8';
-      ctx.fillRect(x, y, filled, h);
-      ctx.fillStyle = '#ffd2e6';
-      ctx.fillRect(x, y, filled, 2);
-      // tick marks
-      for (let i = 1; i < 4; i++) {
-        ctx.fillStyle = '#22243a';
-        ctx.fillRect(x + (w / 4) * i, y, 1, h);
-      }
-      // BOSS label
-      ctx.font = 'bold 11px monospace';
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#06081a';
-      ctx.fillText('BOSS', x + 1, y - 15 + 1);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillText('BOSS', x, y - 15);
-    }
+    // boss HP bar — intentionally hidden (player-facing change)
 
     // stage modifier banner (top-center inside canvas)
     drawModBanner();
