@@ -61,11 +61,11 @@ public class GestureController : MonoBehaviour
     void FireBomb()
     {
         // Clear every enemy bullet on screen, damage all enemies & boss
-        foreach (var b in FindObjectsOfType<Bullet>())
+        foreach (var b in FindObjectsByType<Bullet>(FindObjectsSortMode.None))
             if (!b.isPlayerShot) Destroy(b.gameObject);
-        foreach (var e in FindObjectsOfType<Enemy>()) e.TakeDamage(20);
-        foreach (var bo in FindObjectsOfType<Boss>()) bo.TakeDamage(40);
-        foreach (var m in FindObjectsOfType<Meteor>()) Destroy(m.gameObject);
+        foreach (var e in FindObjectsByType<Enemy>(FindObjectsSortMode.None)) e.TakeDamage(20);
+        foreach (var bo in FindObjectsByType<Boss>(FindObjectsSortMode.None)) bo.TakeDamage(40);
+        foreach (var m in FindObjectsByType<Meteor>(FindObjectsSortMode.None)) Destroy(m.gameObject);
         CameraShake.Pulse(0.5f, 0.35f);
         ProceduralSFX.Bomb();
         if (GameDirector.Instance) GameDirector.Instance.AddScore(50);

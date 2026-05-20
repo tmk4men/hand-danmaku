@@ -69,16 +69,16 @@ public class DragonBeam : MonoBehaviour
         beamGO.transform.localScale = new Vector3(beamHalfWidth * 2 * 16, height * 16, 1);
 
         // Sweep enemies in column
-        foreach (var e in FindObjectsOfType<Enemy>())
+        foreach (var e in FindObjectsByType<Enemy>(FindObjectsSortMode.None))
             if (Mathf.Abs(e.transform.position.x - player.position.x) < beamHalfWidth + 0.18f
                 && e.transform.position.y > baseY)
                 e.TakeDamage(2);
-        foreach (var b in FindObjectsOfType<Bullet>())
+        foreach (var b in FindObjectsByType<Bullet>(FindObjectsSortMode.None))
             if (!b.isPlayerShot
                 && Mathf.Abs(b.transform.position.x - player.position.x) < beamHalfWidth + 0.08f
                 && b.transform.position.y > baseY)
                 Destroy(b.gameObject);
-        foreach (var m in FindObjectsOfType<Meteor>())
+        foreach (var m in FindObjectsByType<Meteor>(FindObjectsSortMode.None))
             if (Mathf.Abs(m.transform.position.x - player.position.x) < beamHalfWidth + 0.3f
                 && m.transform.position.y > baseY)
                 Destroy(m.gameObject);

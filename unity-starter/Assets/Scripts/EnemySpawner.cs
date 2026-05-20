@@ -21,7 +21,7 @@ public class EnemySpawner : MonoBehaviour
     void LateUpdate()
     {
         // Detect boss death to resume normal spawning
-        if (bossActive && FindObjectOfType<Boss>() == null)
+        if (bossActive && FindAnyObjectByType<Boss>() == null)
         {
             bossActive = false;
             nextSpawn = Time.time + 1.5f;
