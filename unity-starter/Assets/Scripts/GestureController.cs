@@ -11,6 +11,7 @@ public class GestureController : MonoBehaviour
     private float lastDashAt = -10;
     private float lastSpeed;            // fingertip speed, for debug overlay
     private SpriteRenderer playerSr;    // for guard tint
+    private SpriteRenderer guardRing;   // visible shield ring while guarding
 
     /// <summary>On-screen live gesture readout. Set false for the final build.</summary>
     public static bool ShowDebug = true;
@@ -23,7 +24,17 @@ public class GestureController : MonoBehaviour
 
     void Start()
     {
-        if (health) playerSr = health.GetComponent<SpriteRenderer>();
+        if (!health) return;
+        playerSr = health.GetComponent<SpriteRenderer>();
+
+        var ringGO = new GameObject("GuardRing");
+        ringGO.transform.SetParent(health.transform, false);
+        ringGO.transform.localPosition = Vector3.zero;
+        guardRing = ringGO.AddComponent<SpriteRenderer>();
+        guardRing.sprite = SpriteFactory.RingSprite(28, 4, Color.white);
+        guardRing.color = new Color(0.5f, 1f, 0.83f, 0.9f);
+        guardRing.sortingOrder = 6;
+        ringGO.SetActive(false);
     }
 
     void Update()
@@ -49,7 +60,16 @@ public class GestureController : MonoBehaviour
         if (pinch && !prevPinch) FireBomb();
         // GUARD: held while fist (+ visible cyan tint so it's obvious)
         if (health) health.SetGuarding(fist);
-        if (playerSr) playerSr.color = fist ? new Color(0.4f, 0.9f, 1f) : Color.white;
+        if (playerSr) playerSr.color = fist ? new Color(0.5f, 1f, 0.83f) : Color.white;
+        if (guardRing)
+        {
+            if (guardRing.gameObject.activeSelf != fist) guardRing.gameObject.SetActive(fist);
+            if (fist)
+            {
+                guardRing.transform.localScale = Vector3.one * (0.9f + 0.12f * Mathf.Sin(Time.time * 12f));
+                var rc = guardRing.color; rc.a = 0.65f + 0.35f * Mathf.Sin(Time.time * 8f); guardRing.color = rc;
+            }
+        }
         // DRAGON: thumbs-up posture is also the charge gate; firing happens
         // on the falling edge with full charge (handled inside DragonBeam).
         if (shooter) shooter.Suppressed = thumbsUp;
@@ -74,6 +94,11 @@ public class GestureController : MonoBehaviour
 
     void FireBomb()
     {
+        Vector3 bp = health ? health.transform.position
+                   : (GameDirector.Instance && GameDirector.Instance.Player
+                        ? GameDirector.Instance.Player.position : Vector3.zero);
+        Fx.Bomb(bp);   // screen flash + expanding ring
+
         // Clear every enemy bullet on screen, damage all enemies & boss
         foreach (var b in FindObjectsByType<Bullet>(FindObjectsSortMode.None))
             if (!b.isPlayerShot) Destroy(b.gameObject);

@@ -122,6 +122,25 @@ public static class SpriteFactory
         }, pal);
     }
 
+    /// <summary>Hollow ring (annulus) sprite — used for guard/bomb effects.</summary>
+    public static Sprite RingSprite(int outerR, int thickness, Color c)
+    {
+        int size = (outerR + 1) * 2;
+        var tex = NewTex(size, size);
+        var px = new Color[size * size];
+        float cx = (size - 1) / 2f, cy = (size - 1) / 2f;
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            float dx = x - cx, dy = y - cy;
+            float d = Mathf.Sqrt(dx * dx + dy * dy);
+            px[y * size + x] = (d <= outerR && d >= outerR - thickness) ? c : Color.clear;
+        }
+        tex.SetPixels(px);
+        tex.Apply();
+        return Wrap(tex);
+    }
+
     /// <summary>Pixel planet disc: body colour, lighter upper-left, faint rim.</summary>
     public static Sprite Disc(int r, Color body, Color hi, Color rim)
     {
