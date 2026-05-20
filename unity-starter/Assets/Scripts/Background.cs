@@ -1,10 +1,10 @@
 using UnityEngine;
-using System.Collections.Generic;
 
 /// <summary>
 /// Themed parallax backdrop ported from the JS version's drawBackground():
 /// 3 stacked sky bands, drifting nebula squares, a slow planet disc, three
-/// star layers, and a faint horizon line. No texture imports.
+/// star layers, and a faint horizon line. SetTheme() recolours everything so
+/// the background cycles as the player clears stages.
 /// </summary>
 public class Background : MonoBehaviour
 {
@@ -27,9 +27,11 @@ public class Background : MonoBehaviour
 
     struct Layer { public Transform[] stars; public float speed; }
     Layer[] layers;
-    Transform[] nebula;
-    float[] nebSpeed;
+    SpriteRenderer[] skySr;
+    SpriteRenderer[] nebSr;
+    SpriteRenderer planetSr, horizonSr;
     Transform planet;
+    float[] nebSpeed;
     float halfW, halfH;
 
     static Color H(string hex) => SpriteFactory.H(hex);
@@ -41,60 +43,57 @@ public class Background : MonoBehaviour
         halfH = cam.orthographicSize;
         halfW = halfH * cam.aspect;
 
-        var th = THEMES[Mathf.Clamp(themeIndex, 0, THEMES.Length - 1)];
-        cam.backgroundColor = th.sky[0];
-
-        BuildSky(th);
-        BuildNebula(th);
-        BuildPlanet(th);
+        BuildSky();
+        BuildNebula();
+        BuildPlanet();
         BuildStars();
-        BuildHorizon(th);
+        BuildHorizon();
+        SetTheme(themeIndex);
     }
 
-    Transform MakeQuad(string name, Color c, float w, float h, Vector2 pos, int sorting)
+    SpriteRenderer MakeQuad(string name, float w, float h, Vector2 pos, int sorting)
     {
         var go = new GameObject(name);
         go.transform.parent = transform;
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = SpriteFactory.SolidSquare(1, c);   // colour + alpha baked in
+        sr.sprite = SpriteFactory.SolidSquare(1, Color.white);
         sr.sortingOrder = sorting;
         go.transform.position = new Vector3(pos.x, pos.y, 3f);
         go.transform.localScale = new Vector3(w, h, 1f) * SpriteFactory.PPU;
-        return go.transform;
+        return sr;
     }
 
-    void BuildSky(Theme th)
+    void BuildSky()
     {
+        skySr = new SpriteRenderer[3];
         float bandH = (halfH * 2f) / 3f;
         for (int i = 0; i < 3; i++)
         {
-            float y = halfH - (i + 0.5f) * bandH;     // band 0 at top
-            MakeQuad("sky", th.sky[i], halfW * 2f + 0.5f, bandH + 0.05f, new Vector2(0, y), -100);
+            float y = halfH - (i + 0.5f) * bandH;
+            skySr[i] = MakeQuad("sky", halfW * 2f + 0.5f, bandH + 0.05f, new Vector2(0, y), -100);
         }
     }
 
-    void BuildNebula(Theme th)
+    void BuildNebula()
     {
         int n = 6;
-        nebula = new Transform[n];
+        nebSr = new SpriteRenderer[n];
         nebSpeed = new float[n];
-        var c = new Color(th.neb.r, th.neb.g, th.neb.b, 0.16f);
         for (int i = 0; i < n; i++)
         {
             float s = Random.Range(1.6f, 3.6f);
-            nebula[i] = MakeQuad("nebula", c, s, s,
+            nebSr[i] = MakeQuad("nebula", s, s,
                 new Vector2(Random.Range(-halfW, halfW), Random.Range(-halfH, halfH)), -90);
             nebSpeed[i] = Random.Range(0.05f, 0.18f);
         }
     }
 
-    void BuildPlanet(Theme th)
+    void BuildPlanet()
     {
         var go = new GameObject("planet");
         go.transform.parent = transform;
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = SpriteFactory.Disc(16, th.planet, th.planetHi, th.accent);
-        sr.sortingOrder = -80;
+        planetSr = go.AddComponent<SpriteRenderer>();
+        planetSr.sortingOrder = -80;
         go.transform.position = new Vector3(halfW * 0.5f, halfH * 0.55f, 3f);
         planet = go.transform;
     }
@@ -102,9 +101,9 @@ public class Background : MonoBehaviour
     void BuildStars()
     {
         layers = new Layer[] {
-            MakeStarLayer(80, 0.35f, H("#6a72a8"), 0.030f, -70),  // far
-            MakeStarLayer(45, 0.85f, H("#cad0ff"), 0.045f, -65),  // mid
-            MakeStarLayer(20, 1.70f, Color.white,  0.065f, -60),  // near
+            MakeStarLayer(80, 0.35f, H("#6a72a8"), 0.030f, -70),
+            MakeStarLayer(45, 0.85f, H("#cad0ff"), 0.045f, -65),
+            MakeStarLayer(20, 1.70f, Color.white,  0.065f, -60),
         };
     }
 
@@ -125,10 +124,31 @@ public class Background : MonoBehaviour
         return new Layer { stars = arr, speed = speed };
     }
 
-    void BuildHorizon(Theme th)
+    void BuildHorizon()
     {
-        var c = new Color(th.accent.r, th.accent.g, th.accent.b, 0.10f);
-        MakeQuad("horizon", c, halfW * 2f, 0.04f, new Vector2(0, -0.32f * halfH), -55);
+        horizonSr = MakeQuad("horizon", halfW * 2f, 0.04f, new Vector2(0, -0.32f * halfH), -55);
+    }
+
+    /// <summary>Recolour the whole backdrop to a stage theme (0-4).</summary>
+    public void SetTheme(int idx)
+    {
+        themeIndex = Mathf.Clamp(idx, 0, THEMES.Length - 1);
+        var th = THEMES[themeIndex];
+        var cam = Camera.main;
+        if (cam) cam.backgroundColor = th.sky[0];
+
+        if (skySr != null)
+            for (int i = 0; i < skySr.Length && i < th.sky.Length; i++)
+                if (skySr[i]) skySr[i].sprite = SpriteFactory.SolidSquare(1, th.sky[i]);
+
+        if (nebSr != null)
+        {
+            var nc = new Color(th.neb.r, th.neb.g, th.neb.b, 0.16f);
+            foreach (var s in nebSr) if (s) s.sprite = SpriteFactory.SolidSquare(1, nc);
+        }
+        if (planetSr) planetSr.sprite = SpriteFactory.Disc(16, th.planet, th.planetHi, th.accent);
+        if (horizonSr) horizonSr.sprite = SpriteFactory.SolidSquare(1,
+            new Color(th.accent.r, th.accent.g, th.accent.b, 0.10f));
     }
 
     void Update()
@@ -143,20 +163,20 @@ public class Background : MonoBehaviour
                     s.position = p;
                 }
 
-        if (nebula != null)
-            for (int i = 0; i < nebula.Length; i++)
+        if (nebSr != null)
+            for (int i = 0; i < nebSr.Length; i++)
             {
-                var p = nebula[i].position;
+                if (!nebSr[i]) continue;
+                var p = nebSr[i].transform.position;
                 p.y -= nebSpeed[i] * Time.deltaTime;
                 if (p.y < -halfH - 2f) { p.y = halfH + 2f; p.x = Random.Range(-halfW, halfW); }
-                nebula[i].position = p;
+                nebSr[i].transform.position = p;
             }
 
         if (planet)
         {
             var p = planet.position;
             p.x -= 0.04f * Time.deltaTime;
-            p.y += Mathf.Sin(Time.time * 0.2f) * 0.0008f;
             if (p.x < -halfW - 2f) p.x = halfW + 2f;
             planet.position = p;
         }

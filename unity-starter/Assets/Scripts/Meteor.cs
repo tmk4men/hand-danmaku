@@ -22,6 +22,7 @@ public class Meteor : MonoBehaviour
         var rb = go.AddComponent<Rigidbody2D>();
         rb.gravityScale = 0; rb.bodyType = RigidbodyType2D.Kinematic;
         var m = go.AddComponent<Meteor>();
+        m.speed = Random.Range(1.2f, 1.7f);          // JS 1.3-1.9 px/f, scaled to world
         go.transform.position = new Vector3(x, halfH + 0.5f, 0);
         go.transform.localScale = Vector3.one * 1.4f;
         CameraShake.Pulse(0.1f, 0.4f);
@@ -30,7 +31,7 @@ public class Meteor : MonoBehaviour
 
     void Update()
     {
-        transform.position += Vector3.down * (speed * Time.deltaTime);
+        transform.position += Vector3.down * (speed * Time.deltaTime * Slowmo.EnemyScale);
         transform.Rotate(0, 0, rotSpeed * Time.deltaTime);
         if (Camera.main && Camera.main.WorldToViewportPoint(transform.position).y < -0.15f)
             Destroy(gameObject);

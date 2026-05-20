@@ -14,6 +14,15 @@ public class GameDirector : MonoBehaviour
     public bool Running { get; private set; }
     public Transform Player;
 
+    public int Bombs { get; private set; }
+    public int Charges { get; private set; }
+    public int Stage { get; private set; } = 1;
+
+    public void AddBomb()   { Bombs = Mathf.Min(6, Bombs + 1); if (HUD.Instance) HUD.Instance.Refresh(); }
+    public bool UseBomb()   { if (Bombs <= 0) return false; Bombs--; if (HUD.Instance) HUD.Instance.Refresh(); return true; }
+    public void AddCharge() { Charges = Mathf.Min(3, Charges + 1); if (HUD.Instance) HUD.Instance.Refresh(); }
+    public bool UseCharge() { if (Charges <= 0) return false; Charges--; if (HUD.Instance) HUD.Instance.Refresh(); return true; }
+
     void Awake()
     {
         if (Instance != null && Instance != this) { Destroy(gameObject); return; }
@@ -24,7 +33,16 @@ public class GameDirector : MonoBehaviour
     public void StartGame()
     {
         Score = 0;
+        Stage = 1;
         Running = true;
+        Slowmo.Clear();
+
+        // Per-run resources (with loadout bonuses), matching the JS start().
+        Bombs = 4 + (Persistence.LoadoutBomb && Persistence.OwnedBomb ? 1 : 0);
+        Charges = Persistence.ApplyCharge();
+        var sh = Player ? Player.GetComponent<PlayerShooter>() : null;
+        if (sh) sh.SetPower(1 + (Persistence.LoadoutPower && Persistence.OwnedPower ? 1 : 0));
+
         if (HUD.Instance)
         {
             HUD.Instance.HideTitle();
@@ -33,6 +51,18 @@ public class GameDirector : MonoBehaviour
         }
         ProceduralSFX.StageStart();
         StageBanner.Show(Strings.T("title"), new Color(0.55f, 0.88f, 1f), 2f);
+    }
+
+    /// <summary>Called on boss death: next stage, +1 bomb, new background theme.</summary>
+    public void AdvanceStage()
+    {
+        Stage++;
+        AddBomb();
+        var bg = FindAnyObjectByType<Background>();
+        if (bg) bg.SetTheme((Stage - 1) % 5);
+        StageBanner.Show("STAGE " + Stage, new Color(0.55f, 0.88f, 1f), 2f);
+        ProceduralSFX.StageStart();
+        if (HUD.Instance) HUD.Instance.Refresh();
     }
 
     /// <summary>Reload the scene and resume play immediately (RETRY button).</summary>
@@ -52,7 +82,7 @@ public class GameDirector : MonoBehaviour
             Persistence.HiScore = HiScore;
         }
         int best = ComboMeter.Instance ? ComboMeter.Instance.Best : 0;
-        int earned = Persistence.AwardCoins(Score, 0, best);
+        int earned = Persistence.AwardCoins(Score, Mathf.Max(0, Stage - 1), best);
         if (earned > 0) FloatingText.Spawn(Player ? Player.position : Vector3.zero,
                                             Strings.T("earned", earned),
                                             new Color(1f, 0.82f, 0.4f), 24);

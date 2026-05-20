@@ -4,16 +4,21 @@ using UnityEngine;
 public class PlayerHealth : MonoBehaviour
 {
     public int maxLives = 5;
-    public float invulnSeconds = 1.5f;
+    public float invulnSeconds = 2f;       // JS: 120 frames
 
     public int lives;
+    public float guardMax = 10f;           // JS: guard.remaining caps at 600 frames
+    public float guardRemaining;
+
     private float invulnUntil;
-    private bool guarding;
+    private bool guarding, guardRequested;
+    private CircleCollider2D col;
 
     void Awake()
     {
         lives = Persistence.ApplyLife(maxLives);
-        var col = GetComponent<CircleCollider2D>();
+        guardRemaining = guardMax;
+        col = GetComponent<CircleCollider2D>();
         col.radius = 0.06f;
         col.isTrigger = true;
         var rb = GetComponent<Rigidbody2D>();
@@ -22,7 +27,11 @@ public class PlayerHealth : MonoBehaviour
 
     public bool IsInvulnerable() => Time.time < invulnUntil;
     public bool IsGuarding() => guarding;
-    public void SetGuarding(bool g) => guarding = g;
+    public void SetGuarding(bool g) => guardRequested = g;     // honoured in Update vs budget
+    public void GrantInvuln(float s) => invulnUntil = Mathf.Max(invulnUntil, Time.time + s);
+    public void AddLife() { lives = Mathf.Min(lives + 1, 7); if (HUD.Instance) HUD.Instance.Refresh(); }
+    public void AddGuard(float s) { guardRemaining = Mathf.Min(guardMax, guardRemaining + s); }
+    public void SetFocus(bool on) { if (col) col.radius = on ? 0.035f : 0.06f; }   // tiny hitbox in FOCUS
 
     public void TakeHit()
     {
@@ -47,6 +56,14 @@ public class PlayerHealth : MonoBehaviour
 
     void Update()
     {
+        // Guard is only active while the fist is held AND budget remains.
+        guarding = guardRequested && guardRemaining > 0f;
+        if (guarding)
+        {
+            guardRemaining -= Time.deltaTime;
+            if (guardRemaining <= 0f) { guardRemaining = 0f; guarding = false; }
+        }
+
         // Blink while invulnerable
         var sr = GetComponent<SpriteRenderer>();
         if (sr) sr.enabled = !(IsInvulnerable() && Mathf.FloorToInt(Time.time * 12) % 2 == 0);

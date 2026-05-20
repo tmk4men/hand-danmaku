@@ -61,30 +61,38 @@ public class Item : MonoBehaviour
     void Apply(PlayerHealth ph)
     {
         var dir = GameDirector.Instance;
-        if (type == ItemType.Life)
+        switch (type)
         {
-            ph.lives = Mathf.Min(ph.lives + 1, 7);
-            dir?.AddScore(1000);
-            ProceduralSFX.PickupLife();
+            case ItemType.Life:
+                ph.AddLife(); dir?.AddScore(1000); ProceduralSFX.PickupLife();
+                Pop(Strings.T("lifeUp"), Color.white);
+                break;
+            case ItemType.Dragon:
+                ph.GetComponent<DragonBeam>()?.UnlockCharge(); dir?.AddScore(300); ProceduralSFX.PickupLife();
+                Pop(Strings.T("dragonUnlocked"), new Color(1f, 0.47f, 0.78f));
+                break;
+            case ItemType.Power:
+                ph.GetComponent<PlayerShooter>()?.AddPower(); dir?.AddScore(150); ProceduralSFX.Pickup();
+                Pop(Strings.T("powerUp"), SpriteFactory.H("#ffd066"));
+                break;
+            case ItemType.Bomb:
+                dir?.AddBomb(); dir?.AddScore(150); ProceduralSFX.Pickup();
+                Pop(Strings.T("bombUp"), SpriteFactory.H("#ff7c98"));
+                break;
+            case ItemType.Guard:
+                ph.AddGuard(3f); dir?.AddScore(150); ProceduralSFX.Pickup();
+                Pop(Strings.T("guardUp"), SpriteFactory.H("#7fffd4"));
+                break;
+            case ItemType.Tool:
+                dir?.AddCharge(); dir?.AddScore(150); ProceduralSFX.Pickup();
+                Pop(Strings.T("toolUp"), SpriteFactory.H("#c8a878"));
+                break;
         }
-        else if (type == ItemType.Dragon)
-        {
-            var beam = ph.GetComponent<DragonBeam>();
-            if (beam != null) beam.UnlockCharge();
-            dir?.AddScore(300);
-            FloatingText.Spawn(transform.position, Strings.T("dragonUnlocked"),
-                               new Color(1f, 0.47f, 0.78f), 22);
-            ProceduralSFX.PickupLife();
-        }
-        else
-        {
-            // Bomb / Guard / Power / Tool: score reward (effects can be wired
-            // into PlayerHealth/DragonBeam etc in your fuller build).
-            dir?.AddScore(200);
-            ProceduralSFX.Pickup();
-        }
+        if (HUD.Instance) HUD.Instance.Refresh();
         CameraShake.Pulse(0.15f, 0.1f);
     }
+
+    void Pop(string s, Color c) => FloatingText.Spawn(transform.position, s, c, 18);
 
     static Sprite SpriteForItem(ItemType type)
     {

@@ -12,6 +12,7 @@ public class GestureController : MonoBehaviour
     private float lastSpeed;            // fingertip speed, for debug overlay
     private SpriteRenderer playerSr;    // for guard tint
     private SpriteRenderer guardRing;   // visible shield ring while guarding
+    private PlayerShip playerShip;      // for FOCUS movement smoothing
 
     /// <summary>On-screen live gesture readout. Set false for the final build.</summary>
     public static bool ShowDebug = true;
@@ -26,6 +27,7 @@ public class GestureController : MonoBehaviour
     {
         if (!health) return;
         playerSr = health.GetComponent<SpriteRenderer>();
+        playerShip = health.GetComponent<PlayerShip>();
 
         var ringGO = new GameObject("GuardRing");
         ringGO.transform.SetParent(health.transform, false);
@@ -56,8 +58,12 @@ public class GestureController : MonoBehaviour
         bool bent     = GestureClassifier.IsThumbBent(lm);
         bool thumbsUp = GestureClassifier.IsThumbsUp(lm);
 
-        // BOMB: pinch rising edge
-        if (pinch && !prevPinch) FireBomb();
+        // BOMB: pinch rising edge — consumes a bomb (no free spam, no score)
+        if (pinch && !prevPinch && GameDirector.Instance != null && GameDirector.Instance.UseBomb())
+        {
+            FireBomb();
+            if (health) health.GrantInvuln(1f);
+        }
         // GUARD: held while fist (+ visible cyan tint so it's obvious)
         if (health) health.SetGuarding(fist);
         if (playerSr) playerSr.color = fist ? new Color(0.5f, 1f, 0.83f) : Color.white;
@@ -74,6 +80,19 @@ public class GestureController : MonoBehaviour
         // on the falling edge with full charge (handled inside DragonBeam).
         if (shooter) shooter.Suppressed = thumbsUp;
         if (dragon) dragon.UpdateGesture(thumbsUp, prevThumbsUp);
+
+        // FOCUS: peace sign = precise homing fire, slow movement, tiny hitbox
+        if (shooter) shooter.Focus = peace;
+        if (playerShip) playerShip.smoothing = peace ? 0.12f : 0.25f;
+        if (health) health.SetFocus(peace);
+
+        // BULLET TIME: thumb-bend rising edge consumes a charge -> slow enemy bullets
+        if (bent && !prevThumbBent && GameDirector.Instance != null && GameDirector.Instance.UseCharge())
+        {
+            Slowmo.Trigger(3f);
+            Fx.ScreenFlash(new Color(0.4f, 0.6f, 1f, 0.22f), 0.2f);
+            CameraShake.Pulse(0.15f, 0.1f);
+        }
 
         // DASH: swipe detection from fingertip velocity
         var tip = lm[8];
@@ -102,12 +121,12 @@ public class GestureController : MonoBehaviour
         // Clear every enemy bullet on screen, damage all enemies & boss
         foreach (var b in FindObjectsByType<Bullet>(FindObjectsSortMode.None))
             if (!b.isPlayerShot) Destroy(b.gameObject);
-        foreach (var e in FindObjectsByType<Enemy>(FindObjectsSortMode.None)) e.TakeDamage(20);
-        foreach (var bo in FindObjectsByType<Boss>(FindObjectsSortMode.None)) bo.TakeDamage(40);
+        foreach (var e in FindObjectsByType<Enemy>(FindObjectsSortMode.None)) e.TakeDamage(30);
+        foreach (var bo in FindObjectsByType<Boss>(FindObjectsSortMode.None)) bo.TakeDamage(35);
         foreach (var m in FindObjectsByType<Meteor>(FindObjectsSortMode.None)) Destroy(m.gameObject);
         CameraShake.Pulse(0.5f, 0.35f);
         ProceduralSFX.Bomb();
-        if (GameDirector.Instance) GameDirector.Instance.AddScore(50);
+        // JS bomb grants no score (prevents bomb-spam farming).
     }
 
     void OnGUI()
@@ -129,16 +148,17 @@ public class GestureController : MonoBehaviour
     {
         if (health == null) return;
         var t = health.transform;
-        t.position += (Vector3)(dir * 0.6f);
-        // brief invuln equivalent: piggyback on the existing invuln window
-        var typeof_ph = typeof(PlayerHealth);
-        var field = typeof_ph.GetField("invulnUntil",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        if (field != null)
-        {
-            float cur = (float)field.GetValue(health);
-            field.SetValue(health, Mathf.Max(cur, Time.time + 0.45f));
-        }
+        t.position += (Vector3)(dir * 0.9f);   // JS ~70px teleport
+        health.GrantInvuln(0.45f);
+
+        // Clear enemy bullets around the landing spot ("DASH CUT x N")
+        int cut = 0;
+        foreach (var b in FindObjectsByType<Bullet>(FindObjectsSortMode.None))
+            if (!b.isPlayerShot && (b.transform.position - t.position).sqrMagnitude < 0.55f * 0.55f)
+            { Destroy(b.gameObject); cut++; }
+        if (cut > 0)
+            FloatingText.Spawn(t.position, Strings.T("dashCut", cut), new Color(0.68f, 0.96f, 1f), 16);
+
         CameraShake.Pulse(0.15f, 0.1f);
     }
 }

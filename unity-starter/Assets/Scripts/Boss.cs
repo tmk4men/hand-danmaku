@@ -39,6 +39,8 @@ public class Boss : MonoBehaviour
         b.entryTo   = new Vector3(0, halfH - 1.5f, 0);
         go.transform.position = b.entryFrom;
         go.transform.localScale = Vector3.one * 2.6f;
+        int stage = GameDirector.Instance ? GameDirector.Instance.Stage : 1;
+        b.maxHp = 200 + stage * 80;        // JS scaling (was a flat 1200 = 4x too tanky)
         b.hp = b.maxHp;
         b.sr = sr;
         ProceduralSFX.Warning();
@@ -143,9 +145,10 @@ public class Boss : MonoBehaviour
         hp -= dmg;
         if (sr != null)
         {
-            // brief white flash
-            sr.color = Color.white;
-            Invoke(nameof(ResetTint), 0.05f);
+            // visible red flash (sprite colour is baked, so tint to red then back)
+            sr.color = new Color(1f, 0.55f, 0.55f);
+            CancelInvoke(nameof(ResetTint));
+            Invoke(nameof(ResetTint), 0.06f);
         }
         if (hp <= 0) Die();
     }
@@ -165,6 +168,7 @@ public class Boss : MonoBehaviour
                        (ItemType)i);
         ProceduralSFX.BossDie();
         CameraShake.Pulse(0.8f, 0.6f);
+        GameDirector.Instance?.AdvanceStage();   // next stage + theme + bomb
         Destroy(gameObject);
     }
 

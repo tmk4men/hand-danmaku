@@ -36,6 +36,10 @@ public class EnemySpawner : MonoBehaviour
         float yTop = halfH + 0.3f;
         waveCount++;
 
+        // Difficulty ramps with the current stage.
+        int stage = GameDirector.Instance ? GameDirector.Instance.Stage : 1;
+        interval = Mathf.Max(0.9f, 2.0f - (stage - 1) * 0.12f);
+
         // Boss every N waves
         if (waveCount > 0 && waveCount % bossEveryWaves == 0)
         {
@@ -59,7 +63,9 @@ public class EnemySpawner : MonoBehaviour
         for (int i = 0; i < n; i++)
         {
             float x = GameRng.Range(-halfW + 0.5f, halfW - 0.5f);
-            Enemy.Spawn(new Vector3(x, yTop, 0), color, pattern);
+            var en = Enemy.Spawn(new Vector3(x, yTop, 0), color, pattern);
+            en.hp = 3 + stage;                                  // tougher each stage
+            en.fireInterval = Mathf.Max(0.8f, 1.6f - stage * 0.08f);
         }
     }
 }

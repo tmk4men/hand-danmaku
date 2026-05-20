@@ -8,7 +8,7 @@ using UnityEngine.EventSystems;
 public class HUD : MonoBehaviour
 {
     public static HUD Instance { get; private set; }
-    private Text scoreTxt, livesTxt, hiTxt, statusTxt;
+    private Text scoreTxt, livesTxt, hiTxt, statusTxt, infoTxt, comboTxt;
     private GameObject overlayPanel, titlePanel;
 
     void Awake()
@@ -39,6 +39,9 @@ public class HUD : MonoBehaviour
         scoreTxt  = MakeText(canvas.transform, "Score",  new Vector2(20, -20), TextAnchor.UpperLeft, 22);
         hiTxt     = MakeText(canvas.transform, "Hi",     new Vector2(20, -50), TextAnchor.UpperLeft, 14);
         livesTxt  = MakeText(canvas.transform, "Lives",  new Vector2(20, -80), TextAnchor.UpperLeft, 18);
+        infoTxt   = MakeText(canvas.transform, "Info",   new Vector2(20, -108), TextAnchor.UpperLeft, 16);
+        comboTxt  = MakeText(canvas.transform, "Combo",  new Vector2(20, -134), TextAnchor.UpperLeft, 18);
+        comboTxt.color = new Color(1f, 0.82f, 0.4f);
         statusTxt = MakeText(canvas.transform, "Status", new Vector2(0, 0),    TextAnchor.MiddleCenter, 36);
         statusTxt.color = new Color(1f, 0.82f, 0.4f);
         statusTxt.text = "";
@@ -126,9 +129,19 @@ public class HUD : MonoBehaviour
         if (GameDirector.Instance == null) return;
         scoreTxt.text  = $"{Strings.T("score")}  {GameDirector.Instance.Score:D7}";
         hiTxt.text     = $"{Strings.T("hi")}     {GameDirector.Instance.HiScore:D7}";
-        var ph = GameDirector.Instance.Player ? GameDirector.Instance.Player.GetComponent<PlayerHealth>() : null;
+        var dir = GameDirector.Instance;
+        var ph = dir.Player ? dir.Player.GetComponent<PlayerHealth>() : null;
+        var sh = dir.Player ? dir.Player.GetComponent<PlayerShooter>() : null;
         int lives = ph ? ph.lives : 0;
-        livesTxt.text = $"{Strings.T("lives")}  " + new string('♥', Mathf.Max(0, lives));
+        livesTxt.text = $"{Strings.T("lives")}  " + new string('*', Mathf.Max(0, lives));
+        infoTxt.text  = $"BOMB {dir.Bombs}   POWER {(sh ? sh.Power : 1)}   USE {dir.Charges}";
+    }
+
+    void Update()
+    {
+        if (comboTxt == null) return;
+        int chain = ComboMeter.Instance ? ComboMeter.Instance.Count : 0;
+        comboTxt.text = chain > 1 ? $"CHAIN x{chain}" : "";
     }
 
     public void ShowStatus(string s) { if (statusTxt) statusTxt.text = s; }

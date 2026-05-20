@@ -72,7 +72,11 @@ public class DragonBeam : MonoBehaviour
         foreach (var e in FindObjectsByType<Enemy>(FindObjectsSortMode.None))
             if (Mathf.Abs(e.transform.position.x - player.position.x) < beamHalfWidth + 0.18f
                 && e.transform.position.y > baseY)
-                e.TakeDamage(2);
+                e.TakeDamage(99);   // grunts vaporise in the beam column
+        var boss = FindAnyObjectByType<Boss>();
+        if (boss != null
+            && Mathf.Abs(boss.transform.position.x - player.position.x) < beamHalfWidth + 0.5f)
+            boss.TakeDamage(2);     // boss takes steady damage
         foreach (var b in FindObjectsByType<Bullet>(FindObjectsSortMode.None))
             if (!b.isPlayerShot
                 && Mathf.Abs(b.transform.position.x - player.position.x) < beamHalfWidth + 0.08f

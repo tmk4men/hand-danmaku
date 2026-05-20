@@ -171,6 +171,39 @@ public static class SpriteFactory
         return Wrap(tex);
     }
 
+    /// <summary>Standard player shot: white tip over a coloured body (tall pellet).</summary>
+    public static Sprite PlayerShot(Color c)
+    {
+        var pal = new System.Collections.Generic.Dictionary<char, Color> {
+            { '#', c }, { 'W', Color.white },
+        };
+        return FromGrid(new[] {
+            "WWWW",
+            "WWWW",
+            "WWWW",
+            "####",
+            "####",
+            "####",
+            "####",
+            "####",
+        }, pal);
+    }
+
+    /// <summary>Focus/homing shot: a small cyan diamond with a white core.</summary>
+    public static Sprite PlayerHoming(Color c)
+    {
+        var pal = new System.Collections.Generic.Dictionary<char, Color> {
+            { '#', c }, { 'W', Color.white },
+        };
+        return FromGrid(new[] {
+            "..#..",
+            ".#W#.",
+            "#WWW#",
+            ".#W#.",
+            "..#..",
+        }, pal);
+    }
+
     public static Sprite Meteor()
     {
         var pal = new System.Collections.Generic.Dictionary<char, Color> {

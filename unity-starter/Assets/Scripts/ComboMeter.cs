@@ -31,7 +31,8 @@ public class ComboMeter : MonoBehaviour
         Count = 0; Timer = 0;
     }
 
-    public float Multiplier => 1f + Mathf.Min(Count, 19) * 0.1f;
+    // JS uses (count-1): first kill is x1.0, second x1.1, ... capped at 19 steps.
+    public float Multiplier => 1f + Mathf.Min(Mathf.Max(0, Count - 1), 19) * 0.1f;
 
     void Update()
     {
