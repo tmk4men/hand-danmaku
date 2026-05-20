@@ -821,6 +821,28 @@
     box-shadow: inset 0 0 10px rgba(127,255,212,0.18);
   }
   #shopList .item .shop-ico canvas { display: block; image-rendering: pixelated; }
+  #shopList .shop-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+  #shopList .shop-tab {
+    flex: 1; padding: 8px 4px; font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+    background: #10163a; border: 1px solid #2a2f55; color: #8890b8;
+    cursor: pointer; font-family: inherit; image-rendering: pixelated;
+  }
+  #shopList .shop-tab.on {
+    background: linear-gradient(180deg, #4a60d8, #2a3a9a); color: #fff; border-color: #88a8ff;
+  }
+  #shopList .shop-rows { display: grid; gap: 6px; max-height: 48vh; overflow-y: auto; }
+  #shopList .shop-note { color: #8890b8; font-size: 10px; letter-spacing: 0.04em; padding: 0 2px 2px; }
+  #shopList .item.wpn { grid-template-columns: auto 1fr auto; }
+  #shopList .wpn-ctrl { display: flex; gap: 4px; align-items: center; }
+  #shopList .wpn-ctrl .cost { min-width: 40px; }
+  #shopList .slot-btn {
+    width: 30px; padding: 7px 0; margin: 0; font-size: 12px; font-weight: 700;
+    background: #10163a; border: 1px solid #2a2f55; color: #8890b8;
+    cursor: pointer; font-family: inherit;
+  }
+  #shopList .slot-btn.on {
+    background: linear-gradient(180deg, #4a60d8, #2a3a9a); color: #fff; border-color: #88a8ff;
+  }
   #status {
     position: absolute; left: 12px; bottom: 12px;
     font-size: 12px; color: #7e83b8;
@@ -1151,6 +1173,7 @@
       radius: 18,        // visual
       hitR: 4,           // tiny hitbox (弾幕の伝統)
       fireCooldown: 0,
+      subCd: 0,
       invuln: 0,
       bombFx: 0,
       dashCd: 0,
@@ -1435,8 +1458,9 @@
     charges:  parseInt(localStorage.getItem('hd_charges') || '0', 10),
     ships:    loadJSON('hd_ships', ['vanguard']),   // owned machine (skin) ids
     ship:     localStorage.getItem('hd_ship') || 'vanguard',     // equipped skin
-    weapons:  loadJSON('hd_weapons', ['std']),      // owned weapon ids
-    weapon:   localStorage.getItem('hd_weapon') || 'std',        // equipped weapon
+    weapons:    loadJSON('hd_weapons', ['std']),    // owned weapon ids
+    weaponMain: localStorage.getItem('hd_weapon_main') || localStorage.getItem('hd_weapon') || 'std',
+    weaponSub:  localStorage.getItem('hd_weapon_sub') || 'none',
   };
   if (!Array.isArray(shop.ships)) shop.ships = ['vanguard'];
   if (!shop.ships.includes('vanguard')) shop.ships.unshift('vanguard');
@@ -1491,48 +1515,50 @@
       localStorage.setItem('hd_ships', JSON.stringify(shop.ships));
       localStorage.setItem('hd_ship', shop.ship);
       localStorage.setItem('hd_weapons', JSON.stringify(shop.weapons));
-      localStorage.setItem('hd_weapon', shop.weapon);
+      localStorage.setItem('hd_weapon_main', shop.weaponMain);
+      localStorage.setItem('hd_weapon_sub', shop.weaponSub);
     } catch {}
   }
+  function skinStatLine(sk) {
+    const ja = lang === 'ja';
+    const spd = sk.speed || 1, hit = sk.hitMul || 1, life = sk.lifeBonus || 0, fire = sk.fireMul || 1;
+    const parts = [];
+    if (spd > 1) parts.push(ja ? '機動↑' : 'SPD+'); else if (spd < 1) parts.push(ja ? '機動↓' : 'SPD-');
+    if (hit < 1) parts.push(ja ? '判定小' : 'HITBOX-'); else if (hit > 1) parts.push(ja ? '判定大' : 'HITBOX+');
+    if (life > 0) parts.push((ja ? 'ライフ+' : 'LIFE+') + life);
+    if (fire < 1) parts.push(ja ? '連射↑' : 'RATE+'); else if (fire > 1) parts.push(ja ? '連射↓' : 'RATE-');
+    if (!parts.length) parts.push(ja ? 'バランス型' : 'Balanced');
+    return parts.join(' · ');
+  }
+
   function renderShop() {
     coinAmt.textContent = shop.coins;
     coinAmt2.textContent = shop.coins;
+    if (!shop.tab) shop.tab = 'item';
     shopList.innerHTML = '';
-    for (const it of SHOP_ITEMS) {
-      const owned = it.owned();
-      const max   = it.max();
-      const maxed = !it.stack && owned >= max;
-      const buyable = !maxed && shop.coins >= it.cost;
-      const row = document.createElement('div');
-      row.className = 'item' + (maxed ? ' maxed' : '');
-      const ownedStr = (lang === 'ja') ? `購入済: ${owned}/${max}` : `Owned: ${owned}/${max}`;
-      row.innerHTML = `
-        <span class="shop-ico" style="color:${it.color || '#88e0ff'}">${it.icon || ''}</span>
-        <div>
-          <div class="name">${it.name}</div>
-          <div class="desc">${t(it.descKey)}</div>
-          <div class="meta">${ownedStr}</div>
-        </div>
-        <div class="cost">${it.cost}</div>
-        <button type="button" class="btn-cta" ${buyable ? '' : 'disabled'}>${maxed ? t('maxBtn') : t('buy')}</button>
-      `;
-      row.querySelector('button').addEventListener('click', () => {
-        if (!buyable) return;
-        shop.coins -= it.cost;
-        it.buy();
-        saveShop();
-        renderShop();
-        SFX.pickup();
-      });
-      shopList.appendChild(row);
-    }
 
-    // ----- Equippable MACHINE skins & WEAPONS -----
-    function addShopSection(label) {
-      const d = document.createElement('div');
-      d.className = 'shop-section'; d.textContent = label;
-      shopList.appendChild(d);
+    // Category tabs (the shop got too tall to show at once)
+    const tabBar = document.createElement('div');
+    tabBar.className = 'shop-tabs';
+    const TABS = [
+      { id: 'item',    label: (lang === 'ja') ? 'アイテム' : 'ITEM' },
+      { id: 'machine', label: (lang === 'ja') ? '機体' : 'MACHINE' },
+      { id: 'weapon',  label: (lang === 'ja') ? '武器' : 'WEAPON' },
+    ];
+    for (const tb of TABS) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'shop-tab' + (shop.tab === tb.id ? ' on' : '');
+      b.textContent = tb.label;
+      b.addEventListener('click', () => { shop.tab = tb.id; renderShop(); });
+      tabBar.appendChild(b);
     }
+    shopList.appendChild(tabBar);
+
+    const rows = document.createElement('div');
+    rows.className = 'shop-rows';
+    shopList.appendChild(rows);
+
     function addEquipRow(o) {
       const buyable = !o.owned && shop.coins >= o.cost;
       const row = document.createElement('div');
@@ -1557,25 +1583,92 @@
         saveShop(); renderShop(); SFX.pickup();
       });
       row.append(ico, mid, cost, btn);
-      shopList.appendChild(row);
+      rows.appendChild(row);
     }
 
-    addShopSection((lang === 'ja') ? '機体 / MACHINE' : 'MACHINE');
-    for (const sk of SHIPS) addEquipRow({
-      owned: shop.ships.includes(sk.id), equipped: shop.ship === sk.id, cost: sk.cost,
-      name: sk.name, desc: (lang === 'ja') ? sk.descJa : sk.desc, preview: skinPreview(sk),
-      onBuy: () => { shop.ships.push(sk.id); shop.ship = sk.id; },
-      onEquip: () => { shop.ship = sk.id; },
-    });
-
-    addShopSection((lang === 'ja') ? '武器 / WEAPON' : 'WEAPON');
-    for (const wp of WEAPONS) addEquipRow({
-      owned: shop.weapons.includes(wp.id), equipped: shop.weapon === wp.id, cost: wp.cost,
-      name: wp.name, desc: (lang === 'ja') ? wp.descJa : wp.desc,
-      iconHtml: wp.icon, iconColor: wp.color,
-      onBuy: () => { shop.weapons.push(wp.id); shop.weapon = wp.id; },
-      onEquip: () => { shop.weapon = wp.id; },
-    });
+    if (shop.tab === 'item') {
+      for (const it of SHOP_ITEMS) {
+        const owned = it.owned(), max = it.max();
+        const maxed = !it.stack && owned >= max;
+        const buyable = !maxed && shop.coins >= it.cost;
+        const row = document.createElement('div');
+        row.className = 'item' + (maxed ? ' maxed' : '');
+        const ownedStr = (lang === 'ja') ? `購入済: ${owned}/${max}` : `Owned: ${owned}/${max}`;
+        row.innerHTML = `
+          <span class="shop-ico" style="color:${it.color || '#88e0ff'}">${it.icon || ''}</span>
+          <div>
+            <div class="name">${it.name}</div>
+            <div class="desc">${t(it.descKey)}</div>
+            <div class="meta">${ownedStr}</div>
+          </div>
+          <div class="cost">${it.cost}</div>
+          <button type="button" class="btn-cta" ${buyable ? '' : 'disabled'}>${maxed ? t('maxBtn') : t('buy')}</button>
+        `;
+        row.querySelector('button').addEventListener('click', () => {
+          if (!buyable) return;
+          shop.coins -= it.cost; it.buy(); saveShop(); renderShop(); SFX.pickup();
+        });
+        rows.appendChild(row);
+      }
+    } else if (shop.tab === 'machine') {
+      for (const sk of SHIPS) addEquipRow({
+        owned: shop.ships.includes(sk.id), equipped: shop.ship === sk.id, cost: sk.cost,
+        name: sk.name, desc: skinStatLine(sk), preview: skinPreview(sk),
+        onBuy: () => { shop.ships.push(sk.id); shop.ship = sk.id; },
+        onEquip: () => { shop.ship = sk.id; },
+      });
+    } else {
+      const note = document.createElement('div');
+      note.className = 'shop-note';
+      note.textContent = (lang === 'ja') ? '主=メイン / 副=サブ（2種同時装備）' : 'M = main / S = sub (equip both)';
+      rows.appendChild(note);
+      for (const wp of WEAPONS) {
+        const owned = shop.weapons.includes(wp.id);
+        const buyable = !owned && shop.coins >= wp.cost;
+        const isMain = shop.weaponMain === wp.id;
+        const isSub = shop.weaponSub === wp.id;
+        const row = document.createElement('div');
+        row.className = 'item wpn' + (isMain || isSub ? ' equipped' : '');
+        const ico = document.createElement('span');
+        ico.className = 'shop-ico'; ico.style.color = wp.color || '#88e0ff'; ico.innerHTML = wp.icon;
+        const mid = document.createElement('div');
+        mid.innerHTML = `<div class="name">${wp.name}</div><div class="desc">${(lang === 'ja') ? wp.descJa : wp.desc}</div>`;
+        const ctrl = document.createElement('div');
+        ctrl.className = 'wpn-ctrl';
+        if (!owned) {
+          const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = wp.cost;
+          const buy = document.createElement('button');
+          buy.type = 'button'; buy.className = 'btn-cta'; buy.textContent = t('buy'); buy.disabled = !buyable;
+          buy.addEventListener('click', () => {
+            if (!buyable) return;
+            shop.coins -= wp.cost; shop.weapons.push(wp.id); shop.weaponMain = wp.id;
+            saveShop(); renderShop(); SFX.pickup();
+          });
+          ctrl.append(cost, buy);
+        } else {
+          const mb = document.createElement('button');
+          mb.type = 'button'; mb.title = 'MAIN';
+          mb.className = 'slot-btn' + (isMain ? ' on' : ''); mb.textContent = (lang === 'ja') ? '主' : 'M';
+          mb.addEventListener('click', () => {
+            if (shop.weaponMain === wp.id) return;
+            shop.weaponMain = wp.id;
+            if (shop.weaponSub === wp.id) shop.weaponSub = 'none';
+            saveShop(); renderShop(); SFX.pickup();
+          });
+          const sb = document.createElement('button');
+          sb.type = 'button'; sb.title = 'SUB';
+          sb.className = 'slot-btn' + (isSub ? ' on' : ''); sb.textContent = (lang === 'ja') ? '副' : 'S';
+          sb.addEventListener('click', () => {
+            if (shop.weaponSub === wp.id) shop.weaponSub = 'none';
+            else if (shop.weaponMain !== wp.id) shop.weaponSub = wp.id;
+            saveShop(); renderShop(); SFX.pickup();
+          });
+          ctrl.append(mb, sb);
+        }
+        row.append(ico, mid, ctrl);
+        rows.appendChild(row);
+      }
+    }
   }
   function showHomeView() {
     overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView');
@@ -2138,42 +2231,46 @@
       if (lv >= 2) { mk(-7, -8, -1.2); mk(7, -8, 1.2); }
       if (lv >= 3) { mk(0, -20, 0); }
     } else {
-      // Fire depends on the equipped WEAPON, scaled by power level.
-      const w = currentWeapon().id;
-      if (w === 'spread') {
-        const rays = lv === 1 ? 3 : lv === 2 ? 5 : 7;
-        const half = (rays - 1) / 2;
-        for (let i = -half; i <= half; i++) {
-          state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg: 1, kind: 'std' });
-        }
-      } else if (w === 'heavy') {
-        const lanes = lv >= 3 ? [-7, 0, 7] : lv === 2 ? [-5, 5] : [0];
-        for (const ox of lanes) {
-          state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg: 3, kind: 'std' });
-        }
-      } else if (w === 'homing') {
-        const mk = (ox, vx) => state.shots.push({
-          x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 2,
-          kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
-        });
-        mk(0, 0);
-        if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }
-        if (lv >= 3) mk(0, 0);
-      } else {
-        // 'std' (TWIN) — original behaviour. Guard active = only center bolt.
-        let lanes;
-        if (state.guard.active) lanes = [[0, 0]];
-        else if (lv === 1) lanes = [[-6, 0], [6, 0]];
-        else if (lv === 2) lanes = [[-8, 0], [0, -2], [8, 0]];
-        else lanes = [[-10, 0], [-4, -2], [4, -2], [10, 0]];
-        for (const [ox, oy] of lanes) {
-          state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
-        }
-      }
+      emitWeapon(currentMainWeapon().id);
       if (boosted) {
         // graze-boost adds a 3-way spread on top of normal fire
         state.shots.push({ x: p.x - 4, y: p.y - 12, vy: -11, vx: -1.6, r: 3, dmg: 1, kind: 'boost' });
         state.shots.push({ x: p.x + 4, y: p.y - 12, vy: -11, vx:  1.6, r: 3, dmg: 1, kind: 'boost' });
+      }
+    }
+  }
+
+  // One volley of a weapon — used by both the MAIN fire and the SUB slot.
+  function emitWeapon(wid) {
+    const p = state.player, lv = state.power;
+    if (wid === 'spread') {
+      const rays = lv === 1 ? 3 : lv === 2 ? 5 : 7;
+      const half = (rays - 1) / 2;
+      for (let i = -half; i <= half; i++) {
+        state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg: 1, kind: 'std' });
+      }
+    } else if (wid === 'heavy') {
+      const lanes = lv >= 3 ? [-7, 0, 7] : lv === 2 ? [-5, 5] : [0];
+      for (const ox of lanes) {
+        state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg: 3, kind: 'std' });
+      }
+    } else if (wid === 'homing') {
+      const mk = (ox, vx) => state.shots.push({
+        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 2,
+        kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
+      });
+      mk(0, 0);
+      if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }
+      if (lv >= 3) mk(0, 0);
+    } else {
+      // 'std' (TWIN). Guard active = only center bolt.
+      let lanes;
+      if (state.guard.active) lanes = [[0, 0]];
+      else if (lv === 1) lanes = [[-6, 0], [6, 0]];
+      else if (lv === 2) lanes = [[-8, 0], [0, -2], [8, 0]];
+      else lanes = [[-10, 0], [-4, -2], [4, -2], [10, 0]];
+      for (const [ox, oy] of lanes) {
+        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
       }
     }
   }
@@ -2746,12 +2843,13 @@
 
     // Smooth player to hand target
     const p = state.player;
-    const k = state.focus ? 0.12 : 0.25;
+    const sk = currentSkin();
+    const k = (state.focus ? 0.12 : 0.25) * (sk.speed || 1);
     state.smoothX += (p.tx - state.smoothX) * k;
     state.smoothY += (p.ty - state.smoothY) * k;
     p.x = clamp(state.smoothX, 12, VW - 12);
     p.y = clamp(state.smoothY, 12, VH - 12);
-    p.hitR = state.focus ? 2 : 4;
+    p.hitR = (state.focus ? 2 : 4) * (sk.hitMul || 1);
 
     if (p.invuln > 0) p.invuln--;
     if (p.bombFx > 0) p.bombFx--;
@@ -2788,7 +2886,20 @@
       playerShot();
       if (state.focus) SFX.shootFocus(); else SFX.shoot();
       const baseCd = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
-      p.fireCooldown = state.focus ? baseCd : Math.round(baseCd * (currentWeapon().fireMul || 1));
+      p.fireCooldown = state.focus ? baseCd
+        : Math.round(baseCd * (currentMainWeapon().fireMul || 1) * (currentSkin().fireMul || 1));
+    }
+
+    // SUB weapon: an independent, slower secondary stream (not during focus).
+    if (state.handSeen && !state.thumbsUp && !state.focus && state.mode !== 'defender') {
+      const sub = currentSubWeapon();
+      if (sub) {
+        if (--p.subCd <= 0) {
+          emitWeapon(sub.id);
+          SFX.shoot();
+          p.subCd = Math.max(8, Math.round(18 * (sub.fireMul || 1)));
+        }
+      }
     }
 
     // Player shots
@@ -3956,13 +4067,19 @@
   };
 
   // Equippable MACHINE skins (shared shape, palette swap) + WEAPONS (mount any).
+  // Each machine has a stat identity: speed (move responsiveness), hitMul
+  // (hitbox size), lifeBonus (extra starting lives), fireMul (fire interval).
   const SHIPS = [
-    { id: 'vanguard', name: 'VANGUARD', cost: 0,    descJa: '標準カラー',     desc: 'Default colours', pal: SHIP_PAL },
-    { id: 'viper',    name: 'VIPER',    cost: 600,  descJa: 'グリーン迷彩',   desc: 'Green livery',
+    { id: 'vanguard', name: 'VANGUARD', cost: 0,
+      speed: 1.0, hitMul: 1.0, lifeBonus: 0, fireMul: 1.0, pal: SHIP_PAL },
+    { id: 'viper',    name: 'VIPER',    cost: 600,
+      speed: 1.3, hitMul: 0.8, lifeBonus: 0, fireMul: 1.0,
       pal: { '#': '#2bbf6a', 'B': '#125a34', 'C': '#aef7c8', 'W': '#ffffff', 'E': '#b6ff3a' } },
-    { id: 'crimson',  name: 'CRIMSON',  cost: 800,  descJa: 'レッドカラー',   desc: 'Crimson livery',
+    { id: 'crimson',  name: 'CRIMSON',  cost: 800,
+      speed: 0.85, hitMul: 1.1, lifeBonus: 1, fireMul: 1.0,
       pal: { '#': '#d6452b', 'B': '#7a1a10', 'C': '#ffc0a0', 'W': '#ffffff', 'E': '#ffd066' } },
-    { id: 'nebula',   name: 'NEBULA',   cost: 1000, descJa: 'パープル発光',   desc: 'Violet glow',
+    { id: 'nebula',   name: 'NEBULA',   cost: 1000,
+      speed: 1.0, hitMul: 1.0, lifeBonus: 0, fireMul: 0.85,
       pal: { '#': '#7a5ad6', 'B': '#2a1a6a', 'C': '#c8b6ff', 'W': '#ffffff', 'E': '#88e0ff' } },
   ];
   const WEAPONS = [
@@ -3979,8 +4096,9 @@
       descJa: '敵を追うホーミング弾', desc: 'Homing missiles',
       icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="8" cy="8" r="2" fill="currentColor"/></svg>' },
   ];
-  function currentSkin()   { return SHIPS.find(s => s.id === shop.ship)     || SHIPS[0]; }
-  function currentWeapon() { return WEAPONS.find(w => w.id === shop.weapon) || WEAPONS[0]; }
+  function currentSkin()       { return SHIPS.find(s => s.id === shop.ship) || SHIPS[0]; }
+  function currentMainWeapon() { return WEAPONS.find(w => w.id === shop.weaponMain) || WEAPONS[0]; }
+  function currentSubWeapon()  { return shop.weaponSub === 'none' ? null : (WEAPONS.find(w => w.id === shop.weaponSub) || null); }
   function skinPreview(skin) {
     const c = document.createElement('canvas');
     c.width = 30; c.height = 30;
@@ -4624,7 +4742,7 @@
     pauseBtn.classList.remove('paused');
     state.t = 0;
     state.score = 0;
-    state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0);
+    state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + (currentSkin().lifeBonus || 0);
     state.bombs = 4 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
     state.guard.remaining = 600;
     state.guard.active = false;
