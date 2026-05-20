@@ -49,9 +49,10 @@ public class EnemySpawner : MonoBehaviour
         var pattern = (waveCount % 5 == 0) ? Enemy.Pattern.Spin4
                    : (waveCount % 3 == 0) ? Enemy.Pattern.Spread3
                                           : Enemy.Pattern.Aimed;
-        var color = (waveCount % 5 == 0) ? new Color(0.6f, 0.95f, 1f)
-                  : (waveCount % 3 == 0) ? new Color(1f, 0.82f, 0.45f)
-                                         : new Color(0.85f, 0.4f, 0.7f);
+        // Exact grunt body colours from the JS version (spin / fan / aim).
+        var color = (waveCount % 5 == 0) ? SpriteFactory.H("#3aa6c8")
+                  : (waveCount % 3 == 0) ? SpriteFactory.H("#c89a3a")
+                                         : SpriteFactory.H("#c845a8");
 
         // 1-3 enemies per wave depending on count
         int n = 1 + Mathf.Min(waveCount / 5, 2);

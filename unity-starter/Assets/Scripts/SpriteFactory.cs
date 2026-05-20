@@ -105,16 +105,51 @@ public static class SpriteFactory
 
     public static Sprite Bullet(Color c)
     {
+        // Match the JS look: a solid square pellet with a brighter inner core
+        // (inner = half size, centered).
         var pal = new System.Collections.Generic.Dictionary<char, Color> {
             { '#', c }, { 'W', Color.white },
         };
         return FromGrid(new[] {
-            ".###.",
-            "#W#W#",
-            "#WWW#",
-            "#W#W#",
-            ".###.",
+            "########",
+            "########",
+            "##WWWW##",
+            "##WWWW##",
+            "##WWWW##",
+            "##WWWW##",
+            "########",
+            "########",
         }, pal);
+    }
+
+    /// <summary>Pixel planet disc: body colour, lighter upper-left, faint rim.</summary>
+    public static Sprite Disc(int r, Color body, Color hi, Color rim)
+    {
+        int pad = 3, size = (r + pad) * 2;
+        var tex = NewTex(size, size);
+        var px = new Color[size * size];
+        float cx = (size - 1) / 2f, cy = (size - 1) / 2f;
+        for (int y = 0; y < size; y++)
+        for (int x = 0; x < size; x++)
+        {
+            float dx = x - cx, dy = y - cy;
+            float d = Mathf.Sqrt(dx * dx + dy * dy);
+            int i = y * size + x;
+            if (d <= r)
+            {
+                // upper-left is lit (texture y grows up, so +dy = up)
+                float lit = Mathf.Clamp01(0.45f + (-dx + dy) / (r * 2.2f));
+                px[i] = Color.Lerp(body, hi, lit * 0.75f);
+            }
+            else if (d <= r + 2)
+            {
+                px[i] = new Color(rim.r, rim.g, rim.b, 0.20f * (1f - (d - r) / 2f));
+            }
+            else px[i] = Color.clear;
+        }
+        tex.SetPixels(px);
+        tex.Apply();
+        return Wrap(tex);
     }
 
     public static Sprite Meteor()
