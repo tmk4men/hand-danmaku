@@ -39,6 +39,7 @@ public class PlayerHealth : MonoBehaviour
         lives--;
         invulnUntil = Time.time + invulnSeconds;
         CameraShake.Pulse(0.25f, 0.15f);
+        Particles.Burst(transform.position, Color.white, 24);
         ProceduralSFX.PlayerHit();
         if (ComboMeter.Instance) ComboMeter.Instance.Reset();
         if (lives <= 0) GameDirector.Instance.GameOver();

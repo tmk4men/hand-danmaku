@@ -73,6 +73,14 @@ public class GameDirector : MonoBehaviour
         SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
     }
 
+    /// <summary>Reload back to the title screen (so the shop can spend earned coins).</summary>
+    public void ToTitle()
+    {
+        ResumeImmediately = false;
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
+    }
+
     public void GameOver()
     {
         Running = false;

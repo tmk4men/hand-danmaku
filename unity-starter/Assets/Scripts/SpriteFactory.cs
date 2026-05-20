@@ -223,6 +223,100 @@ public static class SpriteFactory
         }, pal);
     }
 
+    static Sprite _whitePixel;
+    /// <summary>Shared 1x1 white sprite (tint via SpriteRenderer.color) — for particles.</summary>
+    public static Sprite WhitePixel()
+    {
+        if (_whitePixel == null) _whitePixel = SolidSquare(1, Color.white);
+        return _whitePixel;
+    }
+
+    // ---------- Item sprites (12x12, ported from ITEM_SPRITES) ----------
+    static System.Collections.Generic.Dictionary<char, Color> ItemPal(string main, string edge)
+    {
+        return new System.Collections.Generic.Dictionary<char, Color> {
+            { '#', H(main) }, { 'E', H(edge) }, { 'W', Color.white }, { 'L', H(main) },
+        };
+    }
+
+    public static Sprite Item(ItemType type)
+    {
+        switch (type)
+        {
+            case ItemType.Power: return FromGrid(new[] {
+                "......##....",".....###....","....####....","...####.....","..#####.....",
+                ".######WWWW.",".WWWW######.",".....#####..",".....####...","....####....",
+                "....###.....","....##......" }, ItemPal("#ffd066", "#7a4400"));
+            case ItemType.Bomb: return FromGrid(new[] {
+                "........E...",".......E....","......E.W...","....######..","...########.",
+                "..##########","..##W#######","..########W#","..##########","...########.",
+                "....######..","......##...." }, ItemPal("#ff7c98", "#73122d"));
+            case ItemType.Guard: return FromGrid(new[] {
+                "############","##W########W","##WW######WW",".###W##W###.",".####WW####.",
+                ".####WW####.","..####W####.","..###WWW###.","...#######..","....#####...",
+                ".....###....","......#....." }, ItemPal("#7fffd4", "#0d6e57"));
+            case ItemType.Life: return FromGrid(new[] {
+                "..##....##..",".####..####.","############","###W######W#","############",
+                "############",".##########.","..########..","...######...","....####....",
+                ".....##.....","............" }, ItemPal("#ffffff", "#444466"));
+            case ItemType.Tool: return FromGrid(new[] {
+                ".####.....##","#####....###","##W##....#W#","###W#...####","..####.####.",
+                "...########.","....#######.",".....######.","......#####.",".......#####",
+                "........####",".........###" }, ItemPal("#c8a878", "#3b2a14"));
+            default: return FromGrid(new[] {   // dragon crystal
+                ".....##.....","....####....","...##WW##...","..##WWWW##..",".###WWWW###.",
+                "#####WW#####","#####WW#####",".###WWWW###.","..##WWWW##..","...##WW##...",
+                "....####....",".....##....." }, ItemPal("#ff77c8", "#3a0e2a"));
+        }
+    }
+
+    // ---------- Boss sprites (18x16, one per stage theme, from BOSS_VARIANTS) ----------
+    public static Sprite Boss(int themeIndex)
+    {
+        switch (((themeIndex % 5) + 5) % 5)
+        {
+            case 1: return FromGrid(new[] {  // CRIMSON SKULL
+                ".....########.....","...############...","..##############..",".################.",
+                "################W#","##DDDD####DDDD##.#","##DEED####DEED##.#","##DDDD####DDDD##.#",
+                "#################W","##############W###","##DDDDDDDDDDDD##.#","##D##D##D##D####.#",
+                ".################.","..##############..","....##########....","......######......" },
+                BossPal("#b8324a", "#ffe066", "#06081a"));
+            case 2: return FromGrid(new[] {  // EMERALD JELLY
+                "......######......","...############...","..##############..",".################.",
+                "################W#","##W####E####W####.","##W####E####W####.","##W##########W###.",
+                "##WWWWWWWWWWWW####",".################.","..##############..","#.##.##.##.##.##.#",
+                "#..#...##...#..#..",".#..#.##.##.#..#..","..#..#..#..#..#...",".#..#..#..#..#..#." },
+                BossPal("#0d8a5a", "#7fffd4", null));
+            case 3: return FromGrid(new[] {  // AMBER FORTRESS
+                "DD##########DDD##.","D############DD##.","##D########D####W#","##D##E##E##D######",
+                "##D############D##","##D##WWWWWW##D##.#","##D##W####W##D##.#","##D##W####W##D###W",
+                "##D##W####W##D####","##D##W####W##D##.#","##D##WWWWWW##D##.#","##D############D##",
+                "##D##########D####","##D##########D##.#","D############DD###","DD##########DDD#W." },
+                BossPal("#a06a14", "#ffd066", "#3b2a14"));
+            case 4: return FromGrid(new[] {  // COSMIC ARROW
+                "........##........",".......####.......","......######......",".....########.....",
+                "....###W##W###....","...####WWWW####...","..##############..","..#####EE#####....",
+                ".##############...","..############....","...##########.....","...##W####W##.....",
+                "....########......",".....######.......","......####........",".......##........." },
+                BossPal("#1a55b8", "#88e0ff", null));
+            default: return FromGrid(new[] {  // NEBULA WARDEN
+                "......######......","....##########....","..##############..",".################.",
+                "##E##########E##.#","##E##WWWWWW##E##.#","##############W###","#####WWWWWW#######",
+                "#####WWWWWW#######","##############W###","##E##WWWWWW##E##.#","##E##########E##.#",
+                ".################.","..##############..","....##########....","......######......" },
+                BossPal("#d6457b", "#ffe066", null));
+        }
+    }
+
+    static System.Collections.Generic.Dictionary<char, Color> BossPal(string main, string eye, string dark)
+    {
+        var d = new System.Collections.Generic.Dictionary<char, Color> {
+            { '#', H(main) }, { 'E', H(eye) }, { 'W', Color.white },
+        };
+        if (dark != null) d['D'] = H(dark);
+        return d;
+    }
+
     public static Color H(string hex)
     {
         if (hex[0] == '#') hex = hex.Substring(1);

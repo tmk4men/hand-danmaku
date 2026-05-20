@@ -69,3 +69,36 @@ public class FxExpand : MonoBehaviour
         if (t >= dur) Destroy(gameObject);
     }
 }
+
+/// <summary>Chunky pixel particle burst (JS pushParticle). Tints a shared sprite.</summary>
+public static class Particles
+{
+    public static void Burst(Vector3 pos, Color color, int n)
+    {
+        for (int i = 0; i < n; i++)
+        {
+            var go = new GameObject("p");
+            var sr = go.AddComponent<SpriteRenderer>();
+            sr.sprite = SpriteFactory.WhitePixel();
+            sr.color = color;
+            sr.sortingOrder = 40;
+            go.transform.position = pos;
+            go.transform.localScale = Vector3.one * (0.08f * SpriteFactory.PPU);
+            var v = new Vector2(Random.Range(-1.6f, 1.6f), Random.Range(-1.6f, 1.6f));
+            go.AddComponent<FxParticle>().Init(v, Random.Range(0.3f, 0.6f), color);
+        }
+    }
+}
+
+public class FxParticle : MonoBehaviour
+{
+    SpriteRenderer sr; Vector2 vel; float life, maxLife; Color baseC;
+    public void Init(Vector2 v, float l, Color c) { sr = GetComponent<SpriteRenderer>(); vel = v; life = maxLife = l; baseC = c; }
+    void Update()
+    {
+        life -= Time.deltaTime;
+        if (life <= 0f) { Destroy(gameObject); return; }
+        transform.position += (Vector3)(vel * Time.deltaTime);
+        var c = baseC; c.a = Mathf.Clamp01(life / maxLife); sr.color = c;
+    }
+}

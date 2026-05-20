@@ -34,6 +34,7 @@ public class Item : MonoBehaviour
         // bob + fall
         float bob = Mathf.Sin(life * 6f) * 0.05f;
         transform.position += new Vector3(0, -fallSpeed * Time.deltaTime + bob * Time.deltaTime * 0.5f, 0);
+        if (type == ItemType.Dragon) transform.Rotate(0, 0, 40f * Time.deltaTime);
 
         // Magnet toward player when close
         var p = GameDirector.Instance != null ? GameDirector.Instance.Player : null;
@@ -89,26 +90,24 @@ public class Item : MonoBehaviour
                 break;
         }
         if (HUD.Instance) HUD.Instance.Refresh();
+        Particles.Burst(transform.position, ItemColor(type), 10);
         CameraShake.Pulse(0.15f, 0.1f);
     }
 
     void Pop(string s, Color c) => FloatingText.Spawn(transform.position, s, c, 18);
 
-    static Sprite SpriteForItem(ItemType type)
+    public static Color ItemColor(ItemType type)
     {
-        Color c;
-        char glyph = ' ';
         switch (type)
         {
-            case ItemType.Power:  c = SpriteFactory.H("#ffd066"); glyph = 'P'; break;
-            case ItemType.Bomb:   c = SpriteFactory.H("#ff7c98"); glyph = 'B'; break;
-            case ItemType.Guard:  c = SpriteFactory.H("#7fffd4"); glyph = 'G'; break;
-            case ItemType.Life:   c = Color.white;                glyph = '1'; break;
-            case ItemType.Tool:   c = SpriteFactory.H("#c8a878"); glyph = 'T'; break;
-            case ItemType.Dragon: c = SpriteFactory.H("#ff77c8"); glyph = 'D'; break;
-            default: c = Color.white; break;
+            case ItemType.Power:  return SpriteFactory.H("#ffd066");
+            case ItemType.Bomb:   return SpriteFactory.H("#ff7c98");
+            case ItemType.Guard:  return SpriteFactory.H("#7fffd4");
+            case ItemType.Tool:   return SpriteFactory.H("#c8a878");
+            case ItemType.Dragon: return SpriteFactory.H("#ff77c8");
+            default:              return Color.white;
         }
-        // Simple bordered square — replace with grids later if you want JS-version parity.
-        return SpriteFactory.SolidSquare(10, c);
     }
+
+    static Sprite SpriteForItem(ItemType type) => SpriteFactory.Item(type);
 }

@@ -90,6 +90,7 @@ public class Enemy : MonoBehaviour
         int gained = Mathf.RoundToInt(scoreReward * mult);
         if (GameDirector.Instance) GameDirector.Instance.AddScore(gained);
         if (mult > 1.5f) FloatingText.Spawn(transform.position, $"+{gained}", new Color(1f, 0.82f, 0.4f), 18);
+        Particles.Burst(transform.position, SpriteFactory.H("#ffd27a"), 14);
         ProceduralSFX.Explode();
         // Random item drop (chance scales with the enemy's wave variety)
         float roll = GameRng.Float01();

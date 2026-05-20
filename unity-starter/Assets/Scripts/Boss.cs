@@ -22,13 +22,21 @@ public class Boss : MonoBehaviour
     private SpriteRenderer sr;
     private Vector3 entryFrom, entryTo;
 
+    // Laser (stage 2+ pattern 3)
+    private GameObject laserGO;
+    private SpriteRenderer laserSr;
+    private float laserAngle;     // degrees
+    private int laserPhase;       // 0 idle, 1 charge, 2 fire, 3 cooldown
+    private float laserTimer;
+
     public static Boss Spawn()
     {
         var cam = Camera.main;
         float halfH = cam.orthographicSize;
         var go = new GameObject("Boss");
+        int themeIdx = GameDirector.Instance ? GameDirector.Instance.Stage - 1 : 0;
         var sr = go.AddComponent<SpriteRenderer>();
-        sr.sprite = SpriteFactory.Enemy(new Color(0.84f, 0.27f, 0.48f));
+        sr.sprite = SpriteFactory.Boss(themeIdx);    // per-theme 18x16 boss sprite
         sr.sortingOrder = 6;
         var col = go.AddComponent<CircleCollider2D>();
         col.radius = 0.42f; col.isTrigger = true;
@@ -38,7 +46,7 @@ public class Boss : MonoBehaviour
         b.entryFrom = new Vector3(0, halfH + 1f, 0);
         b.entryTo   = new Vector3(0, halfH - 1.5f, 0);
         go.transform.position = b.entryFrom;
-        go.transform.localScale = Vector3.one * 2.6f;
+        go.transform.localScale = Vector3.one * 1.8f;   // sprite is now 18x16 (was 8x8)
         int stage = GameDirector.Instance ? GameDirector.Instance.Stage : 1;
         b.maxHp = 200 + stage * 80;        // JS scaling (was a flat 1200 = 4x too tanky)
         b.hp = b.maxHp;
@@ -65,12 +73,109 @@ public class Boss : MonoBehaviour
         float sway = Mathf.Sin(elapsed * 0.5f) * 1.8f;
         transform.position = new Vector3(sway, entryTo.y, 0);
 
-        // Pattern rotation
+        // Pattern rotation; pattern 3 becomes the laser sweep from stage 2 on.
         int pattern = ((int)(elapsed / patternDuration)) % 4;
-        if (Time.time >= nextFire)
+        bool useLaser = pattern == 3 && (GameDirector.Instance ? GameDirector.Instance.Stage : 1) >= 2;
+
+        if (useLaser)
         {
-            FirePattern(pattern);
-            nextFire = Time.time + PatternInterval(pattern);
+            UpdateLaser();
+        }
+        else
+        {
+            if (laserGO) laserGO.SetActive(false);
+            laserPhase = 0;
+            if (Time.time >= nextFire)
+            {
+                FirePattern(pattern);
+                nextFire = Time.time + PatternInterval(pattern);
+            }
+        }
+    }
+
+    // ---------- Laser ----------
+    void UpdateLaser()
+    {
+        var pl = GameDirector.Instance ? GameDirector.Instance.Player : null;
+        if (pl == null) return;
+        EnsureLaser();
+
+        switch (laserPhase)
+        {
+            case 0:   // begin charge
+                laserPhase = 1; laserTimer = 0.7f;
+                laserAngle = AngleToDeg(pl);
+                ProceduralSFX.Warning();
+                break;
+            case 1:   // charging: track player, pulsing thin guide
+                laserTimer -= Time.deltaTime;
+                laserAngle = Mathf.LerpAngle(laserAngle, AngleToDeg(pl), 0.08f);
+                DrawLaser(true);
+                if (laserTimer <= 0f) { laserPhase = 2; laserTimer = 1.3f; CameraShake.Pulse(0.6f, 0.5f); ProceduralSFX.Bomb(); }
+                break;
+            case 2:   // firing: slow sweep + collision
+                laserTimer -= Time.deltaTime;
+                laserAngle = Mathf.MoveTowardsAngle(laserAngle, AngleToDeg(pl), 25f * Time.deltaTime);
+                DrawLaser(false);
+                CheckLaserHit(pl);
+                if (laserTimer <= 0f) { laserPhase = 3; laserTimer = 0.8f; if (laserGO) laserGO.SetActive(false); }
+                break;
+            default:  // cooldown
+                laserTimer -= Time.deltaTime;
+                if (laserTimer <= 0f) laserPhase = 0;
+                break;
+        }
+    }
+
+    float AngleToDeg(Transform pl)
+    {
+        Vector2 d = (Vector2)pl.position - (Vector2)transform.position;
+        return Mathf.Atan2(d.y, d.x) * Mathf.Rad2Deg;
+    }
+
+    void EnsureLaser()
+    {
+        if (laserGO != null) return;
+        laserGO = new GameObject("BossLaser");
+        laserGO.transform.SetParent(transform, true);
+        laserSr = laserGO.AddComponent<SpriteRenderer>();
+        laserSr.sprite = SpriteFactory.WhitePixel();
+        laserSr.sortingOrder = 7;
+        laserGO.SetActive(false);
+    }
+
+    void DrawLaser(bool charging)
+    {
+        laserGO.SetActive(true);
+        const float L = 26f;
+        float rad = laserAngle * Mathf.Deg2Rad;
+        Vector2 dir = new Vector2(Mathf.Cos(rad), Mathf.Sin(rad));
+        Vector2 bp = transform.position;
+        laserGO.transform.position = new Vector3(bp.x + dir.x * L * 0.5f, bp.y + dir.y * L * 0.5f, 0f);
+        laserGO.transform.rotation = Quaternion.Euler(0, 0, laserAngle);
+
+        float w = charging ? 0.06f : 0.5f;
+        Vector3 ps = transform.lossyScale;   // counter the boss's scale so width is world-units
+        laserGO.transform.localScale = new Vector3(
+            L / Mathf.Max(0.001f, ps.x), w / Mathf.Max(0.001f, ps.y), 1f) * SpriteFactory.PPU;
+
+        laserSr.color = charging
+            ? new Color(1f, 0.2f, 0.4f, 0.45f + 0.45f * Mathf.Abs(Mathf.Sin(Time.time * 30f)))
+            : new Color(1f, 0.47f, 0.78f, 0.92f);
+    }
+
+    void CheckLaserHit(Transform pl)
+    {
+        Vector2 p = pl.position, bp = transform.position;
+        float rad = laserAngle * Mathf.Deg2Rad;
+        float ca = Mathf.Cos(rad), sa = Mathf.Sin(rad);
+        float dx = p.x - bp.x, dy = p.y - bp.y;
+        float along = dx * ca + dy * sa;
+        float across = -dx * sa + dy * ca;
+        if (along > 0.4f && Mathf.Abs(across) < 0.32f)
+        {
+            var ph = pl.GetComponent<PlayerHealth>();
+            if (ph != null && !ph.IsInvulnerable() && !ph.IsGuarding()) ph.TakeHit();
         }
     }
 
@@ -166,6 +271,7 @@ public class Boss : MonoBehaviour
         for (int i = 0; i < 6; i++)
             Item.Spawn(transform.position + Random.insideUnitSphere * 0.3f,
                        (ItemType)i);
+        Particles.Burst(transform.position, new Color(1f, 0.47f, 0.78f), 40);
         ProceduralSFX.BossDie();
         CameraShake.Pulse(0.8f, 0.6f);
         GameDirector.Instance?.AdvanceStage();   // next stage + theme + bomb

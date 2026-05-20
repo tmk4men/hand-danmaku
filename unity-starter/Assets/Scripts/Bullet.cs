@@ -90,9 +90,9 @@ public class Bullet : MonoBehaviour
         if (isPlayerShot)
         {
             var e = other.GetComponent<Enemy>();
-            if (e != null) { e.TakeDamage(damage); ProceduralSFX.Hit(); Destroy(gameObject); return; }
+            if (e != null) { e.TakeDamage(damage); Particles.Burst(transform.position, new Color(0.6f, 0.9f, 1f), 4); ProceduralSFX.Hit(); Destroy(gameObject); return; }
             var b = other.GetComponent<Boss>();
-            if (b != null) { b.TakeDamage(damage); ProceduralSFX.Hit(); Destroy(gameObject); return; }
+            if (b != null) { b.TakeDamage(damage); Particles.Burst(transform.position, new Color(0.6f, 0.9f, 1f), 4); ProceduralSFX.Hit(); Destroy(gameObject); return; }
         }
         else
         {
