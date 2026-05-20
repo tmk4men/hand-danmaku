@@ -1702,6 +1702,11 @@
     gameRole: 'offense', partnerRole: null,
     partner: { x: VW * 0.5, y: VH * 0.4, seen: false, lastT: 0 },
     ping: 0, _pingAt: 0, _sendT: 0, partnerStarted: false,
+    guestTauntT: 0, lastSnapT: 0,
+    // Co-op authority: the OFFENSE player runs the authoritative world sim (host);
+    // the DEFENSE player is a thin client that renders the host's snapshots.
+    isHost() { return this.active && this.gameRole === 'offense'; },
+    isGuest() { return this.active && this.gameRole === 'defense'; },
     setStatus(msg) { const el = document.getElementById('coopStatus'); if (el) el.textContent = msg; },
     setMeta() {
       const el = document.getElementById('coopMeta');
@@ -1709,10 +1714,14 @@
         const parts = ['自分: ' + (this.gameRole === 'defense' ? 'DEFENSE' : 'OFFENSE'),
           '相手: ' + (this.peerHere ? (this.partnerRole ? this.partnerRole.toUpperCase() : '接続済') : '未接続')];
         if (this.connected) parts.push('PING ' + this.ping + 'ms');
+        if (this.peerHere && this.partnerRole && this.partnerRole === this.gameRole)
+          parts.push('⚠ 役割が同じ — 片方を変更');
         el.textContent = parts.join('  /  ');
       }
       const sb = document.getElementById('coopStartBtn');
-      if (sb) sb.disabled = !(this.connected && this.peerHere);
+      // Co-op needs one OFFENSE + one DEFENSE (host = offense runs the sim).
+      if (sb) sb.disabled = !(this.connected && this.peerHere
+        && this.partnerRole && this.partnerRole !== this.gameRole);
     },
     connect(room) {
       if (!room) { this.setStatus('合言葉を入力してね'); return; }
@@ -1737,12 +1746,21 @@
       switch (m.type) {
         case 'role': this.connRole = m.role; this.send({ type: 'hello', role: this.gameRole }); break;
         case 'peer-joined': this.peerHere = true; this.send({ type: 'hello', role: this.gameRole }); this.setStatus('相手が参加'); this.setMeta(); break;
-        case 'peer-left': this.peerHere = false; this.partner.seen = false; this.setStatus('相手が退出'); this.setMeta(); break;
+        case 'peer-left':
+          this.peerHere = false; this.partner.seen = false; this.setStatus('相手が退出'); this.setMeta();
+          if (state.running) pushPopup(VW / 2, VH * 0.4, '相手が切断', '#ff7c98', 14);
+          break;
         case 'hello': this.peerHere = true; this.partnerRole = m.role; this.setMeta(); break;
         case 'ping': this.send({ type: 'pong', t: m.t }); break;
         case 'pong': this.ping = Math.round(performance.now() - m.t); this.setMeta(); break;
         case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t; break;
         case 'start': this.partnerStarted = true; break;
+        // ---- shared-world co-op ----
+        case 'snap':   if (this.isGuest()) this.applySnap(m); break;          // guest: adopt host's world
+        case 'taunt':  if (this.isHost()) this.guestTauntT = DEF.TAUNT_DUR; break; // host: pull bullets to guest
+        case 'heal':   if (this.isHost()) hostReceiveHeal(); break;           // host: +1 life from guest
+        case 'damage': if (this.isHost()) playerHit(); break;                 // host: guest's exposed hit costs a life
+        case 'gameover': if (this.isGuest() && state.running) gameOver(); break; // guest: host went down
       }
     },
     send(o) { if (this.ws && this.ws.readyState === 1) { try { this.ws.send(JSON.stringify(o)); return true; } catch (e) {} } return false; },
@@ -1750,12 +1768,89 @@
       if (!this.active || !this.connected) return;
       const now = performance.now();
       if (now - this._pingAt > 1500) { this._pingAt = now; this.send({ type: 'ping', t: now }); }
-      if (state.running && state.t - this._sendT >= 2) {
-        this._sendT = state.t;
-        this.send({ type: 'pos', x: Math.round(state.player.x), y: Math.round(state.player.y) });
+      if (!state.running) return;
+      if (this.isHost()) {
+        // Host streams the authoritative world ~20Hz; guest dead-reckons between snaps.
+        if (state.t - this._sendT >= 3) { this._sendT = state.t; this.sendSnap(); }
+      } else if (this.isGuest()) {
+        // Guest streams only its own ship position ~30Hz.
+        if (state.t - this._sendT >= 2) {
+          this._sendT = state.t;
+          this.send({ type: 'pos', x: Math.round(state.player.x), y: Math.round(state.player.y) });
+        }
       }
     },
+    // Host → guest: one compact snapshot of the whole hazard field + shared HUD.
+    sendSnap() {
+      const bp = [], bpIdx = new Map(), bl = [];
+      for (const b of state.bullets) {
+        let ci = bpIdx.get(b.color);
+        if (ci === undefined) { ci = bp.length; bp.push(b.color); bpIdx.set(b.color, ci); }
+        bl.push(b.x | 0, b.y | 0, Math.round(b.vx * 100), Math.round(b.vy * 100), b.r | 0, ci);
+      }
+      const en = [];
+      let bo = 0;
+      for (const e of state.enemies) {
+        if (e.isBoss) continue;
+        const pi = e.pattern === 'spin' ? 1 : e.pattern === 'fan' ? 2 : 0;
+        en.push(e.x | 0, e.y | 0, e.radius | 0, pi, Math.round(clamp(e.hp / e.maxHp, 0, 1) * 100));
+      }
+      if (state.boss) {
+        const b = state.boss, L = b.laser;
+        bo = [b.x | 0, b.y | 0, b.radius | 0, Math.round(clamp(b.hp / b.maxHp, 0, 1) * 100),
+              L.charge | 0, L.fire | 0, Math.round(L.angle * 1000)];
+      }
+      const me = [];
+      for (const m of state.meteors)
+        me.push(m.x | 0, m.y | 0, Math.round(m.rot * 100), m.warning | 0,
+                Math.round(m.vx * 100), Math.round(m.vy * 100), Math.round(m.rotV * 1000));
+      const it = [];
+      for (const o of state.items) it.push(SNAP_ITEMS.indexOf(o.type), o.x | 0, o.y | 0, o.life | 0);
+      const sh = [];
+      for (const s of state.shots) sh.push(s.x | 0, s.y | 0, s.kind === 'homing' ? 1 : 0);
+      this.send({
+        type: 'snap', f: state.t, ti: state.themeIndex, mn: state.mod.name,
+        sc: state.score, lv: state.lives, st: state.stageNo, bm: state.bombs, pw: state.power,
+        bw: state.bossWarning, sb: state.stageBanner,
+        px: state.player.x | 0, py: state.player.y | 0,
+        bl, bp, en, bo, me, it, sh,
+      });
+    },
+    // Guest: rebuild the renderable world from a host snapshot.
+    applySnap(m) {
+      this.partner.x = m.px; this.partner.y = m.py; this.partner.seen = true; this.partner.lastT = state.t;
+      state.score = m.sc; state.lives = m.lv; state.stageNo = m.st; state.bombs = m.bm;
+      state.power = m.pw; state.bossWarning = m.bw; state.stageBanner = m.sb; state.themeIndex = m.ti;
+      state.mod.name = m.mn;
+      const bl = m.bl, bp = m.bp, ba = [];
+      for (let i = 0; i < bl.length; i += 6)
+        ba.push({ x: bl[i], y: bl[i + 1], vx: bl[i + 2] / 100, vy: bl[i + 3] / 100, r: bl[i + 4], color: bp[bl[i + 5]] || '#fff', life: 1, grazed: false });
+      state.bullets = ba;
+      const en = m.en, ea = [];
+      for (let i = 0; i < en.length; i += 5) {
+        const pat = en[i + 3] === 1 ? 'spin' : en[i + 3] === 2 ? 'fan' : 'aim';
+        ea.push({ x: en[i], y: en[i + 1], radius: en[i + 2], pattern: pat, hp: en[i + 4], maxHp: 100, isBoss: false });
+      }
+      if (m.bo) {
+        const b = m.bo;
+        state.boss = { x: b[0], y: b[1], radius: b[2], hp: b[3], maxHp: 100, laser: { charge: b[4], fire: b[5], angle: b[6] / 1000 } };
+        ea.push({ x: b[0], y: b[1], radius: b[2], hp: b[3], maxHp: 100, isBoss: true, ref: state.boss, pattern: 'aim' });
+      } else state.boss = null;
+      state.enemies = ea;
+      const me = m.me, ma = [];
+      for (let i = 0; i < me.length; i += 7)
+        ma.push({ x: me[i], y: me[i + 1], rot: me[i + 2] / 100, warning: me[i + 3], vx: me[i + 4] / 100, vy: me[i + 5] / 100, rotV: me[i + 6] / 1000, r: 28 });
+      state.meteors = ma;
+      const it = m.it, ia = [];
+      for (let i = 0; i < it.length; i += 4) ia.push({ type: SNAP_ITEMS[it[i]] || 'power', x: it[i + 1], y: it[i + 2], life: it[i + 3] });
+      state.items = ia;
+      const sh = m.sh, sa = [];
+      for (let i = 0; i < sh.length; i += 3) sa.push({ x: sh[i], y: sh[i + 1], kind: sh[i + 2] ? 'homing' : 'std', r: 3, vx: 0, vy: 0 });
+      state.shots = sa;
+      this.lastSnapT = performance.now();
+    },
   };
+  const SNAP_ITEMS = ['power', 'bomb', 'guard', 'life', 'tool', 'dragon']; // item-type ↔ index for snapshots
 
   function showCoopView() {
     overlayPanel.classList.add('coopView');
@@ -2606,6 +2701,7 @@
   }
 
   function triggerBomb() {
+    if (NET.isGuest()) return;   // co-op: bombs belong to the OFFENSE (host) ship
     if (state.bombs <= 0) return;
     state.bombs--;
     state.usedBombs++;
@@ -2940,7 +3036,10 @@
         }
       }
     }
-    if (state.running && !state.paused && !state.autoPaused) update(dt);
+    if (state.running && !state.paused && !state.autoPaused) {
+      if (NET.isGuest()) updateGuest(dt);   // thin client: render host's world, run own ship
+      else update(dt);                       // solo / co-op host: authoritative sim
+    }
     NET.tick();
     draw();
     requestAnimationFrame(loop);
@@ -2997,6 +3096,18 @@
       state.guard.active = false;
     }
     if (state.t % 6 === 0) updateHud();
+
+    // Co-op HOST: apply the guest's TAUNT to the authoritative bullet field —
+    // drag bullets toward the guest's ship (NET.partner) so the tank can soak
+    // fire off the host. Reflected to the guest on the next snapshot.
+    if (NET.isHost() && NET.guestTauntT > 0) {
+      NET.guestTauntT--;
+      const gx = NET.partner.x, gy = NET.partner.y, R = DEF.TAUNT_R;
+      for (const b of state.bullets) {
+        const dx = gx - b.x, dy = gy - b.y, d = Math.hypot(dx, dy) || 1;
+        if (d < R) { const pull = DEF.TAUNT_PULL * (1 - d / R); b.vx += (dx / d) * pull; b.vy += (dy / d) * pull; }
+      }
+    }
 
     // Co-op DEFENDER role: tank armour upkeep (gameplay otherwise = single-player).
     if (state.mode === 'defender') updateDefender();
@@ -3252,6 +3363,95 @@
     stageTick();
   }
 
+  // Co-op GUEST (DEFENSE) update. The world (enemies/bullets/boss/meteors/items)
+  // is owned by the host and arrives via NET.applySnap(); the guest does NOT sim
+  // it. Here we only: move our own tank, dead-reckon hazards smoothly between
+  // snapshots, and run LOCAL hit/graze detection against that shared field.
+  function updateGuest(dt) {
+    state.t++; state.themeT++;
+    if (state.shake > 0) state.shake--;
+    if (state.graze.boost > 0) state.graze.boost--;
+
+    // own ship to hand target
+    const p = state.player, sk = currentSkin();
+    const k = 0.25 * (sk.speed || 1);
+    state.smoothX += (p.tx - state.smoothX) * k;
+    state.smoothY += (p.ty - state.smoothY) * k;
+    p.x = clamp(state.smoothX, 12, VW - 12);
+    p.y = clamp(state.smoothY, 12, VH - 12);
+    p.hitR = 4 * (sk.hitMul || 1);
+    if (p.invuln > 0) p.invuln--;
+    if (p.bombFx > 0) p.bombFx--;
+    if (p.dashCd > 0) p.dashCd--;
+    for (let i = p.dashTrail.length - 1; i >= 0; i--) if (--p.dashTrail[i].life <= 0) p.dashTrail.splice(i, 1);
+
+    // tank upkeep: repair stations (guest-local) + taunt timers/aura
+    updateDefender();
+    if (state.t % 6 === 0) updateHud();
+
+    // Dead-reckon the shared hazards locally so they move at 60fps between the
+    // ~20Hz snapshots (each snapshot re-snaps them to the authoritative position).
+    for (const b of state.bullets) { b.x += b.vx; b.y += b.vy; }
+    for (const m of state.meteors) { m.x += m.vx; m.y += m.vy; m.rot += m.rotV; if (m.warning > 0) m.warning--; }
+
+    // hit + graze vs bullets
+    const GRAZE_R = 22;
+    for (let i = state.bullets.length - 1; i >= 0; i--) {
+      const b = state.bullets[i];
+      const d2p = dist2(b.x, b.y, p.x, p.y);
+      if (!b.grazed && d2p < (GRAZE_R + b.r) ** 2 && d2p > (p.hitR + b.r + 2) ** 2) {
+        b.grazed = true;
+        state.graze.value = Math.min(state.graze.max, state.graze.value + 4);
+        SFX.graze();
+        if (state.graze.value >= state.graze.max) {
+          state.graze.value = 0; state.graze.boost = 300;
+          pushPopup(p.x, p.y - 36, 'MAX POWER', '#ffd066', 14); SFX.grazeMax();
+        }
+      }
+      if (p.invuln <= 0 && d2p < (b.r + p.hitR) ** 2) {
+        state.bullets.splice(i, 1);
+        armorHit(DEF.ARMOR_HIT);
+      }
+    }
+    // meteors — tank soaks them as armour damage (never instant death)
+    for (let i = state.meteors.length - 1; i >= 0; i--) {
+      const m = state.meteors[i];
+      if (p.invuln > 0) continue;
+      if (dist2(m.x, m.y, p.x, p.y) < (m.r + p.hitR + 2) ** 2) {
+        for (let kk = 0; kk < 24; kk++) pushParticle(m.x, m.y, '#88e0ff');
+        state.meteors.splice(i, 1);
+        state.shake = Math.max(state.shake, 20);
+        SFX.bomb();
+        armorHit(DEF.ARMOR_METEOR);
+      }
+    }
+    // boss laser beam
+    if (state.boss && state.boss.laser.fire > 0 && p.invuln <= 0) {
+      const b = state.boss, L = b.laser, ca = Math.cos(L.angle), sa = Math.sin(L.angle);
+      const dx = p.x - b.x, dy = p.y - b.y;
+      const along = dx * ca + dy * sa, across = -dx * sa + dy * ca;
+      if (along > 8 && Math.abs(across) < 7 + p.hitR) armorHit(DEF.ARMOR_HIT);
+    }
+    // boss body contact (e.g. while it's parked at centre)
+    if (state.boss && p.invuln <= 0 && dist2(p.x, p.y, state.boss.x, state.boss.y) < (state.boss.radius + p.hitR) ** 2)
+      armorHit(DEF.ARMOR_HIT);
+
+    // particles + popups (locally generated by hits / taunt / stations)
+    for (let i = state.particles.length - 1; i >= 0; i--) {
+      const pa = state.particles[i];
+      pa.x += pa.vx; pa.y += pa.vy; pa.vx *= 0.94; pa.vy *= 0.94;
+      if (--pa.life <= 0) state.particles.splice(i, 1);
+    }
+    for (let i = state.popups.length - 1; i >= 0; i--) {
+      const pu = state.popups[i];
+      pu.x += pu.vx; pu.y += pu.vy; pu.vy *= 0.97;
+      if (--pu.life <= 0) state.popups.splice(i, 1);
+    }
+    if (state.gestureFx.life > 0) state.gestureFx.life--;
+    if (state.stageBanner > 0) state.stageBanner--;
+    if (state.bulletTime > 0) state.bulletTime--;   // no effect on shared field; just clears the HUD
+  }
+
   function playerHit() {
     if (state.player.invuln > 0) return;
     state.lives--;
@@ -3333,6 +3533,7 @@
     state.shake = Math.max(state.shake, 6);
     showGesture('FIST', 'TAUNT', '#ffb14e');
     SFX.guard();
+    if (NET.isGuest()) NET.send({ type: 'taunt' });   // host pulls its bullets toward us
   }
 
   // Guest takes a hit: spend armour. Once armour is gone the tank is exposed and
@@ -3341,7 +3542,20 @@
   function armorHit(cost) {
     const p = state.player;
     if (p.invuln > 0) return;
-    if (state.armor.hp <= 0) { playerHit(); return; }   // exposed -> real hit
+    if (state.armor.hp <= 0) {
+      // Exposed (no armour) -> a real hit. In co-op the guest has no local life
+      // pool: it tells the host, which spends a shared life. Solo: normal hit.
+      if (NET.isGuest()) {
+        NET.send({ type: 'damage' });
+        p.invuln = 120;
+        state.shake = Math.max(state.shake, 20);
+        for (let i = 0; i < 40; i++) pushParticle(p.x, p.y, '#ff6666');
+        SFX.playerHit();
+      } else {
+        playerHit();
+      }
+      return;
+    }
     state.armor.hp -= cost;
     p.invuln = DEF.ARMOR_IFRAMES;
     state.shake = Math.max(state.shake, 8);
@@ -3438,10 +3652,19 @@
     if (state.mode !== 'defender' || state.healHostUsed || !state.running) return;
     if (!state.host) return;
     state.healHostUsed = true;
-    pushPopup(state.player.x, state.player.y - 28, 'HOST +' + DEF.HEAL_FLAT, '#7fffd4', 14);
+    pushPopup(state.player.x, state.player.y - 28, 'HEAL HOST', '#7fffd4', 14);
     SFX.grazeMax();
     healHostUpdateBtn();
-    // 2P hook: net && net.send({ type: 'heal', amt: DEF.HEAL_FLAT });
+    if (NET.isGuest()) NET.send({ type: 'heal' });   // host gains +1 life
+  }
+
+  // Host received the guest's one-time heal: +1 shared life.
+  function hostReceiveHeal() {
+    state.lives = Math.min(state.lives + 1, 7);
+    state.player.invuln = Math.max(state.player.invuln, 30);
+    pushPopup(state.player.x, state.player.y - 30, 'HEAL +1 (P2)', '#7fffd4', 14);
+    SFX.grazeMax();
+    updateHud();
   }
 
   function healHostUpdateBtn() {
@@ -3486,6 +3709,7 @@
   }
 
   async function gameOver() {
+    if (NET.isHost()) NET.send({ type: 'gameover' });   // co-op: end the guest's run too
     state.running = false;
     healHostUpdateBtn();
     bgm.stop();
@@ -4839,6 +5063,7 @@
 
   // ---------- Start / restart ----------
   async function goToReady() {
+    NET.active = false;   // the solo START flow always leaves co-op (lobby re-enables it)
     audio.init();
     audio.resume();
     bgm.load();
@@ -4942,6 +5167,7 @@
     SFX.stageStart();
     bgm.play();
     overlay.querySelector('h1').textContent = 'HAND DANMAKU';
+    if (!NET.isGuest()) state.host = null;   // co-op guest keeps its host (set by the lobby); solo clears it
     if (state.mode === 'defender') startDefenderRound();
     updateHud();
   }
@@ -4972,8 +5198,15 @@
   });
   document.getElementById('coopStartBtn').addEventListener('click', () => {
     if (!(NET.connected && NET.peerHere)) return;
+    if (NET.partnerRole === NET.gameRole) {
+      NET.setStatus('役割が同じです。OFFENSE / DEFENSE に分けてください');
+      return;
+    }
+    NET.active = true;                                // co-op run (host=offense sims, guest=defense renders)
     NET.send({ type: 'start' });
     state.mode = NET.gameRole === 'defense' ? 'defender' : 'offense';
+    state.host = NET.isGuest() ? { hp: 0 } : null;   // guest: truthy host -> heal button shows
+    NET._sendT = -999;                                // force an immediate first snapshot/pos
     start();
   });
   backBtn.addEventListener('click', () => { showHomeView(); });
