@@ -98,15 +98,19 @@ public static class BuildScript
         EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(ScenePath, true) };
     }
 
-    // Zip the build's CONTENTS (index.html at zip root) — the layout unityroom wants.
+    // unityroom supplies its OWN index.html and asks you to upload the "Build"
+    // folder (the one with *.loader.js / *.data.gz / *.wasm.gz). Zip that
+    // subfolder with the "Build" directory at the zip root.
     static string ZipForUnityroom(string buildDir)
     {
-        string full = Path.GetFullPath(buildDir);
-        string parent = Path.GetDirectoryName(full);
+        string full = Path.GetFullPath(buildDir);          // .../Builds/Web
+        string buildSub = Path.Combine(full, "Build");      // .../Builds/Web/Build
+        string parent = Path.GetDirectoryName(full);        // .../Builds
         string zipPath = Path.Combine(parent, "HandDanmaku_unityroom.zip");
         if (File.Exists(zipPath)) File.Delete(zipPath);
-        ZipFile.CreateFromDirectory(full, zipPath,
-            System.IO.Compression.CompressionLevel.Optimal, includeBaseDirectory: false);
+        string src = Directory.Exists(buildSub) ? buildSub : full;
+        ZipFile.CreateFromDirectory(src, zipPath,
+            System.IO.Compression.CompressionLevel.Optimal, includeBaseDirectory: true);
         return zipPath;
     }
 
