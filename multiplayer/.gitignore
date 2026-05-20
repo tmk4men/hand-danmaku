@@ -1,0 +1,6 @@
+# Cloudflare API token — NEVER commit. Created locally for deploy.sh.
+.cf-token
+# wrangler local state / build output
+.wrangler/
+node_modules/
+dist/

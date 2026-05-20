@@ -1696,7 +1696,7 @@
   }
   // ---------- CO-OP networking (Cloudflare Durable Objects relay) ----------
   const RELAY_URL = new URLSearchParams(location.search).get('relay')
-    || 'wss://danmaku-relay.CHANGE-ME.workers.dev';
+    || 'wss://danmaku-relay.tmk4men.workers.dev';
   const NET = {
     ws: null, connRole: null, active: false, connected: false, peerHere: false,
     gameRole: 'offense', partnerRole: null,
