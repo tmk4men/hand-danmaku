@@ -872,12 +872,6 @@
   #shopList .wpn-ctrl { display: flex; flex-direction: column; gap: 4px; align-items: stretch; }
   #shopList .slot-row { display: flex; gap: 4px; justify-content: flex-end; }
   #shopList .wpn-ctrl .cost { min-width: 40px; text-align: right; }
-  #shopList .lvup-btn {
-    padding: 5px 8px; font-size: 10px; font-weight: 700; font-family: inherit;
-    background: linear-gradient(180deg, #c89a3a, #7a5a20); border: 1px solid #ffd066;
-    color: #06081a; cursor: pointer; white-space: nowrap;
-  }
-  #shopList .lvup-btn:disabled { background: #2a2f55; border-color: #2a2f55; color: #555a82; cursor: default; }
   #shopList .slot-btn {
     width: 30px; padding: 7px 0; margin: 0; font-size: 12px; font-weight: 700;
     background: #10163a; border: 1px solid #2a2f55; color: #8890b8;
@@ -1282,6 +1276,7 @@
     t: 0,             // frames
     score: 0,
     lives: 5,
+    maxLives: 5,      // starting lives for this run (meteor takes half of this)
     bombs: 2,
     stageNo: 1,
     stageTimer: 0,
@@ -3638,16 +3633,20 @@
           SFX.bomb();
           armorHit(DEF.ARMOR_METEOR);
         } else {
-          // Instant death
-          for (let k = 0; k < 80; k++) pushParticle(p.x, p.y, '#ff7c98');
+          // Heavy hit: a meteor takes HALF of max lives (no longer an instant kill).
+          for (let k = 0; k < 60; k++) pushParticle(p.x, p.y, '#ff7c98');
           for (let k = 0; k < 40; k++) pushParticle(m.x, m.y, '#c8a878');
           state.meteors.splice(i, 1);
-          state.lives = 0;
-          state.shake = 40;
-          pushPopup(p.x, p.y - 22, 'CRUSHED', '#ff5050', 16);
+          const dmg = Math.max(1, Math.ceil((state.maxLives || state.lives) / 2));
+          state.lives -= dmg;
+          state.hitsTaken++;
+          state.player.invuln = 120;
+          state.shake = 36;
+          state.combo.count = 0; state.combo.timer = 0;
+          pushPopup(p.x, p.y - 22, `METEOR -${dmg}`, '#ff5050', 15);
           SFX.bossDie();
-          gameOver();
-          return;
+          updateHud();
+          if (state.lives <= 0) { gameOver(); return; }
         }
       }
     }
@@ -5629,6 +5628,7 @@
     state.t = 0;
     state.score = 0;
     state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + (currentSkin().lifeBonus || 0);
+    state.maxLives = state.lives;   // meteor damage = half of this
     state.bombs = 2 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
     state.guard.remaining = 600;
     state.guard.active = false;
