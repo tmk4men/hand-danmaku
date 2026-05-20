@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
 <title>HAND DANMAKU — 手で操る弾幕シューティング</title>
 <meta name="description" content="手のジェスチャだけで操る弾幕シューティング。人差し指で移動、ピンチでボム、ピースで追尾射撃、グーでガード、指振りでダッシュ。ブラウザだけで動作。" />
 
@@ -34,8 +34,19 @@
   }
   #app {
     position: relative;
-    width: 100vw; height: 100vh;
+    width: 100vw; height: 100vh; height: 100dvh;
     display: flex; align-items: center; justify-content: center;
+  }
+  /* Portrait phones: nudge the player to rotate (non-blocking) */
+  #rotateHint {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 30; display: none;
+    text-align: center; padding: 7px 12px;
+    font-size: 12px; font-weight: 700; color: #06081a;
+    background: linear-gradient(180deg, #ffd866, #c89a3a);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+  }
+  @media (orientation: portrait) and (pointer: coarse) {
+    #rotateHint { display: block; }
   }
   #stage {
     position: relative;
@@ -424,6 +435,70 @@
   .result-tags .nohit { color: #7fffd4; margin: 0 6px; font-weight: 700; }
   .result-tags .nobomb { color: #ffd066; margin: 0 6px; font-weight: 700; }
 
+  /* ===== Premium home / title screen ===== */
+  #overlay {
+    background:
+      radial-gradient(ellipse at 50% 16%, #2a3690 0%, #101a55 34%, #080c2a 64%, #02030a 100%);
+  }
+  /* twinkling, slowly-drifting parallax stars */
+  #overlay::before {
+    animation: starTwinkle 5s ease-in-out infinite, starDrift 70s linear infinite;
+  }
+  @keyframes starTwinkle { 0%,100% { opacity: 0.40; } 50% { opacity: 0.85; } }
+  @keyframes starDrift {
+    from { background-position: 10px 30px, 80px 120px, 50px 70px; }
+    to   { background-position: 10px 210px, 80px 360px, 50px 250px; }
+  }
+  /* CRT scanlines + vignette over the backdrop */
+  #overlay::after {
+    content: ''; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+    background:
+      repeating-linear-gradient(0deg, rgba(0,0,0,0.16) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at 50% 50%, transparent 52%, rgba(2,3,10,0.6) 100%);
+    mix-blend-mode: multiply;
+  }
+  #overlay .panel {
+    z-index: 2;
+    width: min(94vw, 680px); max-width: 680px;
+    background: linear-gradient(165deg, #18204e 0%, #0c1133 68%, #0a0d28 100%);
+    border-color: #aac0ff;
+    box-shadow:
+      0 0 0 4px #06081a, inset 0 0 0 2px #2a3570,
+      inset 0 26px 64px rgba(120,160,255,0.10), 0 0 48px rgba(136,168,255,0.35);
+    animation: panelGlow 4.5s ease-in-out infinite;
+  }
+  @keyframes panelGlow {
+    0%,100% { box-shadow: 0 0 0 4px #06081a, inset 0 0 0 2px #2a3570, inset 0 26px 64px rgba(120,160,255,0.10), 0 0 36px rgba(136,168,255,0.26); }
+    50%     { box-shadow: 0 0 0 4px #06081a, inset 0 0 0 2px #3a4a98, inset 0 26px 64px rgba(120,160,255,0.18), 0 0 64px rgba(136,168,255,0.52); }
+  }
+  #overlay h1 {
+    font-size: clamp(32px, 7.5vw, 50px);
+    background: linear-gradient(180deg, #ffffff 0%, #b6e6ff 46%, #88a8ff 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    filter: drop-shadow(2px 3px 0 #06081a) drop-shadow(0 0 18px rgba(136,224,255,0.6));
+    animation: titleFloat 3.6s ease-in-out infinite;
+  }
+  @keyframes titleFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
+  #overlay .kicker {
+    color: #9fe8ff; text-shadow: 0 0 10px rgba(136,224,255,0.7);
+    animation: kickerPulse 3s ease-in-out infinite;
+  }
+  @keyframes kickerPulse { 0%,100% { opacity: 0.65; } 50% { opacity: 1; } }
+  /* control-guide entries as little glowing cards */
+  #overlayMsg.howto .row {
+    background: rgba(12,18,52,0.55);
+    border: 1px solid rgba(136,168,255,0.18);
+    border-radius: 5px;
+    padding: 7px 9px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+  }
+  #coinBar, #dailyBar, #loadoutSummary {
+    background: rgba(8,12,36,0.5);
+    border: 1px solid rgba(136,168,255,0.14);
+    border-radius: 6px;
+  }
+
   /* Mobile / narrow viewports */
   @media (max-width: 600px) {
     #overlay { align-items: flex-start; padding: 12px; }
@@ -730,6 +805,7 @@
 </style>
 </head>
 <body>
+<div id="rotateHint">📱 端末を <b>横向き</b> にするとプレイしやすいよ</div>
 <div id="app">
   <div id="stage">
     <canvas id="game"></canvas>
@@ -1681,6 +1757,9 @@
   let camera = null;
   let frameTick = 0;
 
+  const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+    || (matchMedia('(pointer: coarse)').matches && Math.min(innerWidth, innerHeight) < 900);
+
   async function initHands() {
     hands = new Hands({
       locateFile: (file) =>
@@ -1688,7 +1767,7 @@
     });
     hands.setOptions({
       maxNumHands: 1,
-      modelComplexity: 1,       // 1 = Heavy (full) model
+      modelComplexity: IS_MOBILE ? 0 : 1,   // 0 = Lite (mobile perf), 1 = Heavy
       minDetectionConfidence: 0.45,
       minTrackingConfidence: 0.4,
       selfieMode: true,
@@ -1884,13 +1963,13 @@
       camera = new Camera(video, {
         onFrame: async () => {
           if (hands) await hands.send({ image: video });
-          // Run face detection on every other frame to halve its cost
-          if (faceDet && (frameTick++ & 1) === 0) {
+          // Face detection is for the privacy mosaic; skip it on mobile for perf.
+          if (faceDet && !IS_MOBILE && (frameTick++ & 1) === 0) {
             await faceDet.send({ image: video });
           }
         },
-        width: 640,
-        height: 480,
+        width: IS_MOBILE ? 480 : 640,
+        height: IS_MOBILE ? 360 : 480,
       });
       await camera.start();
     } catch (err) {
@@ -1927,6 +2006,7 @@
       phase: 0,
       pattern: 0,
       laser: { charge: 0, fire: 0, angle: 0, cardShown: false },
+      charge: { phase: 'idle', t: 0, cd: rand(540, 900) },
     };
     state.enemies.push({ ...state.boss, isBoss: true, ref: state.boss });
     state.bossFight = true;
@@ -2302,6 +2382,40 @@
   }
 
   // ---------- Enemy AI / firing ----------
+  // Boss CHARGE: telegraph, rush to screen centre, burst, retreat. Dodgeable.
+  function updateBossCharge(b, e) {
+    const ch = b.charge, p = state.player;
+    if (ch.phase === 'warn') {
+      ch.t--;
+      if (ch.t <= 0) { ch.phase = 'dash'; SFX.dash(); state.shake = Math.max(state.shake, 6); }
+    } else if (ch.phase === 'dash') {
+      b.x += (VW / 2 - b.x) * 0.18;
+      b.y += (VH / 2 - b.y) * 0.18;
+      if (Math.hypot(VW / 2 - b.x, VH / 2 - b.y) < 8) { ch.phase = 'burst'; ch.t = 26; }
+    } else if (ch.phase === 'burst') {
+      if (ch.t === 26) {
+        const n = 28;
+        for (let i = 0; i < n; i++) fireBullet(b.x, b.y, (i / n) * TAU + b.t * 0.02, 2.6, '#ff8a3a', 5);
+        state.shake = Math.max(state.shake, 18);
+        SFX.bomb();
+      }
+      ch.t--;
+      if (ch.t <= 0) ch.phase = 'return';
+    } else if (ch.phase === 'return') {
+      b.tx = VW * 0.5; b.ty = 120;
+      b.x += (b.tx - b.x) * 0.08;
+      b.y += (b.ty - b.y) * 0.08;
+      if (Math.abs(b.y - b.ty) < 6) { ch.phase = 'idle'; ch.cd = rand(540, 900); }
+    }
+    e.x = b.x; e.y = b.y;
+    // Contact damage during the rush (telegraphed, so dodgeable)
+    if ((ch.phase === 'dash' || ch.phase === 'burst')
+        && p.invuln <= 0 && !state.guard.active
+        && dist2(p.x, p.y, b.x, b.y) < (b.radius + p.hitR) ** 2) {
+      if (state.mode === 'defender') armorHit(DEF.ARMOR_HIT); else playerHit();
+    }
+  }
+
   function updateEnemy(e) {
     e.t++;
     if (e.isBoss) {
@@ -2314,91 +2428,120 @@
       if (state.stageNo >= 3 && b.t > 120 && b.t % 90 === 0 && gameRand() < 0.5) {
         b.tx = VW * (0.22 + gameRand() * 0.56);
       }
-      e.x = b.x; e.y = b.y;
-      e.hp = Math.min(e.hp, b.hp = e.hp); // sync
 
-      // Boss patterns rotate every 360 frames.
-      // Stage 1 boss has 3 patterns (no laser); stage 2+ adds the laser sweep.
-      const numPatterns = state.stageNo >= 2 ? 4 : 3;
+      // Occasional CHARGE to screen centre (stage 2+).
+      const ch = b.charge;
+      if (ch.phase === 'idle') {
+        if (ch.cd > 0) ch.cd--;
+        if (ch.cd <= 0 && state.stageNo >= 2 && b.t > 200 && b.y > 60 && b.y < 220) {
+          ch.phase = 'warn'; ch.t = 50;
+          b.laser.charge = 0; b.laser.fire = 0;   // cancel any beam
+          state.shake = Math.max(state.shake, 8);
+          pushPopup(b.x, b.y - 34, '!! CHARGE !!', '#ff5050', 14);
+          SFX.warning();
+        }
+      }
+      if (ch.phase !== 'idle') { e.x = b.x; e.y = b.y; updateBossCharge(b, e); return; }
+
+      e.x = b.x; e.y = b.y;
+      b.hp = e.hp;  // keep state.boss.hp in sync (e is authoritative for damage)
+
+      // Patterns: more of them, and denser fire, as the stage rises.
+      const lvl = state.stageNo;
+      const numPatterns = lvl >= 6 ? 6 : lvl >= 4 ? 5 : lvl >= 2 ? 4 : 3;
       const pat = Math.floor(b.t / 360) % numPatterns;
       const phase = b.t % 360;
+      const spd = 1 + Math.min(lvl - 1, 8) * 0.04;  // mild bullet-speed ramp
 
       if (pat === 0) {
-        // Wide aimed fan
-        if (phase % 32 === 0) {
+        // Wide aimed fan — more rays at higher stages
+        if (phase % Math.max(18, 32 - lvl) === 0) {
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
-          for (let i = -2; i <= 2; i++) {
-            fireBullet(b.x, b.y + 20, aim + i * 0.18, 2.4, '#ff77c8', 6);
+          const rays = 2 + Math.min((lvl / 2) | 0, 4);
+          for (let i = -rays; i <= rays; i++) {
+            fireBullet(b.x, b.y + 20, aim + i * 0.16, 2.4 * spd, '#ff77c8', 6);
           }
         }
       } else if (pat === 1) {
-        // Spiral
-        if (phase % 8 === 0) {
+        // Spiral — more arms + faster at higher stages
+        if (phase % Math.max(5, 8 - ((lvl / 2) | 0)) === 0) {
           const base = b.t * 0.13;
-          for (let k = 0; k < 3; k++) {
-            fireBullet(b.x, b.y + 20, base + k * TAU / 3, 2.0, '#9bf2ff', 5);
+          const arms = 3 + Math.min((lvl / 2) | 0, 5);
+          for (let k = 0; k < arms; k++) {
+            fireBullet(b.x, b.y + 20, base + k * TAU / arms, 2.0 * spd, '#9bf2ff', 5);
           }
         }
       } else if (pat === 2) {
-        // Ring bursts
+        // Ring bursts — denser rings + faster aimed bolts
         if (phase % 90 === 0) {
-          const n = 18;
+          const n = 18 + Math.min(lvl, 10) * 2;
           for (let i = 0; i < n; i++) {
-            fireBullet(b.x, b.y + 10, (i / n) * TAU + b.t * 0.02, 1.9, '#fff27a', 5);
+            fireBullet(b.x, b.y + 10, (i / n) * TAU + b.t * 0.02, 1.9 * spd, '#fff27a', 5);
           }
         }
-        // Plus aimed slow bullets
-        if (phase % 45 === 22) {
+        if (phase % Math.max(28, 45 - lvl) === 22) {
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
-          fireBullet(b.x, b.y + 10, aim, 3.0, '#ff5050', 7);
+          fireBullet(b.x, b.y + 10, aim, 3.0 * spd, '#ff5050', 7);
         }
-      } else {
+      } else if (pat === 3) {
         // LASER BEAM — charge, lock, sweep across player
-        // Fire two laser cycles per 360-frame slot (each ~180f)
         const sub = phase % 180;
         const L = b.laser;
         if (sub === 0) {
-          // Begin charging, aim at player
-          L.charge = 36;
-          L.fire = 0;
+          L.charge = 36; L.fire = 0;
           L.angle = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           SFX.warning();
-          if (sub === 0 && phase === 0 && !L.cardShown) {
-            pushPopup(b.x, b.y - 32, '!! LASER ARRAY !!', '#ff77c8', 14);
-            L.cardShown = true;
-          } else if (sub === 0 && phase !== 0) {
-            pushPopup(b.x, b.y - 32, 'LASER LOCK ON', '#ff77c8', 11);
-          }
+          if (phase === 0 && !L.cardShown) { pushPopup(b.x, b.y - 32, '!! LASER ARRAY !!', '#ff77c8', 14); L.cardShown = true; }
+          else if (phase !== 0) pushPopup(b.x, b.y - 32, 'LASER LOCK ON', '#ff77c8', 11);
         }
         if (L.charge > 0) {
           L.charge--;
-          // Track player gently while charging
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           L.angle = L.angle * 0.85 + aim * 0.15;
-          if (L.charge === 0) {
-            L.fire = 80;
-            state.shake = Math.max(state.shake, 14);
-            SFX.bomb();
-          }
+          if (L.charge === 0) { L.fire = 80; state.shake = Math.max(state.shake, 14); SFX.bomb(); }
         } else if (L.fire > 0) {
           L.fire--;
-          // Gentle sweep toward player so it can be out-run
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           let d = aim - L.angle;
           while (d > Math.PI) d -= TAU;
           while (d < -Math.PI) d += TAU;
           L.angle += clamp(d, -0.008, 0.008);
-          // Player collision: project player onto beam, check perpendicular distance
           const p = state.player;
           const ca = Math.cos(L.angle), sa = Math.sin(L.angle);
           const dx = p.x - b.x, dy = p.y - b.y;
           const along = dx * ca + dy * sa;
           const across = -dx * sa + dy * ca;
-          const halfW = 7;
-          if (along > 8 && Math.abs(across) < halfW + p.hitR
-              && p.invuln <= 0 && !state.guard.active) {
-            playerHit();
+          if (along > 8 && Math.abs(across) < 7 + p.hitR && p.invuln <= 0 && !state.guard.active) {
+            if (state.mode === 'defender') armorHit(DEF.ARMOR_HIT); else playerHit();
           }
+          // High stages spit side bullets along the beam
+          if (lvl >= 5 && L.fire % 20 === 0) {
+            fireBullet(b.x, b.y + 10, L.angle + 0.5, 2.2 * spd, '#ff77c8', 5);
+            fireBullet(b.x, b.y + 10, L.angle - 0.5, 2.2 * spd, '#ff77c8', 5);
+          }
+        }
+      } else if (pat === 4) {
+        // CROSS SPIRAL — two counter-rotating arms (stage 4+)
+        if (phase % 7 === 0) {
+          const base = b.t * 0.11, arms = 4;
+          for (let k = 0; k < arms; k++) {
+            fireBullet(b.x, b.y + 18, base + k * TAU / arms, 2.0 * spd, '#c89bff', 5);
+            fireBullet(b.x, b.y + 18, -base + k * TAU / arms, 2.0 * spd, '#88e0ff', 5);
+          }
+        }
+      } else {
+        // PETAL STORM — layered expanding rings + aimed volley (stage 6+)
+        if (phase % 60 === 0) {
+          const n = 24, off = b.t * 0.03;
+          for (let i = 0; i < n; i++) {
+            const a = (i / n) * TAU + off;
+            fireBullet(b.x, b.y, a, 1.7 * spd, '#ffd066', 5);
+            fireBullet(b.x, b.y, a, 2.6 * spd, '#ff8a3a', 4);
+          }
+        }
+        if (phase % 24 === 12) {
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          for (let i = -1; i <= 1; i++) fireBullet(b.x, b.y + 10, aim + i * 0.22, 3.0 * spd, '#ff5050', 6);
         }
       }
       return;
