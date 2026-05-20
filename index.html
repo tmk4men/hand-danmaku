@@ -919,6 +919,27 @@
     outline: none;
   }
   #stageSelect .ss-card:active { transform: translateY(0); }
+  /* hand-hover pick: ship parked on a card fills it from the bottom over 3s */
+  #stageSelect .ss-card { position: relative; overflow: hidden; }
+  #stageSelect .ss-card > div { position: relative; z-index: 1; }
+  #stageSelect .ss-card::before {
+    content: ''; position: absolute; left: 0; right: 0; bottom: 0; z-index: 0;
+    height: calc(var(--fill, 0) * 1%); pointer-events: none;
+    background: linear-gradient(0deg,
+      color-mix(in srgb, var(--accent) 60%, transparent),
+      color-mix(in srgb, var(--accent) 14%, transparent));
+  }
+  #stageSelect .ss-card.ss-hot {
+    transform: translateY(-3px);
+    box-shadow: 0 0 0 2px #06081a, 0 0 30px color-mix(in srgb, var(--accent) 85%, transparent);
+  }
+  #ssCursor {
+    position: fixed; z-index: 16; width: 30px; height: 30px;
+    margin: -15px 0 0 -15px; border-radius: 50%;
+    border: 2px solid #ffd066; box-shadow: 0 0 12px #ffd066;
+    pointer-events: none; display: none;
+  }
+  #ssCursor::after { content: ''; position: absolute; inset: 9px; border-radius: 50%; background: #ffd066; }
   #stageSelect .ss-num { font-size: 8px; color: #8890b8; letter-spacing: 0.06em; }
   #stageSelect .ss-theme { font-size: clamp(11px, 2.6vmin, 16px); color: var(--accent); letter-spacing: 0.08em; }
   #stageSelect .ss-perk { font-size: clamp(9px, 1.9vmin, 12px); }
@@ -1016,8 +1037,9 @@
           <button type="button" class="ss-card" data-i="1"></button>
           <button type="button" class="ss-card" data-i="2"></button>
         </div>
-        <div class="ss-hint">タップ / クリック、またはキー [1] [2] [3]</div>
+        <div class="ss-hint">機体を 3秒 重ねて選択 / タップ・クリック・キー [1] [2] [3]</div>
       </div>
+      <div id="ssCursor"></div>
     </div>
 
     <div id="overlay">
@@ -1284,6 +1306,7 @@
     boss: null,
     selecting: false,     // campaign: stage-select screen open (sim paused)
     stageChoices: null,   // current 3 next-stage options
+    ssHover: -1, ssDwell: 0, ssCx: VW * 0.5, ssCy: VH * 0.7,  // hand-hover stage pick
     won: false,           // campaign: cleared the final stage
     player: {
       x: VW * 0.5, y: VH * 0.78,
@@ -1300,6 +1323,7 @@
     },
     bullets: [],         // enemy bullets
     shots: [],           // player shots
+    wingmen: [],         // friendly NPC escorts (友軍, solo-only)
     enemies: [],
     items: [],           // pickups
     meteors: [],         // falling crushing obstacles
@@ -1335,6 +1359,7 @@
     dragonUnlocked: false, // crystal pickup required before charging
     dragonCharge: 0,       // 0..DRAGON_MAX frames of cumulative thumbs-up
     dragonFiring: 0,       // frames remaining of beam
+    dragonType: 'beam',    // which dragon ultimate is firing ('beam' | 'nova')
     daily: false,
     dailyKey: '',
     hitsTaken: 0,
@@ -1591,7 +1616,14 @@
     weapons:    loadJSON('hd_weapons', ['std', 'homing']),  // owned weapon ids
     weaponMain: localStorage.getItem('hd_weapon_main') || localStorage.getItem('hd_weapon') || 'std',
     weaponSub:  localStorage.getItem('hd_weapon_sub') || 'homing',
+    dragons:    loadJSON('hd_dragons', ['beam']),   // owned dragon ultimate ids
+    dragon:     localStorage.getItem('hd_dragon') || 'beam',   // equipped dragon
+    allies:     loadJSON('hd_allies', []),          // owned wingman (友軍) ids
+    ally:       localStorage.getItem('hd_ally') || 'none',     // equipped wingman ('none' = off)
   };
+  if (!Array.isArray(shop.dragons)) shop.dragons = ['beam'];
+  if (!shop.dragons.includes('beam')) shop.dragons.unshift('beam');
+  if (!Array.isArray(shop.allies)) shop.allies = [];
   if (!Array.isArray(shop.ships)) shop.ships = ['vanguard'];
   if (!shop.ships.includes('vanguard')) shop.ships.unshift('vanguard');
   if (!Array.isArray(shop.weapons)) shop.weapons = ['std', 'homing'];
@@ -1648,6 +1680,10 @@
       localStorage.setItem('hd_weapons', JSON.stringify(shop.weapons));
       localStorage.setItem('hd_weapon_main', shop.weaponMain);
       localStorage.setItem('hd_weapon_sub', shop.weaponSub);
+      localStorage.setItem('hd_dragons', JSON.stringify(shop.dragons));
+      localStorage.setItem('hd_dragon', shop.dragon);
+      localStorage.setItem('hd_allies', JSON.stringify(shop.allies));
+      localStorage.setItem('hd_ally', shop.ally);
     } catch {}
   }
   function skinStatLine(sk) {
@@ -1675,6 +1711,7 @@
       { id: 'item',    label: (lang === 'ja') ? 'アイテム' : 'ITEM' },
       { id: 'machine', label: (lang === 'ja') ? '機体' : 'MACHINE' },
       { id: 'weapon',  label: (lang === 'ja') ? '武器' : 'WEAPON' },
+      { id: 'ally',    label: (lang === 'ja') ? '友軍' : 'ALLY' },
     ];
     for (const tb of TABS) {
       const b = document.createElement('button');
@@ -1748,6 +1785,24 @@
         onBuy: () => { shop.ships.push(sk.id); shop.ship = sk.id; },
         onEquip: () => { shop.ship = sk.id; },
       });
+    } else if (shop.tab === 'ally') {
+      const ja = lang === 'ja';
+      const note = document.createElement('div'); note.className = 'shop-note';
+      note.textContent = ja ? 'ソロプレイで随伴。控えめだが自動で援護射撃' : 'Solo-only escort. Modest, but auto-fires to help';
+      rows.appendChild(note);
+      // "OFF" row to fly solo again
+      addEquipRow({
+        owned: true, equipped: shop.ally === 'none', cost: 0,
+        name: ja ? 'なし' : 'NONE', desc: ja ? '友軍を連れて行かない' : 'No wingman',
+        iconColor: '#8890b8',
+        onBuy: () => { shop.ally = 'none'; }, onEquip: () => { shop.ally = 'none'; },
+      });
+      for (const al of ALLIES) addEquipRow({
+        owned: shop.allies.includes(al.id), equipped: shop.ally === al.id, cost: al.cost,
+        name: '🛩 ' + al.name, desc: ja ? al.descJa : al.desc, iconColor: al.color,
+        onBuy: () => { shop.allies.push(al.id); shop.ally = al.id; },
+        onEquip: () => { shop.ally = al.id; },
+      });
     } else {
       const ja = lang === 'ja';
       const hdr = (txt) => { const d = document.createElement('div'); d.className = 'shop-section'; d.textContent = txt; rows.appendChild(d); };
@@ -1770,6 +1825,14 @@
         onBuy: () => { shop.weapons.push(wp.id); shop.weaponSub = wp.id; },
         onEquip: () => { shop.weaponSub = wp.id; },
       });
+
+      hdr(ja ? 'ドラゴン / DRAGON' : 'DRAGON');
+      for (const dr of DRAGONS) addEquipRow({
+        owned: shop.dragons.includes(dr.id), equipped: shop.dragon === dr.id, cost: dr.cost,
+        name: '🐉 ' + dr.name, desc: ja ? dr.descJa : dr.desc, iconColor: dr.color,
+        onBuy: () => { shop.dragons.push(dr.id); shop.dragon = dr.id; },
+        onEquip: () => { shop.dragon = dr.id; },
+      });
     }
   }
   // ---------- CO-OP networking (Cloudflare Durable Objects relay) ----------
@@ -1779,7 +1842,7 @@
     ws: null, connRole: null, active: false, connected: false, peerHere: false,
     gameRole: 'offense', partnerRole: null,
     partner: { x: VW * 0.5, y: VH * 0.4, seen: false, lastT: 0 },
-    ping: 0, _pingAt: 0, _sendT: 0, partnerStarted: false,
+    ping: 0, _pingAt: 0, _sendT: 0, partnerStarted: false, starting: false,
     guestTauntT: 0, lastSnapT: 0, stalled: false, _prevBossPhase: 0,
     // Co-op authority: the OFFENSE player runs the authoritative world sim (host);
     // the DEFENSE player is a thin client that renders the host's snapshots.
@@ -1805,7 +1868,7 @@
       if (!room) { this.setStatus('合言葉を入力してね'); return; }
       try { if (this.ws) this.ws.close(); } catch (e) {}
       this.active = true; this.connected = false; this.peerHere = false;
-      this.connRole = null; this.partnerRole = null; this.partner.seen = false; this.partnerStarted = false;
+      this.connRole = null; this.partnerRole = null; this.partner.seen = false; this.partnerStarted = false; this.starting = false;
       if (RELAY_URL.indexOf('CHANGE-ME') >= 0) {
         this.setStatus('worker未設定: RELAY_URL を設定するか ?relay=wss://… を付けて');
         return;
@@ -1832,7 +1895,7 @@
         case 'ping': this.send({ type: 'pong', t: m.t }); break;
         case 'pong': this.ping = Math.round(performance.now() - m.t); this.setMeta(); break;
         case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t; break;
-        case 'start': this.partnerStarted = true; break;
+        case 'start': this.partnerStarted = true; if (!state.running) startCoop(); break; // 相手が開始 → こちらも自動開始
         // ---- shared-world co-op ----
         case 'snap':   if (this.isGuest()) this.applySnap(m); break;          // guest: adopt host's world
         case 'taunt':  if (this.isHost()) this.guestTauntT = DEF.TAUNT_DUR; break; // host: pull bullets to guest
@@ -2694,18 +2757,38 @@
         state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg, kind: 'std' });
       }
     } else if (wid === 'homing') {
+      // SEEKER: missile count AND tracking both grow with the power level.
+      const dmg = lv;                       // lv1=1 .. lv3=3 per missile
+      const turn = 0.08 + lv * 0.03;        // higher level = sharper tracking
       const mk = (ox, vx) => state.shots.push({
-        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 1,
-        kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
+        x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg,
+        kind: 'homing', maxSp: 5 + lv, turn, life: 0,
       });
       mk(0, 0);
-      if (lv >= 3) { mk(-7, -1.2); mk(7, 1.2); }   // max 3 missiles
+      if (lv >= 2) { mk(-7, -1.2); mk(7, 1.2); }   // lv1=1, lv2=3, lv3=5 missiles
+      if (lv >= 3) { mk(-12, -2.0); mk(12, 2.0); }
     } else if (wid === 'option') {
       const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
+      const dmg = lv;                       // angled shots also scale: lv1=1 .. lv3=3
       for (let i = 1; i <= n; i++) {
         const sp = 0.4 + i * 0.6;
-        state.shots.push({ x: p.x - 11, y: p.y - 6, vx: -sp, vy: -7.5, r: 3, dmg: 1, kind: 'std' });
-        state.shots.push({ x: p.x + 11, y: p.y - 6, vx:  sp, vy: -7.5, r: 3, dmg: 1, kind: 'std' });
+        state.shots.push({ x: p.x - 11, y: p.y - 6, vx: -sp, vy: -7.5, r: 3, dmg, kind: 'std' });
+        state.shots.push({ x: p.x + 11, y: p.y - 6, vx:  sp, vy: -7.5, r: 3, dmg, kind: 'std' });
+      }
+    } else if (wid === 'pierce') {
+      // LANCE: piercing bolts that punch THROUGH a column of enemies (anti-boss / lines).
+      const lanes = lv >= 3 ? [-9, 0, 9] : lv === 2 ? [-6, 6] : [0];
+      const dmg = 1 + lv;                   // lv1=2 .. lv3=4 per pierce-tick
+      for (const ox of lanes)
+        state.shots.push({ x: p.x + ox, y: p.y - 14, vy: -15, r: 3, dmg, kind: 'pierce', pierce: true });
+    } else if (wid === 'boomer') {
+      // BOOMERANG: arcs up, falls back through the field — pierces on the way out AND back.
+      const pairs = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
+      const dmg = lv;                       // lv1=1 .. lv3=3
+      for (let i = 0; i < pairs; i++) {
+        const sx = 1.5 + i * 1.2;
+        state.shots.push({ x: p.x, y: p.y - 10, vx: -sx, vy: -8.5, r: 4, dmg, kind: 'boomer', pierce: true });
+        state.shots.push({ x: p.x, y: p.y - 10, vx:  sx, vy: -8.5, r: 4, dmg, kind: 'boomer', pierce: true });
       }
     } else {
       // 'std' (TWIN). Guard active = only center bolt.
@@ -2717,6 +2800,84 @@
       for (const [ox, oy] of lanes) {
         state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
       }
+    }
+  }
+
+  // ---------- Wingmen (友軍): solo-only escort NPCs ----------
+  function spawnWingmen() {
+    state.wingmen.length = 0;
+    const ally = currentAlly();
+    if (!ally || NET.active) return;   // solo only — no escort in co-op
+    const p = state.player;
+    state.wingmen.push({
+      id: ally.id, x: p.x - 32, y: p.y + 20, side: -1,
+      fireCd: ally.cd || 0,
+      armor: ally.armorMax || 0, regenCd: ally.regen || 0, flash: 0,
+    });
+  }
+  function fireWingman(ally, w) {
+    if (ally.kind === 'homing') {
+      state.shots.push({ x: w.x, y: w.y - 8, vx: 0, vy: -3, r: 3, dmg: ally.dmg,
+        kind: 'homing', maxSp: 5, turn: 0.08, life: 0, ally: true });
+    } else if (ally.kind === 'twin') {
+      state.shots.push({ x: w.x - 3, y: w.y - 8, vy: -8, r: 2, dmg: ally.dmg, kind: 'std', ally: true });
+      state.shots.push({ x: w.x + 3, y: w.y - 8, vy: -8, r: 2, dmg: ally.dmg, kind: 'std', ally: true });
+    } else {
+      state.shots.push({ x: w.x, y: w.y - 8, vy: -8, r: 2, dmg: ally.dmg, kind: 'std', ally: true });
+    }
+  }
+  function updateWingmen() {
+    if (!state.wingmen.length) return;
+    const p = state.player;
+    for (const w of state.wingmen) {
+      const ally = ALLIES.find(a => a.id === w.id);
+      if (!ally) continue;
+      // trail beside/behind the player with a soft lag
+      const tx = clamp(p.x + (w.side || -1) * 32, 10, VW - 10);
+      const ty = clamp(p.y + 20, 10, VH - 10);
+      w.x += (tx - w.x) * 0.12;
+      w.y += (ty - w.y) * 0.12;
+      if (ally.kind === 'armor') {
+        //装甲特化: regenerate armor, then eat enemy bullets that drift close
+        if (w.armor < ally.armorMax && --w.regenCd <= 0) { w.armor++; w.regenCd = ally.regen; }
+        if (w.armor > 0) {
+          const r2 = ally.blockR * ally.blockR;
+          for (let i = state.bullets.length - 1; i >= 0 && w.armor > 0; i--) {
+            const b = state.bullets[i];
+            if (dist2(b.x, b.y, w.x, w.y) < r2) {
+              pushParticle(b.x, b.y, b.color);
+              state.bullets.splice(i, 1);
+              w.armor--; w.flash = 6;
+            }
+          }
+        }
+        if (w.flash > 0) w.flash--;
+      } else {
+        // weak auto-fire, only when there's something to shoot at
+        if (--w.fireCd <= 0) {
+          if (state.enemies.length > 0) { fireWingman(ally, w); w.fireCd = ally.cd; }
+          else w.fireCd = 6;   // idle: re-check soon
+        }
+      }
+    }
+  }
+  function drawWingmen() {
+    for (const w of state.wingmen) {
+      const ally = ALLIES.find(a => a.id === w.id);
+      // 装甲特化: shield bubble — bright when charged, faint while depleted, white flash on a block
+      if (ally && ally.kind === 'armor') {
+        const frac = w.armor / ally.armorMax;
+        const R = ally.blockR;
+        ctx.fillStyle = w.flash > 0 ? 'rgba(255,255,255,0.6)' : `rgba(127,255,212,${0.08 + 0.16 * frac})`;
+        ctx.beginPath(); ctx.arc(w.x, w.y, R, 0, TAU); ctx.fill();
+        const segs = 22;
+        for (let i = 0; i < Math.round(segs * frac); i++) {
+          const a = (i / segs) * TAU + state.t * 0.04;
+          ctx.fillStyle = '#7fffd4';
+          ctx.fillRect(w.x + Math.cos(a) * R - 1.5, w.y + Math.sin(a) * R - 1.5, 3, 3);
+        }
+      }
+      drawSprite(SHIP_SPRITE, (ally && ally.pal) || PARTNER_PAL, w.x, w.y, 2.0);
     }
   }
 
@@ -2964,6 +3125,50 @@
         '<div class="ss-key">[' + (idx + 1) + ']</div>';
     });
     el.classList.remove('hidden');
+    // start the hand cursor at the current hand position (or centre)
+    state.ssCx = state.player.tx || VW * 0.5;
+    state.ssCy = state.player.ty || VH * 0.7;
+    resetStageSelectHover();
+  }
+
+  // Hand-hover stage pick: park the ship on a card for 3s to choose it.
+  const SS_DWELL_MS = 3000;
+  function resetStageSelectHover() {
+    state.ssHover = -1; state.ssDwell = 0;
+    document.querySelectorAll('#stageSelect .ss-card').forEach(c => {
+      c.classList.remove('ss-hot'); c.style.setProperty('--fill', 0);
+    });
+    const cur = document.getElementById('ssCursor');
+    if (cur) cur.style.display = 'none';
+  }
+  function updateStageSelect(dt) {
+    if (!state.stageChoices) return;
+    // smooth a cursor toward the raw hand target (VW/VH game coords)
+    state.ssCx += (state.player.tx - state.ssCx) * 0.35;
+    state.ssCy += (state.player.ty - state.ssCy) * 0.35;
+    // map game coords -> viewport px (the canvas is stretched to fill its box)
+    const rect = displayCanvas.getBoundingClientRect();
+    const vx = rect.left + (state.ssCx / VW) * rect.width;
+    const vy = rect.top  + (state.ssCy / VH) * rect.height;
+    const cur = document.getElementById('ssCursor');
+    if (cur) { cur.style.display = 'block'; cur.style.left = vx + 'px'; cur.style.top = vy + 'px'; }
+    // which card is the cursor over?
+    const cards = document.querySelectorAll('#stageSelect .ss-card');
+    let over = -1;
+    cards.forEach((c, i) => {
+      const r = c.getBoundingClientRect();
+      if (vx >= r.left && vx <= r.right && vy >= r.top && vy <= r.bottom) over = i;
+    });
+    if (over !== state.ssHover) {           // moved to a different card -> restart dwell
+      state.ssHover = over; state.ssDwell = 0;
+      cards.forEach((c, i) => { c.classList.toggle('ss-hot', i === over); if (i !== over) c.style.setProperty('--fill', 0); });
+    }
+    // only fill while the hand is actually tracked (so it can't auto-pick if the hand leaves)
+    if (over >= 0 && state.handSeen) {
+      state.ssDwell += dt;
+      cards[over].style.setProperty('--fill', Math.min(100, (state.ssDwell / SS_DWELL_MS) * 100));
+      if (state.ssDwell >= SS_DWELL_MS) chooseStage(over);
+    }
   }
 
   function chooseStage(idx) {
@@ -2971,6 +3176,7 @@
     const c = state.stageChoices[idx];
     if (!c) return;
     document.getElementById('stageSelect').classList.add('hidden');
+    resetStageSelectHover();
     state.selecting = false;
     state.stageChoices = null;
     applyPerk(c.perk);
@@ -2986,11 +3192,12 @@
 
   function fireDragon() {
     state.dragonFiring = 180;          // 3s at 60fps
+    state.dragonType = currentDragon().id;   // beam (column) vs nova (radial)
     state.dragonCharge = 0;
     state.dragonUnlocked = false;      // need another Dragon Crystal
     state.shake = Math.max(state.shake, 24);
     pushPopup(state.player.x, state.player.y - 40, 'DRAGON BREAK !!', '#ffffff', 16);
-    showGesture('RELEASE', 'DRAGON BEAM', '#ffd066');
+    showGesture('RELEASE', state.dragonType === 'nova' ? 'DRAGON NOVA' : 'DRAGON BEAM', '#ffd066');
     SFX.bomb();
     setTimeout(() => SFX.bossDie(), 80);
   }
@@ -3346,6 +3553,8 @@
     if (state.running && !state.paused && !state.autoPaused && !state.selecting) {
       if (NET.isGuest()) updateGuest(dt);   // thin client: render host's world, run own ship
       else update(dt);                       // solo / co-op host: authoritative sim
+    } else if (state.selecting) {
+      updateStageSelect(dt);                 // campaign: hand-hover next-stage pick
     }
     NET.tick();
     draw();
@@ -3455,6 +3664,9 @@
       p.subCd = 0;   // ready to fire instantly on next peace
     }
 
+    // friendly escorts trail + chip in (solo only; array is empty in co-op)
+    updateWingmen();
+
     // Player shots
     for (let i = state.shots.length - 1; i >= 0; i--) {
       const s = state.shots[i];
@@ -3479,25 +3691,39 @@
         // trail
         if (s.life % 2 === 0) pushParticle(s.x, s.y, '#88e0ff');
       }
+      if (s.kind === 'boomer') s.vy += 0.26;   // BOOMERANG arc: decelerate, reverse, fall back
       s.x += s.vx || 0;
       s.y += s.vy;
       // remove if too old or off-screen
-      const offTop = s.y < -10 && (!s.kind || s.kind !== 'homing');
+      const offTop = s.y < -10 && s.kind !== 'homing' && s.kind !== 'boomer';
       if (offTop || s.x < -20 || s.x > VW + 20 || s.y > VH + 20
           || (s.kind === 'homing' && s.life > 240)) {
         state.shots.splice(i, 1); continue;
       }
-      let consumed = false;
-      for (const e of state.enemies) {
-        if (dist2(s.x, s.y, e.x, e.y) < (e.radius + s.r) ** 2) {
-          e.hp -= (s.dmg || 1);
-          pushParticle(s.x, s.y, '#ffffff');
-          if (state.t % 2 === 0) SFX.hit();
-          consumed = true;
-          break;
+      if (s.pierce) {
+        // pierce/boomerang: pass through, hitting each enemy at most once
+        if (!s.hit) s.hit = new Set();
+        for (const e of state.enemies) {
+          if (s.hit.has(e)) continue;
+          if (dist2(s.x, s.y, e.x, e.y) < (e.radius + s.r) ** 2) {
+            e.hp -= (s.dmg || 1); s.hit.add(e);
+            pushParticle(s.x, s.y, '#ffffff');
+            if (state.t % 2 === 0) SFX.hit();
+          }
         }
+      } else {
+        let consumed = false;
+        for (const e of state.enemies) {
+          if (dist2(s.x, s.y, e.x, e.y) < (e.radius + s.r) ** 2) {
+            e.hp -= (s.dmg || 1);
+            pushParticle(s.x, s.y, '#ffffff');
+            if (state.t % 2 === 0) SFX.hit();
+            consumed = true;
+            break;
+          }
+        }
+        if (consumed) state.shots.splice(i, 1);
       }
-      if (consumed) state.shots.splice(i, 1);
     }
 
     // Enemies
@@ -3601,13 +3827,17 @@
       if (m.warning > 0) m.warning--;
       if (m.y > VH + 50) { state.meteors.splice(i, 1); continue; }
 
-      // Dragon beam destroys meteors in its column
-      if (state.dragonFiring > 0
-          && Math.abs(m.x - p.x) < 28 + m.r && m.y < p.y + 6) {
-        for (let k = 0; k < 30; k++) pushParticle(m.x, m.y, '#c8a878');
-        state.meteors.splice(i, 1);
-        state.shake = Math.max(state.shake, 12);
-        continue;
+      // Dragon destroys meteors — beam in its column, nova within the sweep radius
+      if (state.dragonFiring > 0) {
+        const hit = state.dragonType === 'nova'
+          ? dist2(m.x, m.y, p.x, p.y) < ((60 + (1 - state.dragonFiring / 180) * 760)) ** 2
+          : (Math.abs(m.x - p.x) < 28 + m.r && m.y < p.y + 6);
+        if (hit) {
+          for (let k = 0; k < 30; k++) pushParticle(m.x, m.y, '#c8a878');
+          state.meteors.splice(i, 1);
+          state.shake = Math.max(state.shake, 12);
+          continue;
+        }
       }
 
       const d2 = dist2(m.x, m.y, p.x, p.y);
@@ -3678,21 +3908,34 @@
     // Dragon beam: clear bullets and burn enemies in a vertical column from player upward
     if (state.dragonFiring > 0) {
       state.dragonFiring--;
-      const HALF = 28;
       const px = state.player.x, py = state.player.y;
-      for (let i = state.bullets.length - 1; i >= 0; i--) {
-        const b = state.bullets[i];
-        if (Math.abs(b.x - px) < HALF + b.r && b.y < py + 6) {
-          pushParticle(b.x, b.y, b.color);
-          state.bullets.splice(i, 1);
+      if (state.dragonType === 'nova') {
+        // NOVA: an expanding ring sweeps the whole screen, clearing bullets and
+        // hammering every enemy on screen for the full duration.
+        const prog = 1 - state.dragonFiring / 180;
+        const R = 60 + prog * 760;          // ring grows past screen edges
+        for (let i = state.bullets.length - 1; i >= 0; i--) {
+          const b = state.bullets[i];
+          if (dist2(b.x, b.y, px, py) < R * R) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
+        }
+        for (const e of state.enemies) e.hp -= e.isBoss ? 0.8 : 6;
+      } else {
+        // BEAM: giant forward column.
+        const HALF = 28;
+        for (let i = state.bullets.length - 1; i >= 0; i--) {
+          const b = state.bullets[i];
+          if (Math.abs(b.x - px) < HALF + b.r && b.y < py + 6) {
+            pushParticle(b.x, b.y, b.color);
+            state.bullets.splice(i, 1);
+          }
+        }
+        for (const e of state.enemies) {
+          if (Math.abs(e.x - px) < HALF + e.radius && e.y < py + 6) {
+            e.hp -= e.isBoss ? 2 : 99;
+          }
         }
       }
-      for (const e of state.enemies) {
-        if (Math.abs(e.x - px) < HALF + e.radius && e.y < py + 6) {
-          e.hp -= e.isBoss ? 2 : 99;
-        }
-      }
-      // grant brief invuln while firing so user can't be hit through the beam
+      // grant brief invuln while firing so user can't be hit through the dragon
       state.player.invuln = Math.max(state.player.invuln, 6);
     }
     for (let i = state.popups.length - 1; i >= 0; i--) {
@@ -4128,6 +4371,7 @@
     state.won = won;
     state.selecting = false;
     document.getElementById('stageSelect').classList.add('hidden');
+    resetStageSelectHover();
     healHostUpdateBtn();
     bgm.stop();
     if (won) { SFX.bossDie(); setTimeout(() => SFX.stageStart(), 300); } else SFX.gameOver();
@@ -4304,7 +4548,27 @@
     }
 
     // Dragon beam from player (and charge halo)
-    if (state.dragonFiring > 0) {
+    if (state.dragonFiring > 0 && state.dragonType === 'nova') {
+      const px = state.player.x, py = state.player.y;
+      const prog = 1 - state.dragonFiring / 180;
+      const R = 60 + prog * 760;
+      // expanding cyan shockwave ring (pixel blocks around the circle)
+      const segs = 80;
+      for (let i = 0; i < segs; i++) {
+        const a = (i / segs) * TAU;
+        ctx.fillStyle = i % 2 ? '#ffffff' : '#88e0ff';
+        ctx.fillRect(px + Math.cos(a) * R - 3, py + Math.sin(a) * R - 3, 6, 6);
+      }
+      // inner glow disc
+      ctx.fillStyle = `rgba(136,224,255,${0.18 * (1 - prog)})`;
+      ctx.beginPath(); ctx.arc(px, py, R, 0, TAU); ctx.fill();
+      // a couple of trailing inner rings
+      for (const f of [0.7, 0.45]) {
+        const rr = R * f;
+        ctx.strokeStyle = `rgba(255,255,255,0.5)`; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(px, py, rr, 0, TAU); ctx.stroke();
+      }
+    } else if (state.dragonFiring > 0) {
       const px = state.player.x, py = state.player.y;
       const len = py + 10;
       // outer glow
@@ -4404,6 +4668,20 @@
         ctx.fillRect(s.x - 1.5, s.y - 4, 3, 8);
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
+      } else if (s.kind === 'pierce') {
+        // LANCE: long magenta lance with a white core
+        ctx.fillStyle = '#ff77c8';
+        ctx.fillRect(s.x - 2, s.y - 12, 4, 22);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 1, s.y - 12, 2, 22);
+      } else if (s.kind === 'boomer') {
+        // BOOMERANG: spinning lime blade
+        ctx.fillStyle = '#b6ff3a';
+        const sp = (state.t * 0.6) % TAU, cs = Math.cos(sp) * 5, sn = Math.sin(sp) * 5;
+        ctx.fillRect(s.x + cs - 2, s.y + sn - 2, 4, 4);
+        ctx.fillRect(s.x - cs - 2, s.y - sn - 2, 4, 4);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
       } else {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(s.x - 2.5, s.y - 7.5, 5, 12.5);
@@ -4484,6 +4762,7 @@
     }
 
     // player
+    drawWingmen();
     drawPlayer();
     drawPartner();
 
@@ -4745,13 +5024,13 @@
     return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
   }
 
-  // Per-theme background tiles (画像/背景1.png .. 背景10.png) split from the original
+  // Per-theme background tiles (画像/背景1.webp .. 背景10.webp) split from the original
   // 10-up montage. One image per theme, lightly darkened so bright bullets read.
   // Falls back to the procedural sky/nebula/planet until a tile has loaded.
   const bgImgs = [];
   for (let i = 0; i < STAGE_THEMES.length; i++) {
     const img = new Image();
-    img.src = encodeURI(`画像/背景${i + 1}.png`);
+    img.src = encodeURI(`画像/背景${i + 1}.webp`);
     bgImgs.push(img);
   }
   let _bgCache = null, _bgCacheTheme = -1;
@@ -4932,7 +5211,39 @@
     { id: 'option', name: 'OPTION', slot: 'sub', cost: 700, fireMul: 1.2, color: '#aef4ff',
       descJa: '左右に斜め射撃', desc: 'Angled side shots',
       icon: '<svg viewBox="0 0 16 16"><path d="M8 14 L4 4 M8 14 L12 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
+    { id: 'pierce', name: 'LANCE',  slot: 'sub', cost: 900, fireMul: 1.5, color: '#ff77c8',
+      descJa: '敵を貫通する直線弾・ボス特効', desc: 'Piercing bolts — melts bosses & lines',
+      icon: '<svg viewBox="0 0 16 16"><rect x="7" y="1" width="2" height="14" fill="currentColor"/><path d="M8 1 L5 5 H11 Z" fill="currentColor"/></svg>' },
+    { id: 'boomer', name: 'BOOMERANG', slot: 'sub', cost: 1000, fireMul: 1.6, color: '#b6ff3a',
+      descJa: '弧を描いて往復・行きも帰りも貫通', desc: 'Arcs out and back — pierces both ways',
+      icon: '<svg viewBox="0 0 16 16"><path d="M3 4 Q13 2 13 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>' },
   ];
+  // ----- DRAGON ultimates (chosen in the shop; fired via the thumbs-up charge) -----
+  const DRAGONS = [
+    { id: 'beam', name: 'BEAM',  cost: 0,    color: '#ff77c8',
+      descJa: '正面に極太ビーム・縦一列を消し飛ばす', desc: 'Giant forward beam — clears a column' },
+    { id: 'nova', name: 'NOVA',  cost: 900,  color: '#88e0ff',
+      descJa: '全方位の波動・画面全体を継続クリア', desc: 'Radial waves — clears the whole screen' },
+  ];
+  function currentDragon() { return DRAGONS.find(d => d.id === shop.dragon) || DRAGONS[0]; }
+  // ----- WINGMEN (友軍): solo-only NPC escorts. Pricey, low DPS, but "better than
+  // nothing" — they trail the player and chip in weak auto-fire at nearby enemies. -----
+  const ALLIES = [
+    { id: 'wisp',   name: 'WISP',   cost: 1500, color: '#88e0ff', dmg: 1, cd: 46, kind: 'straight',
+      descJa: 'たまに弱い直進弾を撃つ随伴機', desc: 'Trails you; occasional weak bolt',
+      pal: { '#': '#2a9bd6', 'B': '#15506e', 'C': '#aef4ff', 'W': '#ffffff', 'E': '#88e0ff' } },
+    { id: 'drone',  name: 'DRONE',  cost: 2200, color: '#ff77c8', dmg: 1, cd: 80, kind: 'homing',
+      descJa: 'たまに弱い追尾弾を撃つ随伴機', desc: 'Trails you; occasional weak homing',
+      pal: { '#': '#d64aa0', 'B': '#6e1550', 'C': '#ffc0e6', 'W': '#ffffff', 'E': '#ff77c8' } },
+    { id: 'gemini', name: 'GEMINI', cost: 2800, color: '#b6ff3a', dmg: 1, cd: 38, kind: 'twin',
+      descJa: '弱い2連弾をやや速めに撃つ随伴機', desc: 'Trails you; weak twin bolts, a bit faster',
+      pal: { '#': '#7ac82b', 'B': '#3a6e15', 'C': '#dcff9a', 'W': '#ffffff', 'E': '#b6ff3a' } },
+    { id: 'aegis',  name: 'AEGIS',  cost: 3200, color: '#7fffd4', kind: 'armor',
+      armorMax: 8, regen: 42, blockR: 24,   // defense-specialised: no guns, eats nearby bullets
+      descJa: '装甲特化・近くの敵弾を防ぐ（耐久制・自動回復）', desc: 'Armor escort: blocks nearby bullets, regenerates',
+      pal: { '#': '#1c8c70', 'B': '#0d4a3a', 'C': '#aef7e0', 'W': '#ffffff', 'E': '#7fffd4' } },
+  ];
+  function currentAlly() { return shop.ally === 'none' ? null : (ALLIES.find(a => a.id === shop.ally) || null); }
   // Keep equipped slots valid for their slot type.
   (() => {
     const m = WEAPONS.find(w => w.id === shop.weaponMain);
@@ -5631,8 +5942,11 @@
     state.stageChoices = null;
     state.won = false;
     document.getElementById('stageSelect').classList.add('hidden');
+    resetStageSelectHover();
     state.bullets.length = 0;
     state.shots.length = 0;
+    state.wingmen.length = 0;
+    spawnWingmen();
     state.enemies.length = 0;
     state.items.length = 0;
     state.meteors.length = 0;
@@ -5684,6 +5998,51 @@
     updateHud();
   }
 
+  // Co-op skips the READY screen, so hand-tracking + camera must be brought up
+  // here. Called from the "接続" button (a real user gesture, so getUserMedia is
+  // never blocked) AND as a fallback at start. Without this both ships sit frozen
+  // at their spawn — no hand input means no movement to send to the partner.
+  let _trackingPromise = null;
+  function ensureTracking() {
+    if (hands) return Promise.resolve(true);
+    if (_trackingPromise) return _trackingPromise;
+    NET.setStatus(t('cameraStarting'));
+    _trackingPromise = (async () => {
+      try {
+        await initHands();
+        await initFaceDetector();
+        await initCamera();
+        NET.setStatus('カメラOK・' + (NET.peerHere ? '開始できます' : '相手待ち'));
+        return true;
+      } catch (err) {
+        _trackingPromise = null;   // allow a retry
+        NET.setStatus('カメラ起動に失敗: ' + (err && err.message ? err.message : err));
+        return false;
+      }
+    })();
+    return _trackingPromise;
+  }
+
+  // Co-op start path shared by the local "▶ 開始" button and the partner's remote
+  // "start" message, so whoever presses START first launches BOTH players.
+  async function startCoop() {
+    if (state.running || NET.starting) return;   // already playing / already launching
+    NET.starting = true;
+    try {
+      await ensureTracking();                          // camera/hands must be live to move + share
+      NET.active = true;                                // co-op run (host=offense sims, guest=defense renders)
+      state.mode = NET.gameRole === 'defense' ? 'defender' : 'offense';
+      state.host = NET.isGuest() ? { hp: 0 } : null;   // guest: truthy host -> heal button shows
+      NET._sendT = -999;                               // force an immediate first snapshot/pos
+      NET.lastSnapT = performance.now(); NET.stalled = false;  // grace before the stall check fires
+      start();
+    } catch (err) {
+      NET.setStatus('開始に失敗: ' + (err && err.message ? err.message : err));
+    } finally {
+      NET.starting = false;
+    }
+  }
+
   startBtn.addEventListener('click', goToReady);
   playBtn.addEventListener('click', () => { if (!playBtn.disabled) start(); });
   backHome.addEventListener('click', () => { showHomeView(); });
@@ -5706,6 +6065,7 @@
   });
   document.getElementById('coopConnectBtn').addEventListener('click', () => {
     NET.connect(document.getElementById('coopRoom').value.trim());
+    ensureTracking();   // warm up camera/hands now (user gesture) so both ships actually move
   });
   document.getElementById('coopStartBtn').addEventListener('click', () => {
     if (!(NET.connected && NET.peerHere)) return;
@@ -5713,13 +6073,8 @@
       NET.setStatus('役割が同じです。OFFENSE / DEFENSE に分けてください');
       return;
     }
-    NET.active = true;                                // co-op run (host=offense sims, guest=defense renders)
-    NET.send({ type: 'start' });
-    state.mode = NET.gameRole === 'defense' ? 'defender' : 'offense';
-    state.host = NET.isGuest() ? { hp: 0 } : null;   // guest: truthy host -> heal button shows
-    NET._sendT = -999;                                // force an immediate first snapshot/pos
-    NET.lastSnapT = performance.now(); NET.stalled = false;  // grace before the stall check fires
-    start();
+    NET.send({ type: 'start' });   // tell the partner to launch too
+    startCoop();                    // ...and launch ourselves
   });
   backBtn.addEventListener('click', () => { showHomeView(); });
   document.getElementById('loadoutBtn').addEventListener('click', () => { showLoadoutView(); });
