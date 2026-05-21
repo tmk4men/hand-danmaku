@@ -1485,7 +1485,7 @@
     hiScore: parseInt(localStorage.getItem('hd_hi') || '0', 10),
     pinch: { active: false, lastUsed: -9999 },
     _curl: [false, false, false, false],   // per-finger curl memory (gesture hysteresis)
-    guard: { active: false, remaining: 600 }, // up to 10 seconds (60fps)
+    guard: { active: false, remaining: 300 }, // up to 5 seconds (60fps)
     handSeen: false,
     handPrev: null,      // previous normalized tip pos for swipe detection
     smoothX: VW * 0.5, smoothY: VH * 0.78,
@@ -3405,7 +3405,7 @@
       pushPopup(p.x, p.y - 20, 'BOMB +1', '#ff7c98', 10);
       SFX.pickup();
     } else if (type === 'guard') {
-      state.guard.remaining = Math.min(600, state.guard.remaining + 180);
+      state.guard.remaining = Math.min(300, state.guard.remaining + 180);
       state.score += 200;
       pushPopup(p.x, p.y - 20, 'GUARD +3s', '#7fffd4', 10);
       SFX.pickup();
@@ -3425,7 +3425,7 @@
     } else if (type === 'tool') {
       // Toolbox: a small repair — short invuln + a sliver of guard + score
       p.invuln = Math.max(p.invuln, 50);
-      state.guard.remaining = Math.min(600, state.guard.remaining + 90); // +1.5s
+      state.guard.remaining = Math.min(300, state.guard.remaining + 90); // +1.5s
       state.score += 150;
       // Small chance to actually restore a life when crit
       if (state.lives <= 2 && gameRand() < 0.25) {
@@ -3484,7 +3484,7 @@
       case 'bomb':  state.bombs = Math.min(state.bombs + 1, 6); break;
       case 'power': state.power = Math.min(state.power + 1, 3); state.powerFlash = 30; break;
       case 'coins': shop.coins += 5; saveShop(); coinAmt.textContent = shop.coins; break;
-      case 'guard': state.guard.remaining = 600; break;
+      case 'guard': state.guard.remaining = 300; break;
     }
   }
 
@@ -5022,7 +5022,7 @@
     hud.guard.textContent = sec + 's';
     hud.guard.className = 'val' + (state.guard.active ? ' warn'
                                   : state.guard.remaining <= 60 ? ' crit' : '');
-    hud.guardBar.style.width = (state.guard.remaining / 600 * 100) + '%';
+    hud.guardBar.style.width = (state.guard.remaining / 300 * 100) + '%';
     if (state.mode === 'defender') {
       const af = clamp(state.armor.hp / state.armor.max, 0, 1);
       hud.armorText.textContent = state.armor.hp <= 0 ? 'BROKEN' : Math.round(af * 100) + '%';
@@ -6802,7 +6802,7 @@
     state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + skinLifeBonus();
     state.maxLives = state.lives;   // meteor damage = half of this
     state.bombs = 2 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
-    state.guard.remaining = 600;
+    state.guard.remaining = 300;
     state.guard.active = false;
     state.stageNo = 1;
     state.stageTimer = 0;
