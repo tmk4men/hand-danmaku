@@ -2469,6 +2469,8 @@
   let faceDet = null;
   let camera = null;
   let frameTick = 0;
+  let lastHandResultT = 0;     // perf time of the last hands.onResults — stall watchdog heartbeat
+  let camRestarting = false;
 
   const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
     || (matchMedia('(pointer: coarse)').matches && Math.min(innerWidth, innerHeight) < 900);
@@ -2527,8 +2529,10 @@
   }
 
   function onHandResults(results) {
+    lastHandResultT = performance.now();   // heartbeat: proves the MediaPipe pipeline is alive
     // draw camera + landmarks on small overlay
     camCtx.save();
+    try {
     camCtx.clearRect(0, 0, camCanvas.width, camCanvas.height);
     if (results.multiHandLandmarks && results.multiHandLandmarks.length) {
       const lm = results.multiHandLandmarks[0];
@@ -2693,7 +2697,13 @@
       state.gestureKind = 'none';
       state.readyHandFrames = 0;
     }
-    camCtx.restore();
+    } catch (e) {
+      // A thrown error here used to poison MediaPipe's callback chain → send() stops
+      // resolving → "hand visible but no response, reload to fix". Swallow + warn once.
+      if (!onHandResults._warned) { console.warn('onHandResults error (pipeline kept alive):', e); onHandResults._warned = true; }
+    } finally {
+      camCtx.restore();
+    }
   }
 
   async function initCamera() {
@@ -2701,20 +2711,38 @@
       // camera_utils.Camera handles video + onFrame ticking
       camera = new Camera(video, {
         onFrame: async () => {
-          if (hands) await hands.send({ image: video });
+          // Guard each send: a single rejected/failed frame must not break the capture loop.
+          try { if (hands) await hands.send({ image: video }); } catch (e) {}
           // Face detection is for the privacy mosaic; skip it on mobile for perf.
           if (faceDet && !IS_MOBILE && (frameTick++ & 1) === 0) {
-            await faceDet.send({ image: video });
+            try { await faceDet.send({ image: video }); } catch (e) {}
           }
         },
         width: IS_MOBILE ? 480 : 640,
         height: IS_MOBILE ? 360 : 480,
       });
       await camera.start();
+      lastHandResultT = performance.now();
     } catch (err) {
       throw new Error('カメラを起動できませんでした: ' + err.message);
     }
   }
+
+  // Self-heal the occasional MediaPipe stall (hand visible but no response) without a manual reload.
+  async function restartCamera() {
+    if (camRestarting || !camera) return;
+    camRestarting = true;
+    try { statusEl.textContent = 'カメラ再接続中…'; } catch (e) {}
+    try { await camera.stop(); } catch (e) {}
+    try { await camera.start(); } catch (e) {}
+    lastHandResultT = performance.now();
+    camRestarting = false;
+  }
+  // Returning to a backgrounded tab pauses rAF/capture; reset the heartbeat so the
+  // watchdog doesn't see the idle gap as a stall and restart needlessly.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') lastHandResultT = performance.now();
+  });
 
   // ---------- Gameplay: spawning ----------
   function spawnEnemy(type, x, y, opts = {}) {
@@ -3976,6 +4004,12 @@
   function loop(now) {
     const dt = Math.min(50, now - last); // ms
     last = now;
+    // MediaPipe stall watchdog: if results stop arriving while the camera should be live
+    // (hand visible but unresponsive), auto-restart instead of needing a manual reload.
+    if (camera && !camRestarting && document.visibilityState === 'visible'
+        && lastHandResultT && now - lastHandResultT > 2500) {
+      restartCamera();
+    }
     // Refresh READY status dots only when on ready view
     if (overlayPanel.classList.contains('readyView')) syncReadyDots();
     // No auto-pause: if the hand leaves the frame the ship just holds its last
