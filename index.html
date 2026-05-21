@@ -977,6 +977,11 @@
   }
   #story #storyNext { margin-top: clamp(16px, 3.4vmin, 26px); }
   #story .story-tap { margin-top: 8px; font-size: clamp(8px, 1.6vmin, 10px); color: #6b7099; letter-spacing: 0.1em; }
+  /* Auto-advance countdown bar (shows the story moves on its own — no mouse needed) */
+  #storyProg { margin: clamp(12px, 2.6vmin, 18px) auto 0; width: 60%; max-width: 240px; height: 4px;
+    border-radius: 3px; background: rgba(255,255,255,0.08); overflow: hidden; }
+  #storyProg > i { display: block; height: 100%; width: 0; border-radius: 3px;
+    background: linear-gradient(90deg, #ffd866, #ff9f43); transition: width 0.12s linear; }
 
   /* ============================================================
      UI QUALITY PASS — depth, tactile buttons, focus states, motion
@@ -1167,7 +1172,8 @@
         <div class="story-title" id="storyTitle"></div>
         <div class="story-body" id="storyBody"></div>
         <button type="button" id="storyNext" class="btn-cta">▶ つづける</button>
-        <div class="story-tap">タップで進む</div>
+        <div id="storyProg"><i></i></div>
+        <div class="story-tap">自動で進む（つまむ / タップで早送り）</div>
       </div>
     </div>
 
@@ -3587,7 +3593,7 @@
 
   // ---------- Story screens (paged text cards: prologue, endings) ----------
   function showStoryScreen(pages, onDone) {
-    state.story = { pages, idx: 0, onDone: onDone || null, active: true };
+    state.story = { pages, idx: 0, onDone: onDone || null, active: true, elapsed: 0, pinchPrev: true };
     document.getElementById('story').classList.remove('hidden');
     audio.resume();
     renderStoryPage();
@@ -3607,9 +3613,11 @@
     }
     document.getElementById('storyNext').textContent =
       (st.idx >= st.pages.length - 1) ? '▶ はじめる' : '▶ つづける';
-    // Auto-advance so the gesture-first flow stays hands-free; tapping just speeds it up.
-    if (st.timer) clearTimeout(st.timer);
-    st.timer = setTimeout(advanceStory, 5500);
+    // Auto-advance is loop-driven (see updateStory) so the countdown bar stays in
+    // sync. Reset the per-page timer + bar here; pinch/tap can still advance early.
+    st.elapsed = 0;
+    const bar = document.getElementById('storyProg');
+    if (bar && bar.firstElementChild) bar.firstElementChild.style.width = '0%';
   }
   function advanceStory() {
     const st = state.story; if (!st || !st.active) return;
@@ -3625,6 +3633,19 @@
     document.getElementById('story').classList.add('hidden');
     state.story = null;
     if (st.onDone) st.onDone();
+  }
+  // Hands-free story: auto-advance per page, with a hand "pinch" (つまむ) to skip
+  // ahead — same gesture as the rest of the game, so no mouse is ever needed.
+  const STORY_PAGE_MS = 5500;
+  function updateStory(dt) {
+    const st = state.story; if (!st || !st.active) return;
+    const pinchNow = state.pinch.active;
+    if (pinchNow && !st.pinchPrev && state.handSeen) { st.pinchPrev = pinchNow; advanceStory(); return; }
+    st.pinchPrev = pinchNow;
+    st.elapsed = (st.elapsed || 0) + dt;
+    const bar = document.getElementById('storyProg');
+    if (bar && bar.firstElementChild) bar.firstElementChild.style.width = Math.min(100, st.elapsed / STORY_PAGE_MS * 100) + '%';
+    if (st.elapsed >= STORY_PAGE_MS) advanceStory();
   }
 
   function fireDragon() {
@@ -4006,6 +4027,8 @@
       updateStageSelect(dt);                 // campaign: hand-hover next-stage pick
     } else if (state.tutorial.active) {
       updateTutorial(dt);                    // interactive gesture onboarding
+    } else if (state.story && state.story.active) {
+      updateStory(dt);                       // prologue/ending: pinch or auto-advance
     }
     NET.tick();
     draw();
