@@ -968,6 +968,7 @@
   }
   #tutorial .tut-step { font-size: clamp(9px, 1.8vmin, 12px); letter-spacing: 0.18em; color: #7fdcff; margin-bottom: 6px; }
   #tutorial .tut-icon { font-size: clamp(40px, 11vmin, 84px); line-height: 1.1; }
+  #tutorial .tut-icon svg { width: clamp(54px, 13vmin, 100px); height: auto; color: #7fffd4; display: inline-block; vertical-align: middle; }
   #tutorial .tut-title { font-size: clamp(16px, 4vmin, 28px); color: #fff; font-weight: 700; margin-top: 4px; }
   #tutorial .tut-sub { font-size: clamp(10px, 2.4vmin, 15px); color: #cfd2f0; margin-top: 6px; }
   #tutorial .tut-meter { height: 8px; width: min(360px, 70vw); margin: 14px auto 6px; border-radius: 5px;
@@ -1216,7 +1217,7 @@
             <b>BOMB</b><em data-i18n="bombDesc">親指と人差し指でつまむ</em>
           </div>
           <div class="row" style="color:#7fffd4">
-            <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="currentColor"/><path d="M2 6.5 H14 M2 9.5 H14" stroke="#06081a" stroke-width="0.9"/></svg></span>
+            <span class="ico"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="7" width="8" height="6.6" rx="2.4" fill="currentColor"/><rect x="5.6" y="1.8" width="2.5" height="7" rx="1.25" fill="currentColor"/></svg></span>
             <b>GUARD</b><em data-i18n="guardDesc">人差し指以外を握る（最大10秒）</em>
           </div>
           <div class="row" style="color:#88e0ff">
@@ -2584,7 +2585,7 @@
         if (state.mode === 'defender') healHost();          // tank: PEACE = one-time heal the host
         else { showGesture('PEACE', 'SUB', '#88e0ff'); SFX.shootFocus(); }
       }
-      if (state.guard.active && !prevGuardOn) { showGesture('FIST', 'GUARD', '#7fffd4'); SFX.guard(); }
+      if (state.guard.active && !prevGuardOn) { showGesture('ガード', '人差し指以外を握る', '#7fffd4'); SFX.guard(); }
 
       if (isPinch && !state.pinch.active && state.running && !state.selecting) {
         if (state.mode === 'defender') triggerNova();    // tank: PINCH releases the OVERLOAD nova
@@ -3477,19 +3478,27 @@
     // smooth a cursor toward the raw hand target (VW/VH game coords)
     state.ssCx += (state.player.tx - state.ssCx) * 0.35;
     state.ssCy += (state.player.ty - state.ssCy) * 0.35;
-    // map game coords -> viewport px (the canvas is stretched to fill its box)
-    const rect = displayCanvas.getBoundingClientRect();
+    // Map hand coords -> viewport px relative to the FULL-SCREEN stage-select overlay,
+    // NOT the (often letterboxed) game canvas. The reward cards live in #stageSelect
+    // (inset:0), so on any non-4:3 window the canvas rect was offset from the cards and
+    // the cursor never lined up ("ピントが合わない"). Mapping to the overlay rect fixes it.
+    const host = document.getElementById('stageSelect');
+    const rect = host.getBoundingClientRect();
     const vx = rect.left + (state.ssCx / VW) * rect.width;
     const vy = rect.top  + (state.ssCy / VH) * rect.height;
     const cur = document.getElementById('ssCursor');
     if (cur) { cur.style.display = 'block'; cur.style.left = vx + 'px'; cur.style.top = vy + 'px'; }
-    // which card is the cursor over?
+    // which card is the cursor over? (with a forgiving snap to the nearest card so
+    // hand jitter doesn't make it feel like the focus "won't land")
     const cards = document.querySelectorAll('#stageSelect .ss-card');
-    let over = -1;
+    let over = -1, bestD = Infinity, nearest = -1;
     cards.forEach((c, i) => {
       const r = c.getBoundingClientRect();
       if (vx >= r.left && vx <= r.right && vy >= r.top && vy <= r.bottom) over = i;
+      const d = Math.hypot(vx - (r.left + r.right) / 2, vy - (r.top + r.bottom) / 2);
+      if (d < bestD) { bestD = d; nearest = i; }
     });
+    if (over === -1 && bestD < 90) over = nearest;   // near a card -> snap focus to it
     if (over !== state.ssHover) {           // moved to a different card -> restart dwell
       state.ssHover = over; state.ssDwell = 0;
       cards.forEach((c, i) => { c.classList.toggle('ss-hot', i === over); if (i !== over) c.style.setProperty('--fill', 0); });
@@ -3537,8 +3546,9 @@
       hint: 'パーをキープ', need: 45, test: (s) => s.gestureKind === 'open' },
     { icon: '✌️', title: 'ピース = サブ射撃', sub: '人差し指と中指を立てるとサブ武器が出る',
       hint: 'ピースをキープ', need: 45, test: (s) => s.gestureKind === 'peace' },
-    { icon: '✊', title: 'グー = ガード', sub: '握ると一定時間ダメージを防ぐ盾になる',
-      hint: 'グーをキープ', need: 45, test: (s) => s.gestureKind === 'fist' },
+    { icon: '<svg viewBox="0 0 16 16" aria-hidden="true"><rect x="4.5" y="7" width="8" height="6.6" rx="2.4" fill="currentColor"/><rect x="5.6" y="1.8" width="2.5" height="7" rx="1.25" fill="currentColor"/></svg>',
+      title: '人差し指以外を握る = ガード', sub: '人差し指は伸ばしたまま、他の指を握ると一定時間ダメージを防ぐ盾になる',
+      hint: 'その形をキープ', need: 45, test: (s) => s.gestureKind === 'fist' },
     { icon: '🤏', title: 'つまむ = ボム', sub: '親指と人差し指をくっつけると画面全体ボム',
       hint: 'つまんでクリア', need: 18, test: (s) => s.gestureKind === 'pinch' },
   ];
@@ -3591,7 +3601,7 @@
     const step = TUT_STEPS[tut.step]; if (!step) return;
     const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
     set('tutStep', 'STEP ' + (tut.step + 1) + ' / ' + TUT_STEPS.length);
-    set('tutIcon', step.icon);
+    document.getElementById('tutIcon').innerHTML = step.icon;   // emoji or inline SVG
     set('tutTitle', step.title);
     set('tutSub', step.sub);
     set('tutHint', step.hint);
@@ -4616,7 +4626,7 @@
     state.taunt.t = DEF.TAUNT_DUR;
     state.taunt.cd = DEF.TAUNT_DUR + DEF.TAUNT_CD;
     state.shake = Math.max(state.shake, 6);
-    showGesture('FIST', 'TAUNT', '#ffb14e');
+    showGesture('握る', 'TAUNT (人差し指以外)', '#ffb14e');
     SFX.guard();
     if (NET.isGuest()) NET.send({ type: 'taunt' });   // host pulls its bullets toward us
   }
