@@ -2865,7 +2865,12 @@
         } else {
           if (--f.t <= 0) {
             for (const bl of state.bullets) if (bl._fz) {
-              const a = Math.atan2(p.y - bl.y, p.x - bl.x), sp = Math.max(2.4, bl._sp);
+              // Aim toward the player but with per-bullet spread so the converging
+              // wall always has gaps to slip through (a dead-on convergence from all
+              // sides was undodgeable), and cap the speed so point-blank shards aren't
+              // an instant hit.
+              const a = Math.atan2(p.y - bl.y, p.x - bl.x) + rand(-0.38, 0.38);
+              const sp = Math.max(2.2, Math.min(bl._sp, 3.2));
               bl.vx = Math.cos(a) * sp; bl.vy = Math.sin(a) * sp; bl._fz = 0;
             }
             f.state = 'idle'; f.cd = 380; SFX.bomb();
@@ -5215,13 +5220,23 @@
       }
     }
 
-    // bullets — square pellets with a brighter inner core
-    for (const b of state.bullets) {
-      const sz = Math.max(4, Math.floor(b.r * 1.6 / 2.5) * 2.5);
+    // bullets — glowing orbs: a soft halo, a dark rim for contrast against bright
+    // backgrounds, the colour body, and a hot white core. The solid body matches the
+    // collision radius so the danger size always reads true (helps fair dodging).
+    const blz = state.bullets;
+    ctx.globalAlpha = 0.26;                       // one alpha state for the whole glow batch
+    for (const b of blz) {
       ctx.fillStyle = b.color;
-      ctx.fillRect(b.x - sz / 2, b.y - sz / 2, sz, sz);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(b.x - sz / 4, b.y - sz / 4, sz / 2, sz / 2);
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 1.75, 0, TAU); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+    for (const b of blz) {
+      ctx.fillStyle = shade(b.color, -0.55);     // dark rim = readable edge
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
+      ctx.fillStyle = b.color;                    // colour body (≈ hitbox)
+      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.8, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#ffffff';                  // hot core
+      ctx.beginPath(); ctx.arc(b.x - b.r * 0.12, b.y - b.r * 0.12, b.r * 0.4, 0, TAU); ctx.fill();
     }
 
     // bomb fx — expanding pixel ring (drawn as a polygon of squares)
