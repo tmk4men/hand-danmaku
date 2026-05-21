@@ -1745,7 +1745,6 @@
   const shop = {
     coins:    parseInt(localStorage.getItem('hd_coins') || '0', 10),
     starters: loadJSON('hd_starters', { bomb: 0, life: 0, power: 0 }),
-    charges:  parseInt(localStorage.getItem('hd_charges') || '0', 10),
     ships:    loadJSON('hd_ships', ['vanguard']),   // owned machine (skin) ids
     ship:     localStorage.getItem('hd_ship') || 'vanguard',     // equipped skin
     weapons:    loadJSON('hd_weapons', ['std', 'homing']),  // owned weapon ids
@@ -1753,15 +1752,14 @@
     weaponSub:  localStorage.getItem('hd_weapon_sub') || 'homing',
     dragons:    loadJSON('hd_dragons', ['beam']),   // owned dragon ultimate ids
     dragon:     localStorage.getItem('hd_dragon') || 'beam',   // equipped dragon
-    actives:    loadJSON('hd_actives', ['slow']),   // owned USE-active ability ids
-    active:     localStorage.getItem('hd_active') || 'slow',   // equipped USE active
+    actives:    loadJSON('hd_actives', []),          // owned USE-active ability ids (none free)
+    active:     localStorage.getItem('hd_active') || 'none',   // equipped USE active
     allies:     loadJSON('hd_allies', []),          // owned wingman (友軍) ids
     ally:       localStorage.getItem('hd_ally') || 'none',     // equipped wingman ('none' = off)
   };
   if (!Array.isArray(shop.dragons)) shop.dragons = ['beam'];
   if (!shop.dragons.includes('beam')) shop.dragons.unshift('beam');
-  if (!Array.isArray(shop.actives)) shop.actives = ['slow'];
-  if (!shop.actives.includes('slow')) shop.actives.unshift('slow');
+  if (!Array.isArray(shop.actives)) shop.actives = [];
   if (!Array.isArray(shop.allies)) shop.allies = [];
   if (!Array.isArray(shop.ships)) shop.ships = ['vanguard'];
   if (!shop.ships.includes('vanguard')) shop.ships.unshift('vanguard');
@@ -1772,10 +1770,7 @@
   shop.starters.bomb  = Math.min(1, shop.starters.bomb  || 0);
   shop.starters.life  = Math.min(1, shop.starters.life  || 0);
   shop.starters.power = Math.min(1, shop.starters.power || 0);
-  shop.charges        = Math.min(1, shop.charges        || 0);
-  const loadout = loadJSON('hd_loadout', { bomb: true, life: true, power: true, charges: true });
-  // Coerce legacy numeric "charges" loadout to a boolean
-  if (typeof loadout.charges === 'number') loadout.charges = loadout.charges > 0;
+  const loadout = loadJSON('hd_loadout', { bomb: true, life: true, power: true });
   function saveLoadout() {
     try { localStorage.setItem('hd_loadout', JSON.stringify(loadout)); } catch {}
   }
@@ -1808,7 +1803,6 @@
     try {
       localStorage.setItem('hd_coins', String(shop.coins));
       localStorage.setItem('hd_starters', JSON.stringify(shop.starters));
-      localStorage.setItem('hd_charges', String(shop.charges));
       localStorage.setItem('hd_ships', JSON.stringify(shop.ships));
       localStorage.setItem('hd_ship', shop.ship);
       localStorage.setItem('hd_weapons', JSON.stringify(shop.weapons));
@@ -1973,26 +1967,9 @@
 
       hdr(ja ? 'USE技 / ACTIVE' : 'ACTIVE (USE)');
       const anote = document.createElement('div'); anote.className = 'shop-note';
-      anote.textContent = ja ? 'サムイン（親指曲げ）で発動。下の「USEチャージ」を購入し、技を1つ装備'
-                             : 'Fired by thumb-bend. Buy the USE CHARGE below, then equip one skill';
+      anote.textContent = ja ? '購入して装備すると、サムイン（親指曲げ）で1ランに1回発動できる'
+                             : 'Buy + equip one, then fire it once per run with a thumb-bend';
       rows.appendChild(anote);
-      // USE CHARGE — the per-run charge that powers whichever active is equipped (max 1)
-      {
-        const owned = shop.charges > 0, buyable = !owned && shop.coins >= 100;
-        const row = document.createElement('div');
-        row.className = 'item' + (owned ? ' equipped' : '');
-        const ico = document.createElement('span'); ico.className = 'shop-ico'; ico.style.color = '#88e0ff';
-        ico.innerHTML = '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.2 V8 L10.6 9.6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>';
-        const mid = document.createElement('div');
-        mid.innerHTML = `<div class="name">${t('ldChargeName')}</div><div class="desc">${t('shopCharge')}</div>`;
-        const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = owned ? '—' : 100;
-        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn-cta';
-        if (owned) { btn.textContent = ja ? '所持' : 'OWNED'; btn.disabled = true; }
-        else { btn.textContent = t('buy'); btn.disabled = !buyable; }
-        btn.addEventListener('click', () => { if (owned || !buyable) return; shop.coins -= 100; shop.charges = 1; saveShop(); renderShop(); SFX.pickup(); });
-        row.append(ico, mid, cost, btn);
-        rows.appendChild(row);
-      }
       for (const ac of ACTIVES) addEquipRow({
         owned: shop.actives.includes(ac.id), equipped: shop.active === ac.id, cost: ac.cost,
         name: ac.name, desc: ja ? ac.descJa : ac.desc, iconHtml: ac.icon, iconColor: ac.color,
@@ -2205,7 +2182,7 @@
     const lifeN  = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0);
     const bombN  = 4 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
     const powerN = 1 + ((loadout.power && shop.starters.power > 0) ? 1 : 0);
-    const useN   = (loadout.charges && shop.charges > 0) ? 1 : 0;
+    const useN   = hasActiveEquipped() ? 1 : 0;
     document.getElementById('sumLife').textContent  = lifeN;
     document.getElementById('sumBomb').textContent  = bombN;
     document.getElementById('sumPower').textContent = powerN;
@@ -2236,7 +2213,6 @@
       { key: 'bomb',    name: t('ldBombName'),   desc: t('ldBombDesc'),   owned: shop.starters.bomb  },
       { key: 'life',    name: t('ldLifeName'),   desc: t('ldLifeDesc'),   owned: shop.starters.life  },
       { key: 'power',   name: t('ldPowerName'),  desc: t('ldPowerDesc'),  owned: shop.starters.power },
-      { key: 'charges', name: t('ldChargeName'), desc: t('ldChargeDesc'), owned: shop.charges        },
     ];
     for (const r of rows) {
       const wrap = document.createElement('div');
@@ -3697,15 +3673,15 @@
 
   function useActiveItem() {
     const p = state.player;
-    if (state.runCharges > 0 && shop.charges > 0) {
+    if (state.runCharges > 0) {
       state.runCharges--;
-      shop.charges = Math.max(0, shop.charges - 1);
-      saveShop();
       state.shake = Math.max(state.shake, 10);
-      currentActive().apply(p);   // fire whichever USE ability is equipped
+      currentActive().apply(p);   // fire whichever USE ability is equipped (1 per run)
       updateHud();
+    } else if (!hasActiveEquipped()) {
+      pushPopup(p.x, p.y - 30, 'NO USE SKILL', '#888888', 10);
     } else {
-      pushPopup(p.x, p.y - 30, 'NO CHARGE', '#888888', 10);
+      pushPopup(p.x, p.y - 30, 'USED', '#888888', 10);
     }
   }
 
@@ -4977,7 +4953,7 @@
     hud.grazeText.textContent = state.graze.boost > 0 ? 'MAX!' : state.graze.value;
     hud.grazeBar.style.width = (state.graze.value / state.graze.max * 100) + '%';
     hud.boostFlag.classList.toggle('on', state.graze.boost > 0);
-    const usable = state.running ? (state.runCharges || 0) : shop.charges;
+    const usable = state.running ? (state.runCharges || 0) : (hasActiveEquipped() ? 1 : 0);
     hud.useCharges.textContent = usable + (state.bulletTime > 0 ? '  ACTIVE' : '');
     hud.useCharges.style.color = state.bulletTime > 0 ? '#88e0ff'
                                : usable > 0 ? '#ffd066' : '#555a82';
@@ -5919,7 +5895,7 @@
     showGesture('THUMB', 'SHOCKWAVE', '#ff8a3a'); SFX.bomb();
   }
   const ACTIVES = [
-    { id: 'slow', name: 'BULLET TIME', cost: 0, color: '#88e0ff',
+    { id: 'slow', name: 'BULLET TIME', cost: 400, color: '#88e0ff',
       descJa: '一定時間スローモーション。弾を見切る', desc: 'Slow-mo — read the bullets',
       icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="7.3" y="4" width="1.4" height="5" fill="currentColor"/><rect x="7.3" y="7.3" width="4" height="1.4" fill="currentColor"/></svg>',
       apply: (p) => { state.bulletTime = 180; pushPopup(p.x, p.y - 30, 'BULLET TIME!', '#88e0ff', 14); showGesture('THUMB', 'BULLET TIME', '#88e0ff'); SFX.grazeMax(); } },
@@ -5937,6 +5913,7 @@
       apply: (p) => { activeShockwave(p); } },
   ];
   function currentActive() { return ACTIVES.find(a => a.id === shop.active) || ACTIVES[0]; }
+  function hasActiveEquipped() { return shop.active !== 'none' && shop.actives.includes(shop.active); }
   // ----- WINGMEN (友軍): solo-only NPC escorts. Pricey, low DPS, but "better than
   // nothing" — they trail the player and chip in weak auto-fire at nearby enemies. -----
   const ALLIES = [
@@ -6745,7 +6722,7 @@
     state.dragonCharge = 0;
     state.dragonFiring = 0;
     // Per-run charges: max 1 if owned + loadout says use
-    state.runCharges = (loadout.charges && shop.charges > 0) ? 1 : 0;
+    state.runCharges = hasActiveEquipped() ? 1 : 0;   // 1 USE-skill activation per run if equipped
     state.graze.value = 0;
     state.graze.boost = 0;
     state.focus = false;
