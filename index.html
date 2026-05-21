@@ -1355,6 +1355,26 @@
     }
     return _mosaicBuf;
   }
+  // Pre-rendered bullet "orb" sprites (glow + rim + body + core) cached by colour+radius.
+  // Lets the per-frame bullet pass be one drawImage each instead of 4 arcs + an alpha
+  // change per bullet — the single biggest per-frame cost in dense waves.
+  const _bulletSpr = new Map();
+  function bulletSprite(color, r) {
+    r = Math.round(r * 2) / 2;                       // bucket radius -> tiny cache
+    const key = color + '|' + r;
+    let c = _bulletSpr.get(key);
+    if (c) return c;
+    const pad = Math.ceil(r * 1.75) + 2;
+    c = document.createElement('canvas'); c.width = c.height = pad * 2; c._half = pad;
+    const g = c.getContext('2d'), cx = pad, cy = pad;
+    g.globalAlpha = 0.26; g.fillStyle = color; g.beginPath(); g.arc(cx, cy, r * 1.75, 0, TAU); g.fill();
+    g.globalAlpha = 1;
+    g.fillStyle = shade(color, -0.55); g.beginPath(); g.arc(cx, cy, r, 0, TAU); g.fill();
+    g.fillStyle = color;               g.beginPath(); g.arc(cx, cy, r * 0.8, 0, TAU); g.fill();
+    g.fillStyle = '#ffffff';           g.beginPath(); g.arc(cx - r * 0.12, cy - r * 0.12, r * 0.4, 0, TAU); g.fill();
+    _bulletSpr.set(key, c);
+    return c;
+  }
   // Latest face bounding box from MediaPipe Face Detection, normalized to source frame.
   // Smoothed across frames for stability.
   const faceTrack = {
@@ -5283,23 +5303,11 @@
       }
     }
 
-    // bullets — glowing orbs: a soft halo, a dark rim for contrast against bright
-    // backgrounds, the colour body, and a hot white core. The solid body matches the
-    // collision radius so the danger size always reads true (helps fair dodging).
-    const blz = state.bullets;
-    ctx.globalAlpha = 0.26;                       // one alpha state for the whole glow batch
-    for (const b of blz) {
-      ctx.fillStyle = b.color;
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 1.75, 0, TAU); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
-    for (const b of blz) {
-      ctx.fillStyle = shade(b.color, -0.55);     // dark rim = readable edge
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.fill();
-      ctx.fillStyle = b.color;                    // colour body (≈ hitbox)
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r * 0.8, 0, TAU); ctx.fill();
-      ctx.fillStyle = '#ffffff';                  // hot core
-      ctx.beginPath(); ctx.arc(b.x - b.r * 0.12, b.y - b.r * 0.12, b.r * 0.4, 0, TAU); ctx.fill();
+    // bullets — glowing orbs (glow + rim + body + hot core), pre-rendered & cached per
+    // colour+radius so this hot loop is one drawImage per bullet.
+    for (const b of state.bullets) {
+      const spr = bulletSprite(b.color, b.r);
+      ctx.drawImage(spr, b.x - spr._half, b.y - spr._half);
     }
 
     // bomb fx — expanding pixel ring (drawn as a polygon of squares)
