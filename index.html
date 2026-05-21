@@ -5754,7 +5754,8 @@
     const themedBg = getThemedBg();
     if (themedBg) {
       // Per-theme image tile, darkened (kept dim so bright bullets read).
-      ctx.globalAlpha = camBg.state === 'on' ? 0.6 : 1.0;
+      // Higher alpha when the camera is on = denser background, fainter camera.
+      ctx.globalAlpha = camBg.state === 'on' ? 0.8 : 1.0;
       const prevSmooth = ctx.imageSmoothingEnabled; ctx.imageSmoothingEnabled = true;
       ctx.drawImage(themedBg, 0, 0, VW, VH);
       ctx.imageSmoothingEnabled = prevSmooth;
@@ -5763,7 +5764,7 @@
       // Procedural fallback: sky bands + nebula + planet.
       const bands = theme.sky;
       const bh = VH / bands.length;
-      const skyAlpha = camBg.state === 'on' ? 0.74 : 1.0;
+      const skyAlpha = camBg.state === 'on' ? 0.86 : 1.0;
       for (let i = 0; i < bands.length; i++) {
         ctx.fillStyle = hexToRgba(bands[i], skyAlpha);
         ctx.fillRect(0, i * bh, VW, bh + 1);
