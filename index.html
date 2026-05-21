@@ -1499,6 +1499,7 @@
     graze: { value: 0, max: 100, boost: 0 },
     mod: { name: 'NORMAL', bulletSpeedMul: 1, fanRays: 0, spinnerExtra: 0 },
     shake: 0,
+    flash: 0,              // full-screen white flash (boss phase transitions)
     bossWarning: 0,        // frames remaining before boss actually spawns
     combo: { count: 0, timer: 0, best: 0 },
     themeIndex: 0,
@@ -2814,6 +2815,7 @@
       laser: { charge: 0, fire: 0, angle: 0, cardShown: false },
       charge: { phase: 'idle', t: 0, cd: rand(540, 900) },
       gim: {},   // per-boss signature gimmick state (keyed by themeIndex)
+      phaseIdx: 0, invuln: 0, phaseFloor: 0,   // HP-driven phase escalation
     };
     state.enemies.push({ ...state.boss, isBoss: true, ref: state.boss });
     state.bossFight = true;
@@ -2877,6 +2879,21 @@
     }
   }
 
+  // Dramatic phase change at an HP threshold: clear the screen, flash + shake, banner,
+  // and a short invulnerable charge-up before the boss comes back harder.
+  function bossPhaseTransition(b, e, newPhase) {
+    b.phaseIdx = newPhase;
+    b.invuln = 72;                                   // ~1.2s charge-up (damage-immune)
+    b.phaseFloor = (newPhase >= 2 ? 0.33 : 0.66) * b.maxHp;
+    e.hp = Math.max(e.hp, b.phaseFloor);
+    for (const bl of state.bullets) pushParticle(bl.x, bl.y, bl.color);
+    state.bullets.length = 0;                        // breather: wipe the field
+    state.shake = Math.max(state.shake, 22);
+    state.flash = 1;
+    const final = newPhase >= 2;
+    pushPopup(b.x, b.y - 42, final ? 'FINAL PHASE' : 'PHASE ' + (newPhase + 1), final ? '#ff5050' : '#ffd066', 18, 150);
+    SFX.bossDie(); SFX.warning();
+  }
   function updateBossGimmick(b) {
     const ti = state.themeIndex, p = state.player, g = b.gim;
     updateBossSeal(b, g, p);
@@ -3948,10 +3965,21 @@
 
       // Patterns: more of them, and denser fire, as the stage rises.
       const lvl = state.stageNo;
+      // HP-driven phases (universal): each phase speeds bullets up and adds pressure,
+      // entered via a dramatic transition at 66% and 33% HP.
+      const phaseMul = 1 + b.phaseIdx * 0.18;
+      const spd = (1 + Math.min(lvl - 1, 8) * 0.04) * phaseMul;
+      if (b.invuln > 0) {
+        b.invuln--;
+        e.hp = Math.max(e.hp, b.phaseFloor);                 // immune through the charge-up
+        if (b.invuln === 0) for (let i = 0; i < 24; i++) fireBullet(b.x, b.y, (i / 24) * TAU, 2.4 * spd, '#ffd066', 5);  // release burst
+        return;
+      }
+      { const frac = e.hp / b.maxHp, want = frac <= 0.33 ? 2 : frac <= 0.66 ? 1 : 0;
+        if (want > b.phaseIdx) { bossPhaseTransition(b, e, want); return; } }
       const numPatterns = lvl >= 6 ? 6 : lvl >= 4 ? 5 : lvl >= 2 ? 4 : 3;
       const pat = Math.floor(b.t / 360) % numPatterns;
       const phase = b.t % 360;
-      const spd = 1 + Math.min(lvl - 1, 8) * 0.04;  // mild bullet-speed ramp
 
       if (pat === 0) {
         // Wide aimed fan — more rays at higher stages
@@ -4043,6 +4071,15 @@
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           for (let i = -1; i <= 1; i++) fireBullet(b.x, b.y + 10, aim + i * 0.22, 3.0 * spd, '#ff5050', 6);
         }
+      }
+      // Phase escalation overlays — extra pressure layered on top each phase.
+      if (b.phaseIdx >= 1 && b.t % 70 === 0) {
+        const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+        for (let i = -1; i <= 1; i++) fireBullet(b.x, b.y + 10, aim + i * 0.18, 2.6 * spd, '#ff9bd0', 5);
+      }
+      if (b.phaseIdx >= 2 && b.t % 11 === 0) {        // final phase: relentless spiral
+        const base = b.t * 0.18;
+        for (let k = 0; k < 3; k++) fireBullet(b.x, b.y, base + k * TAU / 3, 2.2 * spd, '#ffffff', 4);
       }
       return;
     }
@@ -5464,6 +5501,15 @@
       }
     }
 
+    // Screen flash (boss phase transitions etc.) — full-frame white, fades fast
+    if (state.flash > 0) {
+      ctx.globalAlpha = Math.min(0.6, state.flash * 0.6);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, VW, VH);
+      ctx.globalAlpha = 1;
+      state.flash -= 0.09;
+    }
+
     // Floating popups (score, item, erase counters)
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -6696,6 +6742,19 @@
   function drawEnemy(e) {
     if (e.isBoss) {
       const v = getBossVariant();
+      // Phase-transition charge-up: a pulsing converging ring telegraphs the comeback.
+      if (e.ref && e.ref.invuln > 0) {
+        const prog = 1 - e.ref.invuln / 72;            // 0 -> 1 over the charge
+        const R = e.radius + 10 + (1 - prog) * 70;     // ring converges inward
+        const segs = 28;
+        ctx.fillStyle = e.ref.phaseIdx >= 2 ? '#ff5050' : '#ffd066';
+        for (let i = 0; i < segs; i++) {
+          const a = (i / segs) * TAU + state.t * 0.06;
+          ctx.globalAlpha = 0.5 + 0.5 * prog;
+          ctx.fillRect(e.x + Math.cos(a) * R - 2, e.y + Math.sin(a) * R - 2, 4, 4);
+        }
+        ctx.globalAlpha = 1;
+      }
       drawBossSprite(v.sprite, v.pal, e.x, e.y, 4.5);
       // Gesture seal ring + "copy this shape" prompt (solo stage 2+ mechanic).
       const seal = state.boss && state.boss.gim && state.boss.gim.seal;
