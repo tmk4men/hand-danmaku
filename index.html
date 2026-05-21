@@ -907,7 +907,7 @@
     box-shadow: 0 0 0 2px #06081a, 0 0 30px color-mix(in srgb, var(--accent) 85%, transparent);
   }
   #ssCursor {
-    position: fixed; z-index: 16; width: 30px; height: 30px;
+    position: absolute; z-index: 16; width: 30px; height: 30px;
     margin: -15px 0 0 -15px; border-radius: 50%;
     border: 2px solid #ffd066; box-shadow: 0 0 12px #ffd066;
     pointer-events: none; display: none;
@@ -3456,7 +3456,12 @@
     const vx = rect.left + (state.ssCx / VW) * rect.width;
     const vy = rect.top  + (state.ssCy / VH) * rect.height;
     const cur = document.getElementById('ssCursor');
-    if (cur) { cur.style.display = 'block'; cur.style.left = vx + 'px'; cur.style.top = vy + 'px'; }
+    // #ssCursor lives INSIDE #stageSelect, so its left/top are relative to the
+    // overlay's own box, not the viewport — subtract the overlay origin. (vx/vy
+    // stay in viewport coords below because the card hit-test uses each card's
+    // getBoundingClientRect, which is also viewport-relative.) Without this, on a
+    // letterboxed (non-4:3) window the cursor was offset by the letterbox margin.
+    if (cur) { cur.style.display = 'block'; cur.style.left = (vx - rect.left) + 'px'; cur.style.top = (vy - rect.top) + 'px'; }
     // which card is the cursor over? (with a forgiving snap to the nearest card so
     // hand jitter doesn't make it feel like the focus "won't land")
     const cards = document.querySelectorAll('#stageSelect .ss-card');
