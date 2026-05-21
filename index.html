@@ -2802,7 +2802,8 @@
   }
 
   function spawnBoss() {
-    const hp = 200 + state.stageNo * 80;
+    // Boss durability scales harder per stage so it keeps up with leveled ships/weapons.
+    const hp = 240 + state.stageNo * 150;
     state.boss = {
       x: VW * 0.5, y: -60, tx: VW * 0.5, ty: 120,
       hp, maxHp: hp,
@@ -3107,7 +3108,7 @@
       const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
       for (let i = 0; i < n; i++) {
         state.shots.push({ x: p.x + (i - (n - 1) / 2) * 10, y: p.y - 10, vx: 0, vy: -7.5,
-          r: 3, dmg: 1, kind: 'wave', life: 0, ph: i * Math.PI });
+          r: 3, dmg: 2, kind: 'wave', life: 0, ph: i * Math.PI });   // was 1 — WAVE was the weakest main
       }
     } else if (wid === 'missile') {
       // MISSILE (MAIN): slow homing rockets. Leveling mainly raises DAMAGE; the count
@@ -4232,6 +4233,7 @@
       if (s.kind === 'homing') {
         let nearest = null, nd2 = Infinity;
         for (const e of state.enemies) {
+          if (s.missile && e.y < 0) continue;   // missiles ignore not-yet-entered (off-screen) foes
           const d = dist2(s.x, s.y, e.x, e.y);
           if (d < nd2) { nd2 = d; nearest = e; }
         }
@@ -4265,7 +4267,7 @@
       // remove if too old or off-screen
       const offTop = s.y < -10 && s.kind !== 'homing' && s.kind !== 'boomer';
       if (offTop || s.x < -20 || s.x > VW + 20 || s.y > VH + 20
-          || (s.kind === 'homing' && s.life > (s.missile ? 420 : 240))) {
+          || (s.kind === 'homing' && s.life > (s.missile ? 150 : 240))) {
         state.shots.splice(i, 1); continue;
       }
       if (s.pierce) {
@@ -4282,6 +4284,7 @@
       } else {
         let consumed = false;
         for (const e of state.enemies) {
+          if (s.missile && e.y < 0) continue;   // don't let missiles kill foes still off-screen
           if (dist2(s.x, s.y, e.x, e.y) < (e.radius + s.r) ** 2) {
             e.hp -= (s.dmg || 1);
             pushParticle(s.x, s.y, '#ffffff');
@@ -5922,7 +5925,7 @@
     { id: 'wave',   name: 'WAVE',   slot: 'main', cost: 1000, fireMul: 1.2, color: '#5fe6c8',
       descJa: '左右に蛇行して広く薙ぐ波動弾', desc: 'Weaving bolts that rake a wide path',
       icon: '<svg viewBox="0 0 16 16"><path d="M2 8 Q5 2 8 8 T14 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
-    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 3.6, color: '#ff9f43',
+    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 5.0, color: '#ff9f43',
       descJa: '低速の追尾ミサイル・Lvで威力UP（弾数は控えめ）', desc: 'Slow homing rockets — leveling boosts damage',
       icon: '<svg viewBox="0 0 16 16"><path d="M8 1 C10 4 10 7 10 10 H6 C6 7 6 4 8 1 Z" fill="currentColor"/><path d="M6 9 L4 13 L6 11 Z M10 9 L12 13 L10 11 Z" fill="currentColor"/><circle cx="8" cy="6" r="1.1" fill="#06081a"/></svg>' },
     // ----- SUB-slot -----
