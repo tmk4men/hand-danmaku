@@ -3088,6 +3088,15 @@
         state.shots.push({ x: p.x + (i - (n - 1) / 2) * 10, y: p.y - 10, vx: 0, vy: -7.5,
           r: 3, dmg: 1, kind: 'wave', life: 0, ph: i * Math.PI });
       }
+    } else if (wid === 'missile') {
+      // MISSILE (MAIN): slow homing rockets. Leveling mainly raises DAMAGE; the count
+      // grows only slightly (1 at Lv1-2, 2 at Lv3) — Lv1 fires a single rocket.
+      const dmg = 4 + (lv - 1) * 4;          // lv1=4, lv2=8, lv3=12
+      const mk = (ox) => state.shots.push({
+        x: p.x + ox, y: p.y - 12, vx: 0, vy: -1.6, r: 5, dmg,
+        kind: 'homing', missile: true, maxSp: 2.6, turn: 0.06, life: 0,
+      });
+      if (lv >= 3) { mk(-7); mk(7); } else mk(0);
     } else if (wid === 'flare') {
       // FLARE (SUB): a lobbed shell — detonates on impact or fuse into a radial frag spray.
       const rays = lv >= 3 ? 10 : lv >= 2 ? 8 : 6;
@@ -4208,7 +4217,7 @@
         }
         s.life++;
         // trail
-        if (s.life % 2 === 0) pushParticle(s.x, s.y, '#88e0ff');
+        if (s.life % 2 === 0) pushParticle(s.x, s.y, s.missile ? '#ff9f43' : '#88e0ff');
       }
       if (s.kind === 'boomer') s.vy += 0.26;   // BOOMERANG arc: decelerate, reverse, fall back
       if (s.kind === 'wave') { s.life = (s.life || 0) + 1; s.vx = Math.sin(s.life * 0.22 + (s.ph || 0)) * 3.6; }
@@ -4226,7 +4235,7 @@
       // remove if too old or off-screen
       const offTop = s.y < -10 && s.kind !== 'homing' && s.kind !== 'boomer';
       if (offTop || s.x < -20 || s.x > VW + 20 || s.y > VH + 20
-          || (s.kind === 'homing' && s.life > 240)) {
+          || (s.kind === 'homing' && s.life > (s.missile ? 420 : 240))) {
         state.shots.splice(i, 1); continue;
       }
       if (s.pierce) {
@@ -5211,11 +5220,21 @@
     // player shots — chunky 2-tone pellet (homing = cyan diamond)
     for (const s of state.shots) {
       if (s.kind === 'homing') {
-        ctx.fillStyle = '#88e0ff';
-        ctx.fillRect(s.x - 4, s.y - 1.5, 8, 3);
-        ctx.fillRect(s.x - 1.5, s.y - 4, 3, 8);
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
+        if (s.missile) {
+          // MISSILE: an orange rocket with a hot core + exhaust
+          ctx.fillStyle = '#ff9f43';
+          ctx.fillRect(s.x - 2.5, s.y - 6, 5, 11);
+          ctx.fillStyle = '#ffd08a';
+          ctx.fillRect(s.x - 1, s.y - 6, 2, 9);
+          ctx.fillStyle = '#ff5a3a';
+          ctx.fillRect(s.x - 2.5, s.y + 4, 5, 3);
+        } else {
+          ctx.fillStyle = '#88e0ff';
+          ctx.fillRect(s.x - 4, s.y - 1.5, 8, 3);
+          ctx.fillRect(s.x - 1.5, s.y - 4, 3, 8);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(s.x - 1.5, s.y - 1.5, 3, 3);
+        }
       } else if (s.kind === 'pierce') {
         // LANCE: long magenta lance with a white core
         ctx.fillStyle = '#ff77c8';
@@ -5884,6 +5903,9 @@
     { id: 'wave',   name: 'WAVE',   slot: 'main', cost: 1000, fireMul: 1.2, color: '#5fe6c8',
       descJa: '左右に蛇行して広く薙ぐ波動弾', desc: 'Weaving bolts that rake a wide path',
       icon: '<svg viewBox="0 0 16 16"><path d="M2 8 Q5 2 8 8 T14 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
+    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 1.7, color: '#ff9f43',
+      descJa: '低速の追尾ミサイル・Lvで威力UP（弾数は控えめ）', desc: 'Slow homing rockets — leveling boosts damage',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 1 C10 4 10 7 10 10 H6 C6 7 6 4 8 1 Z" fill="currentColor"/><path d="M6 9 L4 13 L6 11 Z M10 9 L12 13 L10 11 Z" fill="currentColor"/><circle cx="8" cy="6" r="1.1" fill="#06081a"/></svg>' },
     // ----- SUB-slot -----
     { id: 'homing', name: 'SEEKER', slot: 'sub', cost: 0,   fireMul: 1.25, color: '#ff77c8',
       descJa: '追尾弾（ピース由来）', desc: 'Homing missiles',
