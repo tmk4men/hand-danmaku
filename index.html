@@ -1567,9 +1567,9 @@
       dailyOff: '通常モード / 今日の日付: ',
       dailyOnTpl: '今日の弾幕({KEY})で全員と勝負',
       buy: 'BUY', maxBtn: 'MAX',
-      shopBomb: 'スタート時のボムを+1',
-      shopLife: 'スタート時のライフを+1',
-      shopPower: '武器Lv2 からスタート',
+      shopBomb: 'スタート時ボム+1（1プレイで消費）',
+      shopLife: 'スタート時ライフ+1（1プレイで消費）',
+      shopPower: '武器Lv2でスタート（1プレイで消費）',
       shopCharge: '親指曲げで装備中のUSE技を発動（武器タブで選択）',
       ldBombName: 'EXTRA BOMB', ldBombDesc: 'スタート時のボム +1',
       ldLifeName: 'EXTRA LIFE', ldLifeDesc: 'スタート時のライフ +1',
@@ -1621,9 +1621,9 @@
       dailyOff: 'Normal mode / Today: ',
       dailyOnTpl: "Today's pattern ({KEY}) — race the world",
       buy: 'BUY', maxBtn: 'MAX',
-      shopBomb: '+1 starting bomb',
-      shopLife: '+1 starting life',
-      shopPower: 'Start at weapon Lv2',
+      shopBomb: '+1 starting bomb (one run)',
+      shopLife: '+1 starting life (one run)',
+      shopPower: 'Start at weapon Lv2 (one run)',
       shopCharge: 'Thumb-bend → fire your equipped USE skill (pick it in WEAPON)',
       ldBombName: 'EXTRA BOMB', ldBombDesc: '+1 starting bomb',
       ldLifeName: 'EXTRA LIFE', ldLifeDesc: '+1 starting life',
@@ -6787,6 +6787,14 @@
     state.player.dashCd = 0;
     state.player.dashTrail.length = 0;
     state.power = 1 + ((loadout.power && shop.starters.power > 0) ? 1 : 0);
+    // Starters are one-shot consumables: spend the purchase on the run that uses it.
+    if (!NET.active) {
+      let spent = false;
+      for (const k of ['bomb', 'life', 'power']) {
+        if (loadout[k] && shop.starters[k] > 0) { shop.starters[k] = 0; spent = true; }
+      }
+      if (spent) saveShop();
+    }
     state.powerFlash = 0;
     state.bulletTime = 0;
     state.thumbBent = false;
