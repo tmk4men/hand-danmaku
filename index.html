@@ -1747,6 +1747,7 @@
     starters: loadJSON('hd_starters', { bomb: 0, life: 0, power: 0 }),
     ships:    loadJSON('hd_ships', ['vanguard']),   // owned machine (skin) ids
     ship:     localStorage.getItem('hd_ship') || 'vanguard',     // equipped skin
+    shipLv:   loadJSON('hd_shiplv', {}),            // machine id -> level (1..MAX_SHIP_LV)
     weapons:    loadJSON('hd_weapons', ['std', 'homing']),  // owned weapon ids
     weaponMain: localStorage.getItem('hd_weapon_main') || localStorage.getItem('hd_weapon') || 'std',
     weaponSub:  localStorage.getItem('hd_weapon_sub') || 'homing',
@@ -1805,6 +1806,7 @@
       localStorage.setItem('hd_starters', JSON.stringify(shop.starters));
       localStorage.setItem('hd_ships', JSON.stringify(shop.ships));
       localStorage.setItem('hd_ship', shop.ship);
+      localStorage.setItem('hd_shiplv', JSON.stringify(shop.shipLv));
       localStorage.setItem('hd_weapons', JSON.stringify(shop.weapons));
       localStorage.setItem('hd_weapon_main', shop.weaponMain);
       localStorage.setItem('hd_weapon_sub', shop.weaponSub);
@@ -1909,12 +1911,47 @@
         rows.appendChild(row);
       }
     } else if (shop.tab === 'machine') {
-      for (const sk of SHIPS) addEquipRow({
-        owned: shop.ships.includes(sk.id), equipped: shop.ship === sk.id, cost: sk.cost,
-        name: sk.name, desc: skinStatLine(sk), preview: skinPreview(sk),
-        onBuy: () => { shop.ships.push(sk.id); shop.ship = sk.id; },
-        onEquip: () => { shop.ship = sk.id; },
-      });
+      const ja = lang === 'ja';
+      const mnote = document.createElement('div'); mnote.className = 'shop-note';
+      mnote.textContent = ja ? '機体は強化でLvUP（速度↑・連射↑・判定小、Lv' + MAX_SHIP_LV + 'で+1ライフ）'
+                             : 'Level a machine up (speed↑, fire↑, hitbox↓, +1 life at Lv' + MAX_SHIP_LV + ')';
+      rows.appendChild(mnote);
+      for (const sk of SHIPS) {
+        const owned = shop.ships.includes(sk.id), equipped = shop.ship === sk.id, lv = shipLevel(sk.id);
+        const row = document.createElement('div');
+        row.className = 'item' + (equipped ? ' equipped' : '');
+        const ico = document.createElement('span'); ico.className = 'shop-ico'; ico.appendChild(skinPreview(sk));
+        const lvTag = owned ? ` <span style="color:#ffd066">Lv${lv}${lv >= MAX_SHIP_LV ? ' MAX' : ''}</span>` : '';
+        const mid = document.createElement('div');
+        mid.innerHTML = `<div class="name">${sk.name}${lvTag}</div><div class="desc">${skinStatLine(sk)}</div>`;
+        const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = owned ? '—' : sk.cost;
+        const actions = document.createElement('div');
+        actions.style.cssText = 'display:flex;flex-direction:column;gap:4px;align-items:flex-end;';
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn-cta';
+        if (equipped) { btn.textContent = ja ? '装備中' : 'EQUIPPED'; btn.disabled = true; }
+        else if (owned) { btn.textContent = ja ? '装備' : 'EQUIP'; }
+        else { btn.textContent = t('buy'); btn.disabled = shop.coins < sk.cost; }
+        btn.addEventListener('click', () => {
+          if (equipped) return;
+          if (owned) { shop.ship = sk.id; }
+          else { if (shop.coins < sk.cost) return; shop.coins -= sk.cost; shop.ships.push(sk.id); shop.ship = sk.id; }
+          saveShop(); renderShop(); SFX.pickup();
+        });
+        actions.appendChild(btn);
+        if (owned && lv < MAX_SHIP_LV) {
+          const lc = shipLvCost(lv);
+          const up = document.createElement('button'); up.type = 'button'; up.className = 'btn-cta';
+          up.textContent = (ja ? '強化 ' : 'LV UP ') + lc;
+          up.disabled = shop.coins < lc;
+          up.addEventListener('click', () => {
+            if (shop.coins < lc) return;
+            shop.coins -= lc; shop.shipLv[sk.id] = lv + 1; saveShop(); renderShop(); SFX.grazeMax();
+          });
+          actions.appendChild(up);
+        }
+        row.append(ico, mid, cost, actions);
+        rows.appendChild(row);
+      }
     } else if (shop.tab === 'ally') {
       const ja = lang === 'ja';
       const note = document.createElement('div'); note.className = 'shop-note';
@@ -4062,12 +4099,12 @@
     // Smooth player to hand target
     const p = state.player;
     const sk = currentSkin();
-    const k = (state.focus ? 0.12 : 0.25) * (sk.speed || 1);
+    const k = (state.focus ? 0.12 : 0.25) * skinSpeed();
     state.smoothX += (p.tx - state.smoothX) * k;
     state.smoothY += (p.ty - state.smoothY) * k;
     p.x = clamp(state.smoothX, 12, VW - 12);
     p.y = clamp(state.smoothY, 12, VH - 12);
-    p.hitR = (state.focus ? 2 : 4) * (sk.hitMul || 1);
+    p.hitR = (state.focus ? 2 : 4) * skinHitMul();
 
     if (p.invuln > 0) p.invuln--;
     if (p.bombFx > 0) p.bombFx--;
@@ -4127,7 +4164,7 @@
       if (state.focus) SFX.shootFocus(); else SFX.shoot();
       const baseCd = state.focus ? 38 : (state.graze.boost > 0 ? 4 : 6);
       p.fireCooldown = state.focus ? baseCd
-        : Math.round(baseCd * (currentMainWeapon().fireMul || 1) * (currentSkin().fireMul || 1));
+        : Math.round(baseCd * (currentMainWeapon().fireMul || 1) * skinFireMul());
     }
 
     // SUB weapon fires while the PEACE gesture is held.
@@ -4467,12 +4504,12 @@
 
     // own ship to hand target
     const p = state.player, sk = currentSkin();
-    const k = 0.25 * (sk.speed || 1);
+    const k = 0.25 * skinSpeed();
     state.smoothX += (p.tx - state.smoothX) * k;
     state.smoothY += (p.ty - state.smoothY) * k;
     p.x = clamp(state.smoothX, 12, VW - 12);
     p.y = clamp(state.smoothY, 12, VH - 12);
-    p.hitR = 4 * (sk.hitMul || 1);
+    p.hitR = 4 * skinHitMul();
     if (p.invuln > 0) p.invuln--;
     if (p.bombFx > 0) p.bombFx--;
     if (p.dashCd > 0) p.dashCd--;
@@ -5946,6 +5983,14 @@
     }
   })();
   function currentSkin()       { return SHIPS.find(s => s.id === shop.ship) || SHIPS[0]; }
+  // Machine leveling: each level past 1 sharpens the equipped ship's stats.
+  const MAX_SHIP_LV = 5;
+  function shipLevel(id = shop.ship) { const v = (shop.shipLv && shop.shipLv[id]) || 1; return Math.max(1, Math.min(MAX_SHIP_LV, v)); }
+  function shipLvCost(lv)  { return 300 * lv; }   // Lv1->2 = 300 … Lv4->5 = 1200
+  function skinSpeed()     { return (currentSkin().speed    || 1) * (1 + (shipLevel() - 1) * 0.05); }
+  function skinFireMul()   { return (currentSkin().fireMul  || 1) * Math.pow(0.94, shipLevel() - 1); }
+  function skinHitMul()    { return (currentSkin().hitMul   || 1) * (1 - (shipLevel() - 1) * 0.04); }
+  function skinLifeBonus() { return (currentSkin().lifeBonus || 0) + (shipLevel() >= MAX_SHIP_LV ? 1 : 0); }
   function currentMainWeapon() { return WEAPONS.find(w => w.id === shop.weaponMain) || WEAPONS[0]; }
   function currentSubWeapon()  { return shop.weaponSub === 'none' ? null : (WEAPONS.find(w => w.id === shop.weaponSub) || null); }
   function skinPreview(skin) {
@@ -6687,7 +6732,7 @@
     pauseBtn.classList.remove('paused');
     state.t = 0;
     state.score = 0;
-    state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + (currentSkin().lifeBonus || 0);
+    state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + skinLifeBonus();
     state.maxLives = state.lives;   // meteor damage = half of this
     state.bombs = 2 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
     state.guard.remaining = 600;
