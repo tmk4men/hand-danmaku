@@ -2147,7 +2147,7 @@
   function drawPartner() {
     if (!NET.active || !NET.partner.seen) return;
     const px = NET.partner.x, py = NET.partner.y;
-    drawSprite(SHIP_SPRITE, PARTNER_PAL, px, py, 3.2);
+    drawSprite(SHIP_SPRITE, PARTNER_PAL, px, py, 2.4);
     ctx.strokeStyle = '#ffd066'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(px, py, 14, 0, TAU); ctx.stroke();
     ctx.fillStyle = '#ffd066'; ctx.font = '7px monospace';
@@ -3183,7 +3183,7 @@
           ctx.fillRect(w.x + Math.cos(a) * R - 1.5, w.y + Math.sin(a) * R - 1.5, 3, 3);
         }
       }
-      drawSprite(SHIP_SPRITE, (ally && ally.pal) || PARTNER_PAL, w.x, w.y, 2.0);
+      drawSprite(SHIP_SPRITE, (ally && ally.pal) || PARTNER_PAL, w.x, w.y, 1.5);
     }
   }
 
@@ -5760,27 +5760,42 @@
   }
 
   // Pixel-art ship sprite. Each char = a pixel cell. Bottom row is engine.
+  // Pixel-art shading helper: derive a full outline/shadow/mid/light ramp from one
+  // base hull colour, so every ship skin gets consistent volumetric shading instead
+  // of a hand-picked flat 5-colour palette. Keys: O outline, D shadow, B body,
+  // M mid, L light, H spec highlight, C canopy/glass, E engine glow.
+  function shade(hex, t) {            // t<0 darken toward black, t>0 lighten toward white
+    const n = parseInt(hex.slice(1), 16);
+    let r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const tgt = t >= 0 ? 255 : 0, a = Math.abs(t);
+    r = Math.round(r + (tgt - r) * a); g = Math.round(g + (tgt - g) * a); b = Math.round(b + (tgt - b) * a);
+    return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+  }
+  function shipPalette(base, canopy, engine) {
+    return { O: shade(base, -0.72), D: shade(base, -0.42), B: base,
+             M: shade(base, 0.16), L: shade(base, 0.42), H: '#ffffff', C: canopy, E: engine };
+  }
+  // 16x16 hero ship (was a flat 12x12). Drawn with the shaded palette above.
   const SHIP_SPRITE = [
-    '.....##.....',
-    '....####....',
-    '....#WW#....',
-    '...##WW##...',
-    '..##BWWB##..',
-    '.###BCCB###.',
-    '###BCWWCB###',
-    '#B#BCWWCB#B#',
-    '#.BBCCCCBB.#',
-    '...##EE##...',
-    '....#EE#....',
-    '.....EE.....',
+    '.......OO.......',
+    '......OLLO......',
+    '......OCCO......',
+    '.....OLCCLO.....',
+    '.....OCCCCO.....',
+    '....OLCCCCLO....',
+    '....OBLCCLBO....',
+    '...OBMLCCLMBO...',
+    '..OBMMLCCLMMBO..',
+    '.OBMMMLLLLMMMBO.',
+    'OBDMMMMLLMMMMDBO',
+    '.ODDMMMMMMMMDDO.',
+    '..ODDMMMMMMDDO..',
+    '...ODDMMMMDDO...',
+    '...ODDEEEEDDO...',
+    '.....EE..EE.....',
   ];
-  const SHIP_PAL = {
-    '#': '#3563d6', 'B': '#1a2a78', 'C': '#9ad8ff',
-    'W': '#ffffff', 'E': '#ffd066',
-  };
-  const PARTNER_PAL = {
-    '#': '#d6a52b', 'B': '#7a5a10', 'C': '#ffe9a0', 'W': '#ffffff', 'E': '#ff8a3a',
-  };
+  const SHIP_PAL = shipPalette('#3563d6', '#9ad8ff', '#ffd066');
+  const PARTNER_PAL = shipPalette('#d6a52b', '#ffe9a0', '#ff8a3a');
 
   // Equippable MACHINE skins (shared shape, palette swap) + WEAPONS (mount any).
   // Each machine has a stat identity: speed (move responsiveness), hitMul
@@ -5790,13 +5805,13 @@
       speed: 1.0, hitMul: 1.0, lifeBonus: 0, fireMul: 1.0, pal: SHIP_PAL },
     { id: 'viper',    name: 'VIPER',    cost: 600,
       speed: 1.3, hitMul: 0.8, lifeBonus: 0, fireMul: 1.0,
-      pal: { '#': '#2bbf6a', 'B': '#125a34', 'C': '#aef7c8', 'W': '#ffffff', 'E': '#b6ff3a' } },
+      pal: shipPalette('#2bbf6a', '#aef7c8', '#b6ff3a') },
     { id: 'crimson',  name: 'CRIMSON',  cost: 800,
       speed: 0.85, hitMul: 1.1, lifeBonus: 1, fireMul: 1.0,
-      pal: { '#': '#d6452b', 'B': '#7a1a10', 'C': '#ffc0a0', 'W': '#ffffff', 'E': '#ffd066' } },
+      pal: shipPalette('#d6452b', '#ffc0a0', '#ffd066') },
     { id: 'nebula',   name: 'NEBULA',   cost: 1000,
       speed: 1.0, hitMul: 1.0, lifeBonus: 0, fireMul: 0.85,
-      pal: { '#': '#7a5ad6', 'B': '#2a1a6a', 'C': '#c8b6ff', 'W': '#ffffff', 'E': '#88e0ff' } },
+      pal: shipPalette('#7a5ad6', '#c8b6ff', '#88e0ff') },
   ];
   // Weapons are split by slot: MAIN-slot vs SUB-slot. Strength scales with the
   // in-run power level (picked up during play), NOT a shop purchase.
@@ -5882,7 +5897,7 @@
     const c = document.createElement('canvas');
     c.width = 30; c.height = 30;
     const cx = c.getContext('2d'); cx.imageSmoothingEnabled = false;
-    const grid = SHIP_SPRITE, pal = skin.pal, cell = 2.4;
+    const grid = SHIP_SPRITE, pal = skin.pal, cell = 1.7;
     const x0 = (c.width - grid[0].length * cell) / 2, y0 = (c.height - grid.length * cell) / 2;
     for (let y = 0; y < grid.length; y++) for (let x = 0; x < grid[y].length; x++) {
       const ch = grid[y][x]; if (ch === '.') continue;
@@ -6083,7 +6098,7 @@
       }
     }
 
-    if (!blink) drawSprite(SHIP_SPRITE, currentSkin().pal, p.x, p.y, 3.5);
+    if (!blink) drawSprite(SHIP_SPRITE, currentSkin().pal, p.x, p.y, 2.6);
 
     // focus indicator: narrow ring of dim cyan dots
     if (state.focus) {
