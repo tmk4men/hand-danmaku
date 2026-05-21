@@ -5922,6 +5922,32 @@
       }
     }
   }
+  // Boss draw: add volume to the flat single-tone boss sprites WITHOUT redrawing each
+  // one — a silhouette outline (darkest) plus a top→bottom light/mid/dark gradient on
+  // the body ('#') cells. Accent chars (E eye / W detail / D dark) keep their colours.
+  function drawBossSprite(grid, palette, cx, cy, cell) {
+    const w = grid[0].length, h = grid.length;
+    const x0 = cx - (w / 2) * cell, y0 = cy - (h / 2) * cell;
+    const body = palette['#'] || '#888888';
+    const light = shade(body, 0.34), dark = shade(body, -0.34), edge = shade(body, -0.66);
+    const solid = (x, y) => { const r = grid[y]; return !!(r && r[x] && r[x] !== '.' && r[x] !== ' '); };
+    for (let y = 0; y < h; y++) {
+      const row = grid[y];
+      for (let x = 0; x < row.length; x++) {
+        const c = row[x]; if (c === '.' || c === ' ') continue;
+        let col;
+        if (c === '#') {
+          const t = y / (h - 1);
+          col = t < 0.4 ? light : t > 0.75 ? dark : body;
+          if (!solid(x - 1, y) || !solid(x + 1, y) || !solid(x, y - 1) || !solid(x, y + 1)) col = edge;
+        } else {
+          col = palette[c] || body;
+        }
+        ctx.fillStyle = col;
+        ctx.fillRect(x0 + x * cell, y0 + y * cell, cell, cell);
+      }
+    }
+  }
 
   // Tiny pixel glyphs for item letters (3x5 grids)
   const GLYPHS = {
@@ -6139,19 +6165,29 @@
     ctx.fillRect(p.x + 1.25, p.y - 2.5, 1.25, 5);
   }
 
+  // Grunt drone (was a flat 8x8). gruntPalette() derives a shaded ramp from one base
+  // hue so each pattern variant keeps its colour identity but gains volume + glow eyes.
+  function gruntPalette(base) {
+    return { O: shade(base, -0.68), D: shade(base, -0.40), B: base,
+             M: shade(base, 0.18), L: shade(base, 0.46), E: shade(base, 0.80) };
+  }
   const GRUNT_SPRITE = [
-    '..####..',
-    '.######.',
-    '##E##E##',
-    '##E##E##',
-    '########',
-    '.##WW##.',
-    '..####..',
-    '...##...',
+    '....OBBO....',
+    '..OOBMMBOO..',
+    '.OBMMLLMMBO.',
+    'OBMMLLLLMMBO',
+    'OBMEEMMEEMBO',
+    'OBMEEMMEEMBO',
+    'OBMMLLLLMMBO',
+    '.OBMMLLMMBO.',
+    '..OBMMMMBO..',
+    '..OBDDDDBO..',
+    '...DD..DD...',
+    '...OO..OO...',
   ];
-  const GRUNT_PAL_AIM  = { '#': '#c845a8', 'E': '#ffffff', 'W': '#ffd2f0' };
-  const GRUNT_PAL_SPIN = { '#': '#3aa6c8', 'E': '#ffffff', 'W': '#cdf3ff' };
-  const GRUNT_PAL_FAN  = { '#': '#c89a3a', 'E': '#ffffff', 'W': '#ffe9b8' };
+  const GRUNT_PAL_AIM  = gruntPalette('#c845a8');
+  const GRUNT_PAL_SPIN = gruntPalette('#3aa6c8');
+  const GRUNT_PAL_FAN  = gruntPalette('#c89a3a');
 
   // ---------- Boss variants (one per stage theme) ----------
   const BOSS_VARIANTS = [
@@ -6497,7 +6533,7 @@
   function drawEnemy(e) {
     if (e.isBoss) {
       const v = getBossVariant();
-      drawSprite(v.sprite, v.pal, e.x, e.y, 4.5);
+      drawBossSprite(v.sprite, v.pal, e.x, e.y, 4.5);
       // Gesture seal ring + "copy this shape" prompt (solo stage 2+ mechanic).
       const seal = state.boss && state.boss.gim && state.boss.gim.seal;
       if (seal && seal.state === 'up') {
@@ -6525,7 +6561,7 @@
       const pal = e.pattern === 'spin' ? GRUNT_PAL_SPIN
                 : e.pattern === 'fan'  ? GRUNT_PAL_FAN
                 : GRUNT_PAL_AIM;
-      const cell = e.pattern === 'spin' ? 3.2 : 2.8;
+      const cell = e.pattern === 'spin' ? 2.1 : 1.85;
       drawSprite(GRUNT_SPRITE, pal, e.x, e.y, cell);
       // hp pip — chunky two-tone bar
       const w = e.radius * 1.8;
