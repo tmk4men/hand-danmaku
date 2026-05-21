@@ -1913,8 +1913,8 @@
     } else if (shop.tab === 'machine') {
       const ja = lang === 'ja';
       const mnote = document.createElement('div'); mnote.className = 'shop-note';
-      mnote.textContent = ja ? '機体は強化でLvUP（速度↑・連射↑・判定小、Lv' + MAX_SHIP_LV + 'で+1ライフ）'
-                             : 'Level a machine up (speed↑, fire↑, hitbox↓, +1 life at Lv' + MAX_SHIP_LV + ')';
+      mnote.textContent = ja ? '強化で 速度↑・攻撃力↑（Lv3/Lv5で+1ライフ）。判定・連射は変化なし'
+                             : 'Level up: speed↑, attack↑ (+1 life at Lv3/Lv5). Hitbox & fire rate unchanged';
       rows.appendChild(mnote);
       for (const sk of SHIPS) {
         const owned = shop.ships.includes(sk.id), equipped = shop.ship === sk.id, lv = shipLevel(sk.id);
@@ -3036,6 +3036,7 @@
   // raised by power-ups DURING play). Each weapon scales differently.
   function emitWeapon(wid) {
     const p = state.player, lv = state.power;
+    const _emitStart = state.shots.length;   // scale these shots by the ship's level dmg bonus
     // Wrist tilt bends only the MAIN weapon (std/spread/heavy); SUBs stay straight so they
     // don't get a free aim buff. roll is -1..1; ~2px/frame of vx per unit at vy ~ -10.
     const roll = (wid === 'std' || wid === 'spread' || wid === 'heavy') ? (state.handRoll || 0) : 0;
@@ -3120,6 +3121,9 @@
         state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vx: roll * 2.2, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
       }
     }
+    // Machine-level attack bonus: scale every shot this volley just created.
+    const dm = shipDmgMul();
+    if (dm !== 1) for (let i = _emitStart; i < state.shots.length; i++) state.shots[i].dmg = (state.shots[i].dmg || 1) * dm;
   }
 
   // FLARE detonation: spray short-lived frags in all directions from the shell's position.
@@ -6009,10 +6013,12 @@
   const MAX_SHIP_LV = 5;
   function shipLevel(id = shop.ship) { const v = (shop.shipLv && shop.shipLv[id]) || 1; return Math.max(1, Math.min(MAX_SHIP_LV, v)); }
   function shipLvCost(lv)  { return 300 * lv; }   // Lv1->2 = 300 … Lv4->5 = 1200
-  function skinSpeed()     { return (currentSkin().speed    || 1) * (1 + (shipLevel() - 1) * 0.05); }
-  function skinFireMul()   { return (currentSkin().fireMul  || 1) * Math.pow(0.94, shipLevel() - 1); }
-  function skinHitMul()    { return (currentSkin().hitMul   || 1) * (1 - (shipLevel() - 1) * 0.04); }
-  function skinLifeBonus() { return (currentSkin().lifeBonus || 0) + (shipLevel() >= MAX_SHIP_LV ? 1 : 0); }
+  // Leveling: HITBOX and FIRE RATE stay fixed; speed, attack power and life rise.
+  function skinSpeed()     { return (currentSkin().speed    || 1) * (1 + (shipLevel() - 1) * 0.05); }   // +5%/lv
+  function skinFireMul()   { return (currentSkin().fireMul  || 1); }   // unchanged by level
+  function skinHitMul()    { return (currentSkin().hitMul   || 1); }   // unchanged by level
+  function shipDmgMul()    { return 1 + (shipLevel() - 1) * 0.08; }     // attack power +8%/lv
+  function skinLifeBonus() { const lv = shipLevel(); return (currentSkin().lifeBonus || 0) + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0); }
   function currentMainWeapon() { return WEAPONS.find(w => w.id === shop.weaponMain) || WEAPONS[0]; }
   function currentSubWeapon()  { return shop.weaponSub === 'none' ? null : (WEAPONS.find(w => w.id === shop.weaponSub) || null); }
   function skinPreview(skin) {
