@@ -1003,6 +1003,88 @@
   }
   #story #storyNext { margin-top: clamp(16px, 3.4vmin, 26px); }
   #story .story-tap { margin-top: 8px; font-size: clamp(8px, 1.6vmin, 10px); color: #6b7099; letter-spacing: 0.1em; }
+
+  /* ============================================================
+     UI QUALITY PASS — depth, tactile buttons, focus states, motion
+     (additive overrides; keeps the neon/arcade look intact)
+     ============================================================ */
+  * { -webkit-tap-highlight-color: transparent; }
+  ::selection { background: rgba(136,168,255,0.35); color: #fff; }
+
+  /* Glass depth on translucent surfaces (panels stay opaque, so blur the rest) */
+  #hud, #pauseBtn, #muteBtn,
+  #tutorial .tut-panel, #story .story-card,
+  #stageSelect, #pauseOverlay {
+    -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  }
+
+  /* Smooth view-swap (driven by replayPanelAnim() on each show*View) */
+  #overlay .panel { transition: opacity 0.26s ease, transform 0.26s cubic-bezier(0.22,1,0.36,1); will-change: opacity, transform; }
+
+  /* Tactile buttons: lift on hover, press down on click, keyboard focus ring */
+  #overlay button { transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.16s ease; }
+  #overlay button:not(.btn-ghost):not(.btn-cta) {
+    box-shadow: 0 2px 0 rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.14);
+  }
+  #overlay button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.14); }
+  #overlay button:active:not(:disabled) { transform: translateY(1px); filter: brightness(1.05); }
+  #overlay button.btn-lg:hover:not(:disabled) { transform: translateY(-2px); }
+  #overlay button:focus-visible,
+  #shopList button:focus-visible, #shopList .shop-tab:focus-visible, #shopList .slot-btn:focus-visible,
+  #coopView .role-btn:focus-visible, #coopRoom:focus-visible, .ss-card:focus-visible {
+    outline: 2px solid #aac8ff; outline-offset: 2px;
+  }
+
+  /* Secondary buttons (shop/role/tab/slot) get the same hover/press feel */
+  #shopList .item button, #shopList .shop-tab, #shopList .slot-btn, #coopView .role-btn {
+    transition: transform 0.12s ease, filter 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  }
+  #shopList .item button:hover:not(:disabled), #shopList .shop-tab:hover, #shopList .slot-btn:hover,
+  #coopView .role-btn:hover { filter: brightness(1.12); border-color: #88a8ff; }
+  #shopList .item button:active:not(:disabled) { transform: translateY(1px); }
+  #shopList .item.equipped { box-shadow: inset 0 0 10px rgba(127,255,212,0.18), 0 0 14px rgba(127,255,212,0.18); }
+
+  /* Input focus glow */
+  #coopRoom { caret-color: #88e0ff; transition: border-color 0.15s ease, box-shadow 0.15s ease; }
+  #coopRoom:focus { outline: none; border-color: #88a8ff; box-shadow: 0 0 0 2px rgba(136,168,255,0.30), 0 0 18px rgba(136,168,255,0.25); }
+
+  /* Slim, themed scrollbars for the scrollable areas */
+  #shopList .shop-rows, #overlay .panel, #loadoutList { scrollbar-width: thin; scrollbar-color: #3a4a98 transparent; }
+  #shopList .shop-rows::-webkit-scrollbar, #overlay .panel::-webkit-scrollbar { width: 8px; height: 8px; }
+  #shopList .shop-rows::-webkit-scrollbar-thumb, #overlay .panel::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, #4a60d8, #2a3a9a); border-radius: 6px; border: 2px solid transparent; background-clip: padding-box;
+  }
+  #shopList .shop-rows::-webkit-scrollbar-track, #overlay .panel::-webkit-scrollbar-track { background: transparent; }
+
+  /* Stage-select cards: gentle hover lift */
+  #stageSelect .ss-card { transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease; }
+  #stageSelect .ss-card:hover, #stageSelect .ss-card.ss-hot { transform: translateY(-3px); }
+
+  /* Tutorial/story live OUTSIDE #overlay, so the .btn-cta/.btn-ghost variants don't reach
+     them — give their buttons the same arcade styling here. */
+  #tutorial button, #story button {
+    font-family: inherit; font-weight: 700; letter-spacing: 0.12em; cursor: pointer;
+    padding: 10px 22px; font-size: 13px; border-radius: 8px;
+    border: 1px solid #88a8ff; background: linear-gradient(180deg, #4a60d8, #2a3a9a); color: #fff;
+    transition: transform 0.14s ease, filter 0.14s ease, box-shadow 0.16s ease;
+  }
+  #tutorial button:hover, #story button:hover { transform: translateY(-1px); filter: brightness(1.14); }
+  #tutorial button:active, #story button:active { transform: translateY(1px); }
+  #story #storyNext {
+    background: linear-gradient(180deg, #ffd866, #c89a3a); border-color: #ffd066; color: #06081a;
+    box-shadow: 0 0 0 3px #06081a, 0 0 22px rgba(255,208,102,0.5);
+  }
+  #tutorial #tutSkip { background: transparent; border-color: #2a2f55; color: #8890b8; box-shadow: none; }
+  #tutorial #tutSkip:hover { color: #fff; border-color: #88a8ff; }
+
+  /* Respect reduced-motion: calm the ambient loops + transitions */
+  @media (prefers-reduced-motion: reduce) {
+    #overlay::before, #overlay .panel, #overlay h1, #overlay .kicker,
+    #overlay button.btn-cta, .rank-badge, #story .story-card {
+      animation: none !important;
+    }
+    #overlay .panel, #overlay button { transition: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -2085,6 +2167,7 @@
     document.body.classList.remove('playing');
     NET.setStatus(NET.connected ? '接続OK' : '未接続');
     NET.setMeta();
+    replayPanelAnim();
   }
 
   function drawPartner() {
@@ -2098,11 +2181,21 @@
     ctx.fillText('P2', px, py - 16);
   }
 
+  // Quick fade/slide when the overlay swaps views (uses the .panel transition in CSS).
+  function replayPanelAnim() {
+    const p = overlayPanel;
+    p.style.opacity = '0';
+    p.style.transform = 'translateY(8px) scale(0.99)';
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      p.style.opacity = ''; p.style.transform = '';
+    }));
+  }
   function showHomeView() {
     overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView', 'coopView');
     document.body.classList.remove('playing');
     coinAmt.textContent = shop.coins;
     syncLoadoutSummary();
+    replayPanelAnim();
   }
   function syncLoadoutSummary() {
     const lifeN  = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0);
@@ -2118,15 +2211,18 @@
     overlayPanel.classList.add('shopView');
     overlayPanel.classList.remove('readyView', 'loadoutView');
     renderShop();
+    replayPanelAnim();
   }
   function showReadyView() {
     overlayPanel.classList.add('readyView');
     overlayPanel.classList.remove('shopView', 'loadoutView');
+    replayPanelAnim();
   }
   function showLoadoutView() {
     overlayPanel.classList.add('loadoutView');
     overlayPanel.classList.remove('shopView', 'readyView');
     renderLoadout();
+    replayPanelAnim();
   }
 
   function renderLoadout() {
