@@ -977,6 +977,32 @@
   #tutorial .tut-hint { font-size: clamp(8px, 1.7vmin, 11px); color: #8890b8; margin-top: 4px; }
   #tutorial .tut-panel.tut-ok { border-color: #7fffd4; box-shadow: 0 0 50px rgba(127,255,212,0.5); }
   #tutorial #tutSkip { margin-top: 14px; }
+
+  /* ---- Story screens (prologue / ending) ---- */
+  #story {
+    position: absolute; inset: 0; z-index: 45; display: flex;
+    align-items: center; justify-content: center; cursor: pointer;
+    background: radial-gradient(120% 120% at 50% 40%, rgba(6,8,24,0.78), rgba(2,3,10,0.94));
+  }
+  #story.hidden { display: none; }
+  #story .story-card {
+    text-align: center; max-width: min(560px, 88%);
+    padding: clamp(18px, 4vmin, 36px) clamp(18px, 5vmin, 44px);
+    border: 1px solid rgba(127,220,255,0.30); border-radius: 16px;
+    background: rgba(8,10,26,0.66); box-shadow: 0 0 50px rgba(40,80,160,0.30);
+    animation: storyIn 0.45s ease;
+  }
+  @keyframes storyIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  #story .story-title {
+    font-size: clamp(15px, 3.6vmin, 24px); letter-spacing: 0.12em; font-weight: 700;
+    color: #7fdcff; margin-bottom: clamp(10px, 2.4vmin, 18px);
+  }
+  #story .story-body { display: flex; flex-direction: column; gap: clamp(7px, 1.6vmin, 12px); }
+  #story .story-line {
+    font-size: clamp(11px, 2.6vmin, 16px); color: #e6e9ff; line-height: 1.65;
+  }
+  #story #storyNext { margin-top: clamp(16px, 3.4vmin, 26px); }
+  #story .story-tap { margin-top: 8px; font-size: clamp(8px, 1.6vmin, 10px); color: #6b7099; letter-spacing: 0.1em; }
 </style>
 </head>
 <body>
@@ -1077,6 +1103,15 @@
         <div class="tut-meter"><div class="tut-fill" id="tutFill"></div></div>
         <div class="tut-hint" id="tutHint">指示どおりの手の形を作るとクリア</div>
         <button type="button" id="tutSkip" class="btn-ghost">スキップ ▶</button>
+      </div>
+    </div>
+
+    <div id="story" class="hidden">
+      <div class="story-card">
+        <div class="story-title" id="storyTitle"></div>
+        <div class="story-body" id="storyBody"></div>
+        <button type="button" id="storyNext" class="btn-cta">▶ つづける</button>
+        <div class="story-tap">タップで進む</div>
       </div>
     </div>
 
@@ -1384,6 +1419,7 @@
     handRoll: 0,         // wrist tilt -1..1 -> bends the MAIN weapon's aim
     gestureKind: 'none', // coarse current hand shape (for boss gesture seals + tutorial)
     tutorial: { active: false, step: 0, hold: 0, moveAccum: 0, lastX: null, lastY: null },
+    story: null,         // active prologue/ending screen state, or null
     graze: { value: 0, max: 100, boost: 0 },
     mod: { name: 'NORMAL', bulletSpeedMul: 1, fanRays: 0, spinnerExtra: 0 },
     shake: 0,
@@ -2324,10 +2360,10 @@
   function showGesture(label, sub, color) {
     state.gestureFx = { label, sub, life: 36, maxLife: 36, color };
   }
-  function pushPopup(x, y, text, color = '#ffffff', size = 10) {
+  function pushPopup(x, y, text, color = '#ffffff', size = 10, life = 60) {
     state.popups.push({
       x, y, vy: -0.8, vx: rand(-0.2, 0.2),
-      life: 60, maxLife: 60, text, color, size,
+      life, maxLife: life, text, color, size,
     });
     if (state.popups.length > 24) state.popups.shift();
   }
@@ -2619,6 +2655,9 @@
     };
     state.enemies.push({ ...state.boss, isBoss: true, ref: state.boss });
     state.bossFight = true;
+    // L1: boss greeting line as it descends
+    const lore = STORY.worlds[state.themeIndex % STORY.worlds.length];
+    if (lore && lore.in) pushPopup(VW / 2, 150, '「' + lore.in + '」', '#ffd0e0', 11, 160);
   }
 
   // Per-boss SIGNATURE GIMMICK — one distinct mechanic per theme so the 10 bosses
@@ -3438,6 +3477,48 @@
     if (panel) panel.classList.toggle('tut-ok', !!ok);
   }
 
+  // ---------- Story screens (paged text cards: prologue, endings) ----------
+  function showStoryScreen(pages, onDone) {
+    state.story = { pages, idx: 0, onDone: onDone || null, active: true };
+    document.getElementById('story').classList.remove('hidden');
+    audio.resume();
+    renderStoryPage();
+  }
+  function renderStoryPage() {
+    const st = state.story; if (!st) return;
+    const pg = st.pages[st.idx]; if (!pg) { closeStory(); return; }
+    const title = document.getElementById('storyTitle');
+    title.textContent = pg.title || '';
+    title.style.color = pg.accent || '#7fdcff';
+    const body = document.getElementById('storyBody');
+    body.innerHTML = '';
+    for (const line of pg.lines) {
+      const d = document.createElement('div');
+      d.className = 'story-line'; d.textContent = line;
+      body.appendChild(d);
+    }
+    document.getElementById('storyNext').textContent =
+      (st.idx >= st.pages.length - 1) ? '▶ はじめる' : '▶ つづける';
+    // Auto-advance so the gesture-first flow stays hands-free; tapping just speeds it up.
+    if (st.timer) clearTimeout(st.timer);
+    st.timer = setTimeout(advanceStory, 5500);
+  }
+  function advanceStory() {
+    const st = state.story; if (!st || !st.active) return;
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    st.idx++;
+    if (st.idx >= st.pages.length) closeStory();
+    else { renderStoryPage(); SFX.shootFocus(); }
+  }
+  function closeStory() {
+    const st = state.story; if (!st) return;
+    if (st.timer) { clearTimeout(st.timer); st.timer = null; }
+    st.active = false;
+    document.getElementById('story').classList.add('hidden');
+    state.story = null;
+    if (st.onDone) st.onDone();
+  }
+
   function fireDragon() {
     state.dragonFiring = 180;          // 3s at 60fps
     state.dragonType = currentDragon().id;   // beam (column) vs nova (radial)
@@ -4027,6 +4108,9 @@
           state.shake = 28;
           for (let k = 0; k < 60; k++) pushParticle(e.x, e.y, '#ffffff');
           SFX.bossDie();
+          // L1: boss farewell line
+          const lore = STORY.worlds[state.themeIndex % STORY.worlds.length];
+          if (lore && lore.die) pushPopup(e.x, e.y - 30, '「' + lore.die + '」', '#ffe0ea', 11, 170);
           if (CAMPAIGN_ON()) {
             // Finite campaign: clear stage 10 => win; otherwise choose the next stage.
             updateHud();
@@ -4648,8 +4732,9 @@
     healHostUpdateBtn();
     bgm.stop();
     if (won) { SFX.bossDie(); setTimeout(() => SFX.stageStart(), 300); } else SFX.gameOver();
-    state.rank = won ? computeRank() : computeRank();
-    if (won) state.rank = 'S';   // clearing the whole campaign is always top rank
+    state.rank = computeRank();
+    const clearRank = state.rank;   // capture performance rank for the ending branch
+    if (won) state.rank = 'S';      // clearing the whole campaign is always top rank (badge)
     if (state.score > state.hiScore) {
       state.hiScore = state.score;
       try { localStorage.setItem('hd_hi', String(state.hiScore)); } catch {}
@@ -4662,14 +4747,22 @@
     const noHit = state.hitsTaken === 0 ? '<span class="nohit">★NO HIT</span>' : '';
     const noBomb = state.usedBombs === 0 ? '<span class="nobomb">★NO BOMB</span>' : '';
     const clearLine = won ? `<div class="result-line"><span class="accent">⭐ CAMPAIGN CLEAR ⭐</span></div>` : '';
+    const defeatLine = (!won && CAMPAIGN_ON())
+      ? `<div class="result-line" style="color:#8b90b8;font-size:11px;">${STORY.defeat}</div>` : '';
     document.getElementById('scoreSummary').innerHTML =
       clearLine +
       `<div class="rank-badge rank-${state.rank}">${state.rank}</div>` +
       `<div class="result-line">SCORE <span class="accent">${state.score}</span>  /  HI ${state.hiScore}</div>` +
       `<div class="result-line">STAGE ${state.stageNo}  /  CHAIN ${state.combo.best}  /  <span class="accent">+${earned} ${t('coinsLabel')}</span></div>` +
-      (noHit || noBomb ? `<div class="result-tags">${noHit}${noBomb}</div>` : '');
+      (noHit || noBomb ? `<div class="result-tags">${noHit}${noBomb}</div>` : '') +
+      defeatLine;
     coinAmt.textContent = shop.coins;
     startBtn.textContent = state.daily ? t('tryDaily') : t('playAgain');
+    // L2: rank-branched ending screen over the results (campaign clear only)
+    if (won && CAMPAIGN_ON()) {
+      const ed = STORY.endingByTier[endingTier(clearRank)];
+      if (ed) showStoryScreen([ed], null);
+    }
 
     // Finalize recording, then enable SAVE CLIP
     await clipper.stop();
@@ -5198,6 +5291,15 @@
       ctx.font = '11px monospace';
       ctx.fillStyle = theme.accent;
       ctx.fillText(sub, VW / 2, VH / 2 + 12);
+      // L1: one-line world flavor caption under the banner
+      const lore = STORY.worlds[state.themeIndex % STORY.worlds.length];
+      if (lore && lore.cap) {
+        ctx.font = '9px monospace';
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillText(lore.cap, VW / 2 + 1, VH / 2 + 43);
+        ctx.fillStyle = '#cfd6ff';
+        ctx.fillText(lore.cap, VW / 2, VH / 2 + 42);
+      }
       ctx.globalAlpha = 1;
     }
 
@@ -5317,6 +5419,62 @@
     { pat: 'spin', spd: 1.15, fire: 0.85, hp: 1.05 }, // 9 VOID    — fast spinners
   ];
   function themeEnemy() { return THEME_ENEMY[state.themeIndex % THEME_ENEMY.length]; }
+
+  // ---------- Story (L1: per-world flavor + boss voice lines; L2: prologue + endings) ----------
+  // Premise: the player IS the "Guardian Hand" guiding the last pilot through 10 worlds being
+  // consumed by the VOID. Hand shapes = ancient sigils — the control scheme as narrative.
+  const STORY = {
+    // L1 — indexed to match STAGE_THEMES order. cap = stage banner caption; in/die = boss lines.
+    worlds: [
+      { cap: '星の揺りかご。侵食は、ここから始まった。',   in: 'よくぞ来た、小さき光。だが遅すぎたな',   die: '…まだ、間に合うやも' },
+      { cap: '灼けた戦域。守護者は怒りに飲まれた。',       in: '貴様も“手”の操り人形か！',             die: 'これが…私の役目、だった' },
+      { cap: '増殖の森。命が、際限なく溢れ出す。',         in: '刈っても無駄だ。森は無限だ',           die: '芽吹きを…止めてくれ' },
+      { cap: '止まった刻。時間そのものが壊れている。',     in: 'この刻に、終わりは来ない',             die: '時が…動き出す' },
+      { cap: '重力の墓標。すべてを引きずり込む。',         in: '沈め。深淵の底へ',                     die: 'ともに、沈もう…' },
+      { cap: '幻影回廊。どれが現実かも分からない。',       in: '本物の私を、見つけられるか？',         die: 'どれが本当の私、だったか…' },
+      { cap: '凍てつく沈黙。音さえも凍る世界。',           in: '冷たく、眠れ',                         die: '温もりを…思い出した' },
+      { cap: '炎の最前線。残された道は、一筋だけ。',       in: '焼き尽くしてやる！',                   die: '道を…開け、その手で' },
+      { cap: '腐蝕の沼。蝕まれた大地が呼吸する。',         in: '溶けて、混ざり合おう',                 die: '浄化を…頼んだぞ' },
+      { cap: '虚無の心臓。全ての侵食の、源。',             in: 'ここまで来たか。だが、無に還るのみ',   die: '手よ……ありがとう' },
+    ],
+    prologue: [
+      { title: '序章 ―― 守護の手', accent: '#7fdcff', lines: [
+        'かつて世界を守った文明は、虚無(VOID)に呑まれて消えた。',
+        '遺されたのは、ただ一つ ―― 「守護の手」。',
+        'それは今、最後の機体に宿り、一人の操縦士を導く。',
+      ] },
+      { title: '序章 ―― 印(しるし)', accent: '#7fdcff', lines: [
+        '手の形は、古(いにしえ)の“印”。開けば光、握れば盾。',
+        '十の世界を巡り、侵食の源を断て。',
+        'さあ ―― あなたの手で、星々を取り戻せ。',
+      ] },
+    ],
+    // L2 — clear ending branches on performance (rank computed before the win override).
+    endingByTier: {
+      true: { title: '終章 ―― 完全浄化', accent: '#7fffd4', lines: [
+        '虚無は砕け、十の世界に光が戻った。',
+        '傷一つ負わぬその導きに、星々が応える。',
+        '操縦士は微笑んだ。「全部、君のおかげだ」',
+        '手は静かに応えた ―― また、いつでも。',
+      ] },
+      good: { title: '終章 ―― 浄化', accent: '#88e0ff', lines: [
+        '虚無は退き、世界はゆっくりと息を吹き返す。',
+        '消えぬ傷跡もある。だが、明日は来る。',
+        '操縦士は空を見上げた。「ありがとう、相棒」',
+      ] },
+      bitter: { title: '終章 ―― 残り火', accent: '#ffd066', lines: [
+        '辛うじて、虚無は鎮まった。',
+        '払った代償は小さくない。それでも ―― 星は、残った。',
+        '握りしめた手の温もりだけが、確かだった。',
+      ] },
+    },
+    defeat: '…光は消えた。だが「手」は、また誰かを導くだろう。',
+  };
+  function endingTier(rank) {
+    if (rank === 'SS' || rank === 'S') return 'true';
+    if (rank === 'A' || rank === 'B') return 'good';
+    return 'bitter';
+  }
 
   // 3 parallax star layers — back/mid/front
   function makeLayer(n, vMin, vMax, sz, alpha) {
@@ -6275,6 +6433,11 @@
   }
 
   function start() {
+    if (state.story && state.story.active) return;        // a story screen is up — ignore re-triggers
+    if (CAMPAIGN_ON()) { showStoryScreen(STORY.prologue, startActual); return; }   // L2 prologue first
+    startActual();
+  }
+  function startActual() {
     overlay.classList.add('hidden');
     overlayPanel.classList.remove('readyView', 'shopView', 'loadoutView');
     document.body.classList.add('playing');
@@ -6411,6 +6574,7 @@
   playBtn.addEventListener('click', () => { if (!playBtn.disabled) start(); });
   document.getElementById('tutorialBtn').addEventListener('click', () => { if (hands) startTutorial(); });
   document.getElementById('tutSkip').addEventListener('click', () => { finishTutorial(); });
+  document.getElementById('story').addEventListener('click', () => { advanceStory(); });
   backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
   document.getElementById('coopBtn').addEventListener('click', () => { showCoopView(); });
