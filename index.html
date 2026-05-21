@@ -3112,10 +3112,10 @@
     } else if (wid === 'missile') {
       // MISSILE (MAIN): slow homing rockets. Leveling mainly raises DAMAGE; the count
       // grows only slightly (1 at Lv1-2, 2 at Lv3) — Lv1 fires a single rocket.
-      const dmg = 4 + (lv - 1) * 4;          // lv1=4, lv2=8, lv3=12
+      const dmg = (4 + (lv - 1) * 4) * 0.85;   // slight cut: lv1≈3.4, lv2≈6.8, lv3≈10.2
       const mk = (ox) => state.shots.push({
-        x: p.x + ox, y: p.y - 12, vx: 0, vy: -1.6, r: 5, dmg,
-        kind: 'homing', missile: true, maxSp: 2.6, turn: 0.06, life: 0,
+        x: p.x + ox, y: p.y - 12, vx: 0, vy: -5, r: 5, dmg,
+        kind: 'homing', missile: true, maxSp: 6, turn: 0.07, life: 0,
       });
       if (lv >= 3) { mk(-7); mk(7); } else mk(0);
     } else if (wid === 'flare') {
@@ -4087,6 +4087,7 @@
   function loop(now) {
     const dt = Math.min(50, now - last); // ms
     last = now;
+    try {
     // MediaPipe stall watchdog: if results stop arriving while the camera should be live
     // (hand visible but unresponsive), auto-restart instead of needing a manual reload.
     if (camera && !camRestarting && document.visibilityState === 'visible'
@@ -4110,6 +4111,11 @@
     }
     NET.tick();
     draw();
+    } catch (e) {
+      // A transient error must never permanently freeze the game: log once, keep looping
+      // (otherwise an uncaught throw skips the rAF below and the screen locks up).
+      if (!loop._warned) { console.error('loop error (kept alive):', e); loop._warned = true; }
+    }
     requestAnimationFrame(loop);
   }
 
@@ -5916,7 +5922,7 @@
     { id: 'wave',   name: 'WAVE',   slot: 'main', cost: 1000, fireMul: 1.2, color: '#5fe6c8',
       descJa: '左右に蛇行して広く薙ぐ波動弾', desc: 'Weaving bolts that rake a wide path',
       icon: '<svg viewBox="0 0 16 16"><path d="M2 8 Q5 2 8 8 T14 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
-    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 2.6, color: '#ff9f43',
+    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 3.6, color: '#ff9f43',
       descJa: '低速の追尾ミサイル・Lvで威力UP（弾数は控えめ）', desc: 'Slow homing rockets — leveling boosts damage',
       icon: '<svg viewBox="0 0 16 16"><path d="M8 1 C10 4 10 7 10 10 H6 C6 7 6 4 8 1 Z" fill="currentColor"/><path d="M6 9 L4 13 L6 11 Z M10 9 L12 13 L10 11 Z" fill="currentColor"/><circle cx="8" cy="6" r="1.1" fill="#06081a"/></svg>' },
     // ----- SUB-slot -----
