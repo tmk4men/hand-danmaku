@@ -3129,6 +3129,7 @@
     }
   }
   function updateWingmen() {
+    if (NET.active) { if (state.wingmen.length) state.wingmen.length = 0; return; }   // online co-op: no escorts
     if (!state.wingmen.length) return;
     const p = state.player;
     for (const w of state.wingmen) {
@@ -3193,6 +3194,7 @@
     }
   }
   function drawWingmen() {
+    if (NET.active) return;   // online co-op: never render escorts
     for (const w of state.wingmen) {
       const ally = ALLIES.find(a => a.id === w.id);
       // 装甲特化: shield bubble — bright when charged, faint while depleted, white flash on a block
