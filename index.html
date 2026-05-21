@@ -5894,14 +5894,15 @@
   // is equipped. Was hard-wired to BULLET TIME; now a loadout choice. apply(p) runs the
   // effect + its own feedback. -----
   function activeShockwave(p) {
-    const R = 155;
+    // Clears a straight vertical lane straight ahead of the ship (and pierces foes in it).
+    const halfW = 60;
     for (let i = state.bullets.length - 1; i >= 0; i--) {
       const b = state.bullets[i];
-      if (dist2(b.x, b.y, p.x, p.y) < R * R) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
+      if (Math.abs(b.x - p.x) < halfW + b.r && b.y < p.y + 20) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
     }
-    for (const e of state.enemies) if (dist2(e.x, e.y, p.x, p.y) < (R + 30) * (R + 30)) e.hp -= e.isBoss ? 18 : 26;
-    for (let i = 0; i < 30; i++) { const a = (i / 30) * TAU; pushParticle(p.x + Math.cos(a) * 44, p.y + Math.sin(a) * 44, '#ff8a3a'); }
-    state.shake = Math.max(state.shake, 14);
+    for (const e of state.enemies) if (Math.abs(e.x - p.x) < halfW + e.radius && e.y < p.y) e.hp -= e.isBoss ? 22 : 32;
+    for (let y = p.y; y > -10; y -= 12) pushParticle(p.x + rand(-halfW, halfW), y, '#ff8a3a');
+    state.shake = Math.max(state.shake, 12);
     pushPopup(p.x, p.y - 28, 'SHOCKWAVE!', '#ff8a3a', 13);
     showGesture('THUMB', 'SHOCKWAVE', '#ff8a3a'); SFX.bomb();
   }
@@ -5919,8 +5920,8 @@
       icon: '<svg viewBox="0 0 16 16"><path d="M8 1 L14 4 V8 C14 12 11 14 8 15 C5 14 2 12 2 8 V4 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
       apply: (p) => { p.invuln = Math.max(p.invuln, 180); pushPopup(p.x, p.y - 28, 'BARRIER!', '#7fffd4', 13); showGesture('THUMB', 'BARRIER', '#7fffd4'); SFX.guard(); } },
     { id: 'blast', name: 'SHOCKWAVE', cost: 800, color: '#ff8a3a',
-      descJa: '周囲の弾を消し、近くの敵にダメージ', desc: 'Clears nearby bullets + damages foes',
-      icon: '<svg viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.4"><line x1="8" y1="1.5" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="5.6" y2="5.6"/><line x1="10.4" y1="10.4" x2="12.6" y2="12.6"/><line x1="12.6" y1="3.4" x2="10.4" y2="5.6"/><line x1="5.6" y1="10.4" x2="3.4" y2="12.6"/></g><circle cx="8" cy="8" r="1.7" fill="currentColor"/></svg>',
+      descJa: '自分の前方一直線の弾を消し、敵を貫く', desc: 'Clears bullets in a line ahead + pierces foes',
+      icon: '<svg viewBox="0 0 16 16"><rect x="6.8" y="4" width="2.4" height="11" fill="currentColor"/><path d="M8 1 L12 6 H4 Z" fill="currentColor"/></svg>',
       apply: (p) => { activeShockwave(p); } },
   ];
   function currentActive() { return ACTIVES.find(a => a.id === shop.active) || ACTIVES[0]; }
