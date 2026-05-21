@@ -6874,6 +6874,12 @@
     }
   }
 
+  // Unlock audio on the first user gesture so menu SFX (shop buy/equip/level-up,
+  // tabs, etc.) play even before a game starts — the AudioContext was otherwise
+  // only created at run start, so tone() bailed out silently in the menus.
+  ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+    document.addEventListener(ev, () => { audio.init(); audio.resume(); }, { capture: true, passive: true }));
+
   startBtn.addEventListener('click', goToReady);
   playBtn.addEventListener('click', () => { if (!playBtn.disabled) start(); });
   document.getElementById('tutorialBtn').addEventListener('click', () => { if (hands) startTutorial(); });
