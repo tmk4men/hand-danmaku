@@ -501,7 +501,7 @@
     padding: 7px 9px;
     box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
   }
-  #coinBar, #dailyBar, #loadoutSummary {
+  #coinBar, #loadoutSummary {
     background: rgba(8,12,36,0.5);
     border: 1px solid rgba(136,168,255,0.14);
     border-radius: 6px;
@@ -765,33 +765,6 @@
     letter-spacing: 0.12em;
     display: flex; gap: 10px; justify-content: center;
     flex-wrap: wrap;
-  }
-  #dailyBar {
-    margin: 12px 0 0;
-    padding: 8px 10px;
-    background: rgba(15,18,46,0.55);
-    border: 1px solid #2a2f55;
-    display: grid;
-    grid-template-columns: 1fr auto;
-    grid-template-rows: auto auto;
-    column-gap: 12px;
-    row-gap: 4px;
-    align-items: center;
-  }
-  #dailyBar .dailyLabel {
-    grid-row: 1; grid-column: 1;
-    text-align: left;
-    font-size: 11px; color: #ffd066; letter-spacing: 0.18em;
-    font-weight: 700;
-  }
-  #dailyBar #dailyBtn {
-    grid-row: 1 / span 2; grid-column: 2;
-    padding: 8px 14px;
-  }
-  #dailyBar #dailyTag {
-    grid-row: 2; grid-column: 1;
-    text-align: left;
-    font-size: 10px; color: #8890b8;
   }
   #loadoutSummary .kv b { color: #ffffff; font-weight: 700; margin: 0 2px; }
   #loadoutSummary .kv {
@@ -1239,12 +1212,6 @@
         <div id="resultActions" class="home-only" style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
           <button type="button" id="clipBtn" class="btn-good" style="display:none;">[REC] SAVE CLIP</button>
           <button type="button" id="shareBtn" class="btn-share" style="display:none;">[TXT] SHARE</button>
-        </div>
-
-        <div id="dailyBar" class="home-only">
-          <div class="dailyLabel" data-i18n="dailyTitle">DAILY CHALLENGE</div>
-          <button type="button" id="dailyBtn" class="btn-toggle">OFF</button>
-          <div id="dailyTag"></div>
         </div>
 
         <div id="coinBar" class="home-only">
@@ -5711,19 +5678,7 @@
       drawPlanet(theme);
     }
 
-    // Parallax stars
-    for (const layer of starLayers) {
-      ctx.globalAlpha = layer.alpha;
-      for (const st of layer.items) {
-        st.y += st.v;
-        if (st.y > VH) { st.y = -2; st.x = Math.random() * VW; }
-        ctx.fillStyle = layer === starLayers[2] ? '#ffffff'
-                       : layer === starLayers[1] ? '#cad0ff'
-                                                 : '#6a72a8';
-        ctx.fillRect(Math.floor(st.x), Math.floor(st.y), layer.sz, layer.sz);
-      }
-    }
-    ctx.globalAlpha = 1;
+    // (Flowing parallax stars removed — they distracted from the bullets during play.)
 
     // Horizon haze line — gentle accent at lower third
     ctx.fillStyle = theme.accent;
@@ -6752,39 +6707,7 @@
   document.getElementById('loadoutBtn').addEventListener('click', () => { showLoadoutView(); });
   document.getElementById('loadoutBack').addEventListener('click', () => { showHomeView(); });
 
-  // Daily Challenge: read URL on load, sync UI
-  const dailyBtn = document.getElementById('dailyBtn');
-  const dailyTag = document.getElementById('dailyTag');
-  (() => {
-    const p = new URLSearchParams(location.search);
-    const d = p.get('daily');
-    if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
-      state.daily = true; state.dailyKey = d;
-    } else {
-      state.daily = false; state.dailyKey = todayKey();
-    }
-    syncDailyBtn();
-  })();
-  function syncDailyBtn() {
-    if (state.daily) {
-      dailyBtn.textContent = 'ON';
-      dailyBtn.classList.add('on');
-      dailyTag.textContent = t('dailyOnTpl').replace('{KEY}', state.dailyKey);
-    } else {
-      dailyBtn.textContent = 'OFF';
-      dailyBtn.classList.remove('on');
-      dailyTag.textContent = t('dailyOff') + todayKey();
-    }
-  }
-  dailyBtn.addEventListener('click', () => {
-    state.daily = !state.daily;
-    if (state.daily && !state.dailyKey) state.dailyKey = todayKey();
-    syncDailyBtn();
-    const url = new URL(location.href);
-    if (state.daily) url.searchParams.set('daily', state.dailyKey);
-    else url.searchParams.delete('daily');
-    history.replaceState({}, '', url);
-  });
+  // (Daily Challenge feature removed — the game is always normal/campaign mode now.)
   coinAmt.textContent = shop.coins;
   coinAmt2.textContent = shop.coins;
 
