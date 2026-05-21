@@ -1570,11 +1570,11 @@
       shopBomb: 'スタート時のボムを+1',
       shopLife: 'スタート時のライフを+1',
       shopPower: '武器Lv2 からスタート',
-      shopCharge: '親指曲げで発動：3秒間 敵弾を超スロー化',
+      shopCharge: '親指曲げで装備中のUSE技を発動（武器タブで選択）',
       ldBombName: 'EXTRA BOMB', ldBombDesc: 'スタート時のボム +1',
       ldLifeName: 'EXTRA LIFE', ldLifeDesc: 'スタート時のライフ +1',
       ldPowerName: 'POWER Lv2 START', ldPowerDesc: '武器Lv2 から開始',
-      ldChargeName: 'BULLET TIME CHARGE', ldChargeDesc: '親指曲げで発動：3秒間 敵弾スロー',
+      ldChargeName: 'USE技 チャージ', ldChargeDesc: '親指曲げで装備中のUSE技を発動',
       notOwned: '未所持', ownedOne: '所持済 — 1個',
       use: 'USE', off: 'OFF',
       earnedCoins: 'EARNED',
@@ -1624,11 +1624,11 @@
       shopBomb: '+1 starting bomb',
       shopLife: '+1 starting life',
       shopPower: 'Start at weapon Lv2',
-      shopCharge: 'Thumb-bend → slow bullets for 3s',
+      shopCharge: 'Thumb-bend → fire your equipped USE skill (pick it in WEAPON)',
       ldBombName: 'EXTRA BOMB', ldBombDesc: '+1 starting bomb',
       ldLifeName: 'EXTRA LIFE', ldLifeDesc: '+1 starting life',
       ldPowerName: 'POWER Lv2 START', ldPowerDesc: 'Begin at weapon Lv2',
-      ldChargeName: 'BULLET TIME CHARGE', ldChargeDesc: 'Thumb-bend → slow bullets for 3s',
+      ldChargeName: 'USE CHARGE', ldChargeDesc: 'Thumb-bend → fire your equipped USE skill',
       notOwned: 'not owned', ownedOne: 'owned — 1',
       use: 'USE', off: 'OFF',
       earnedCoins: 'EARNED',
@@ -1753,11 +1753,15 @@
     weaponSub:  localStorage.getItem('hd_weapon_sub') || 'homing',
     dragons:    loadJSON('hd_dragons', ['beam']),   // owned dragon ultimate ids
     dragon:     localStorage.getItem('hd_dragon') || 'beam',   // equipped dragon
+    actives:    loadJSON('hd_actives', ['slow']),   // owned USE-active ability ids
+    active:     localStorage.getItem('hd_active') || 'slow',   // equipped USE active
     allies:     loadJSON('hd_allies', []),          // owned wingman (友軍) ids
     ally:       localStorage.getItem('hd_ally') || 'none',     // equipped wingman ('none' = off)
   };
   if (!Array.isArray(shop.dragons)) shop.dragons = ['beam'];
   if (!shop.dragons.includes('beam')) shop.dragons.unshift('beam');
+  if (!Array.isArray(shop.actives)) shop.actives = ['slow'];
+  if (!shop.actives.includes('slow')) shop.actives.unshift('slow');
   if (!Array.isArray(shop.allies)) shop.allies = [];
   if (!Array.isArray(shop.ships)) shop.ships = ['vanguard'];
   if (!shop.ships.includes('vanguard')) shop.ships.unshift('vanguard');
@@ -1798,7 +1802,7 @@
       buy: () => { shop.starters.power = 1; },
     },
     {
-      id: 'charge', name: 'BULLET TIME CHARGE', descKey: 'shopCharge', cost: 100,
+      id: 'charge', name: 'USE CHARGE', descKey: 'shopCharge', cost: 100,
       color: '#88e0ff',
       icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.2 V8 L10.6 9.6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>',
       max: () => 1, owned: () => shop.charges,
@@ -1817,6 +1821,8 @@
       localStorage.setItem('hd_weapon_sub', shop.weaponSub);
       localStorage.setItem('hd_dragons', JSON.stringify(shop.dragons));
       localStorage.setItem('hd_dragon', shop.dragon);
+      localStorage.setItem('hd_actives', JSON.stringify(shop.actives));
+      localStorage.setItem('hd_active', shop.active);
       localStorage.setItem('hd_allies', JSON.stringify(shop.allies));
       localStorage.setItem('hd_ally', shop.ally);
     } catch {}
@@ -1968,6 +1974,18 @@
         name: dr.name, desc: ja ? dr.descJa : dr.desc, iconHtml: dr.icon, iconColor: dr.color,
         onBuy: () => { shop.dragons.push(dr.id); shop.dragon = dr.id; },
         onEquip: () => { shop.dragon = dr.id; },
+      });
+
+      hdr(ja ? 'USE技 / ACTIVE' : 'ACTIVE (USE)');
+      const anote = document.createElement('div'); anote.className = 'shop-note';
+      anote.textContent = ja ? 'サムイン（親指曲げ）で発動。アイテムタブの「USEチャージ」が必要'
+                             : 'Fired by thumb-bend. Needs the USE CHARGE from the ITEM tab';
+      rows.appendChild(anote);
+      for (const ac of ACTIVES) addEquipRow({
+        owned: shop.actives.includes(ac.id), equipped: shop.active === ac.id, cost: ac.cost,
+        name: ac.name, desc: ja ? ac.descJa : ac.desc, iconHtml: ac.icon, iconColor: ac.color,
+        onBuy: () => { shop.actives.push(ac.id); shop.active = ac.id; },
+        onEquip: () => { shop.active = ac.id; },
       });
     }
   }
@@ -3671,11 +3689,8 @@
       state.runCharges--;
       shop.charges = Math.max(0, shop.charges - 1);
       saveShop();
-      state.bulletTime = 180;
       state.shake = Math.max(state.shake, 10);
-      pushPopup(p.x, p.y - 30, 'BULLET TIME!', '#88e0ff', 14);
-      showGesture('THUMB', 'BULLET TIME', '#88e0ff');
-      SFX.grazeMax();
+      currentActive().apply(p);   // fire whichever USE ability is equipped
       updateHud();
     } else {
       pushPopup(p.x, p.y - 30, 'NO CHARGE', '#888888', 10);
@@ -5874,6 +5889,41 @@
       icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="3" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/></svg>' },
   ];
   function currentDragon() { return DRAGONS.find(d => d.id === shop.dragon) || DRAGONS[0]; }
+
+  // ----- ACTIVE (USE) abilities: the per-run charge (thumb-bend) fires whichever one
+  // is equipped. Was hard-wired to BULLET TIME; now a loadout choice. apply(p) runs the
+  // effect + its own feedback. -----
+  function activeShockwave(p) {
+    const R = 155;
+    for (let i = state.bullets.length - 1; i >= 0; i--) {
+      const b = state.bullets[i];
+      if (dist2(b.x, b.y, p.x, p.y) < R * R) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
+    }
+    for (const e of state.enemies) if (dist2(e.x, e.y, p.x, p.y) < (R + 30) * (R + 30)) e.hp -= e.isBoss ? 18 : 26;
+    for (let i = 0; i < 30; i++) { const a = (i / 30) * TAU; pushParticle(p.x + Math.cos(a) * 44, p.y + Math.sin(a) * 44, '#ff8a3a'); }
+    state.shake = Math.max(state.shake, 14);
+    pushPopup(p.x, p.y - 28, 'SHOCKWAVE!', '#ff8a3a', 13);
+    showGesture('THUMB', 'SHOCKWAVE', '#ff8a3a'); SFX.bomb();
+  }
+  const ACTIVES = [
+    { id: 'slow', name: 'BULLET TIME', cost: 0, color: '#88e0ff',
+      descJa: '一定時間スローモーション。弾を見切る', desc: 'Slow-mo — read the bullets',
+      icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.4"/><rect x="7.3" y="4" width="1.4" height="5" fill="currentColor"/><rect x="7.3" y="7.3" width="4" height="1.4" fill="currentColor"/></svg>',
+      apply: (p) => { state.bulletTime = 180; pushPopup(p.x, p.y - 30, 'BULLET TIME!', '#88e0ff', 14); showGesture('THUMB', 'BULLET TIME', '#88e0ff'); SFX.grazeMax(); } },
+    { id: 'repair', name: 'REPAIR', cost: 600, color: '#ffffff',
+      descJa: 'ライフを1回復（満タン時は無敵+スコア）', desc: 'Restore 1 life (invuln if full)',
+      icon: '<svg viewBox="0 0 16 16"><rect x="6.5" y="2.5" width="3" height="11" fill="currentColor"/><rect x="2.5" y="6.5" width="11" height="3" fill="currentColor"/></svg>',
+      apply: (p) => { if (state.lives < 7) { state.lives = Math.min(7, state.lives + 1); pushPopup(p.x, p.y - 28, 'REPAIR +1', '#ffffff', 14); state.shake = Math.max(state.shake, 8); SFX.pickupLife(); } else { p.invuln = Math.max(p.invuln, 120); state.score += 800; pushPopup(p.x, p.y - 28, 'FULL +800', '#ffffff', 11); SFX.grazeMax(); } showGesture('THUMB', 'REPAIR', '#ffffff'); } },
+    { id: 'barrier', name: 'BARRIER', cost: 700, color: '#7fffd4',
+      descJa: '約3秒間の無敵バリア', desc: '~3s invulnerable barrier',
+      icon: '<svg viewBox="0 0 16 16"><path d="M8 1 L14 4 V8 C14 12 11 14 8 15 C5 14 2 12 2 8 V4 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
+      apply: (p) => { p.invuln = Math.max(p.invuln, 180); pushPopup(p.x, p.y - 28, 'BARRIER!', '#7fffd4', 13); showGesture('THUMB', 'BARRIER', '#7fffd4'); SFX.guard(); } },
+    { id: 'blast', name: 'SHOCKWAVE', cost: 800, color: '#ff8a3a',
+      descJa: '周囲の弾を消し、近くの敵にダメージ', desc: 'Clears nearby bullets + damages foes',
+      icon: '<svg viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.4"><line x1="8" y1="1.5" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="14.5"/><line x1="1.5" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="14.5" y2="8"/><line x1="3.4" y1="3.4" x2="5.6" y2="5.6"/><line x1="10.4" y1="10.4" x2="12.6" y2="12.6"/><line x1="12.6" y1="3.4" x2="10.4" y2="5.6"/><line x1="5.6" y1="10.4" x2="3.4" y2="12.6"/></g><circle cx="8" cy="8" r="1.7" fill="currentColor"/></svg>',
+      apply: (p) => { activeShockwave(p); } },
+  ];
+  function currentActive() { return ACTIVES.find(a => a.id === shop.active) || ACTIVES[0]; }
   // ----- WINGMEN (友軍): solo-only NPC escorts. Pricey, low DPS, but "better than
   // nothing" — they trail the player and chip in weak auto-fire at nearby enemies. -----
   const ALLIES = [
