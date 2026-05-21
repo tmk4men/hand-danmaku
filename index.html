@@ -1801,13 +1801,8 @@
       max: () => 1, owned: () => shop.starters.power,
       buy: () => { shop.starters.power = 1; },
     },
-    {
-      id: 'charge', name: 'USE CHARGE', descKey: 'shopCharge', cost: 100,
-      color: '#88e0ff',
-      icon: '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.2 V8 L10.6 9.6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>',
-      max: () => 1, owned: () => shop.charges,
-      buy: () => { shop.charges = 1; },
-    },
+    // NOTE: the USE CHARGE lives in the WEAPON tab's ACTIVE section (next to the
+    // abilities it powers), not here in the item tab.
   ];
   function saveShop() {
     try {
@@ -1978,9 +1973,26 @@
 
       hdr(ja ? 'USE技 / ACTIVE' : 'ACTIVE (USE)');
       const anote = document.createElement('div'); anote.className = 'shop-note';
-      anote.textContent = ja ? 'サムイン（親指曲げ）で発動。アイテムタブの「USEチャージ」が必要'
-                             : 'Fired by thumb-bend. Needs the USE CHARGE from the ITEM tab';
+      anote.textContent = ja ? 'サムイン（親指曲げ）で発動。下の「USEチャージ」を購入し、技を1つ装備'
+                             : 'Fired by thumb-bend. Buy the USE CHARGE below, then equip one skill';
       rows.appendChild(anote);
+      // USE CHARGE — the per-run charge that powers whichever active is equipped (max 1)
+      {
+        const owned = shop.charges > 0, buyable = !owned && shop.coins >= 100;
+        const row = document.createElement('div');
+        row.className = 'item' + (owned ? ' equipped' : '');
+        const ico = document.createElement('span'); ico.className = 'shop-ico'; ico.style.color = '#88e0ff';
+        ico.innerHTML = '<svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 4.2 V8 L10.6 9.6" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"/></svg>';
+        const mid = document.createElement('div');
+        mid.innerHTML = `<div class="name">${t('ldChargeName')}</div><div class="desc">${t('shopCharge')}</div>`;
+        const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = owned ? '—' : 100;
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn-cta';
+        if (owned) { btn.textContent = ja ? '所持' : 'OWNED'; btn.disabled = true; }
+        else { btn.textContent = t('buy'); btn.disabled = !buyable; }
+        btn.addEventListener('click', () => { if (owned || !buyable) return; shop.coins -= 100; shop.charges = 1; saveShop(); renderShop(); SFX.pickup(); });
+        row.append(ico, mid, cost, btn);
+        rows.appendChild(row);
+      }
       for (const ac of ACTIVES) addEquipRow({
         owned: shop.actives.includes(ac.id), equipped: shop.active === ac.id, cost: ac.cost,
         name: ac.name, desc: ja ? ac.descJa : ac.desc, iconHtml: ac.icon, iconColor: ac.color,
