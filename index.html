@@ -5331,6 +5331,23 @@
       }
     }
 
+    // SHOCKWAVE launch beam — a bright forward lane flash with a leading shock ring
+    // that rockets up the lane, so the blast clearly reads as "fired".
+    if (state.shockFx && state.shockFx.t > 0) {
+      const f = state.shockFx, a = f.t / f.max, x = f.x, w = f.w;
+      ctx.globalAlpha = 0.30 * a; ctx.fillStyle = '#ff8a3a';
+      ctx.fillRect(x - w, 0, w * 2, f.y);                        // outer glow
+      ctx.globalAlpha = 0.55 * a; ctx.fillStyle = '#ffd08a';
+      ctx.fillRect(x - w * 0.5, 0, w, f.y);                      // inner bright
+      ctx.globalAlpha = 0.95 * a; ctx.fillStyle = '#ffffff';
+      ctx.fillRect(x - 3, 0, 6, f.y);                            // hot core
+      const ringY = f.y * a;                                     // leading edge travels up as it fades
+      ctx.globalAlpha = a; ctx.fillStyle = '#fff2c8';
+      ctx.fillRect(x - w, ringY - 5, w * 2, 10);
+      ctx.globalAlpha = 1;
+      f.t--;
+    }
+
     // dash trail
     for (const t of state.player.dashTrail) {
       ctx.globalAlpha = clamp(t.life / 18, 0, 1) * 0.7;
@@ -5970,10 +5987,14 @@
       if (Math.abs(b.x - p.x) < halfW + b.r && b.y < p.y + 20) { pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1); }
     }
     for (const e of state.enemies) if (Math.abs(e.x - p.x) < halfW + e.radius && e.y < p.y) e.hp -= e.isBoss ? 22 : 32;
-    for (let y = p.y; y > -10; y -= 12) pushParticle(p.x + rand(-halfW, halfW), y, '#ff8a3a');
-    state.shake = Math.max(state.shake, 12);
+    // Launch feedback: a bright lane beam (drawn from state.shockFx) + a burst at the muzzle.
+    state.shockFx = { x: p.x, y: p.y, w: halfW, t: 22, max: 22 };
+    for (let i = 0; i < 18; i++) { const a = (i / 18) * TAU; pushParticle(p.x + Math.cos(a) * 12, p.y - 10 + Math.sin(a) * 12, '#ffd08a'); }
+    for (let y = p.y; y > -10; y -= 10) pushParticle(p.x + rand(-halfW, halfW), y, '#ff8a3a');
+    state.shake = Math.max(state.shake, 18);
     pushPopup(p.x, p.y - 28, 'SHOCKWAVE!', '#ff8a3a', 13);
-    showGesture('THUMB', 'SHOCKWAVE', '#ff8a3a'); SFX.bomb();
+    showGesture('THUMB', 'SHOCKWAVE', '#ff8a3a');
+    SFX.bomb(); SFX.shootFocus();
   }
   const ACTIVES = [
     { id: 'slow', name: 'BULLET TIME', cost: 400, color: '#88e0ff',
