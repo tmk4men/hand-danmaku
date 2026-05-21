@@ -951,6 +951,32 @@
     #stageSelect .ss-sub { margin-bottom: 8px; }
     #stageSelect .ss-hint { margin-top: 8px; }
   }
+
+  /* ---- Interactive gesture tutorial ---- */
+  #tutorial {
+    position: absolute; inset: 0; z-index: 40; display: flex;
+    align-items: center; justify-content: center;
+    background: radial-gradient(120% 120% at 50% 30%, rgba(8,10,30,0.35), rgba(4,5,16,0.78));
+    pointer-events: none;
+  }
+  #tutorial.hidden { display: none; }
+  #tutorial .tut-panel {
+    pointer-events: auto; text-align: center; padding: clamp(14px, 3vmin, 28px) clamp(18px, 4vmin, 40px);
+    border: 1px solid rgba(127,220,255,0.35); border-radius: 16px;
+    background: rgba(10,12,30,0.72); box-shadow: 0 0 40px rgba(40,80,160,0.35);
+    max-width: 86%;
+  }
+  #tutorial .tut-step { font-size: clamp(9px, 1.8vmin, 12px); letter-spacing: 0.18em; color: #7fdcff; margin-bottom: 6px; }
+  #tutorial .tut-icon { font-size: clamp(40px, 11vmin, 84px); line-height: 1.1; }
+  #tutorial .tut-title { font-size: clamp(16px, 4vmin, 28px); color: #fff; font-weight: 700; margin-top: 4px; }
+  #tutorial .tut-sub { font-size: clamp(10px, 2.4vmin, 15px); color: #cfd2f0; margin-top: 6px; }
+  #tutorial .tut-meter { height: 8px; width: min(360px, 70vw); margin: 14px auto 6px; border-radius: 5px;
+    background: rgba(255,255,255,0.12); overflow: hidden; }
+  #tutorial .tut-fill { height: 100%; width: 0%; border-radius: 5px;
+    background: linear-gradient(90deg, #7fffd4, #7fdcff); transition: width 0.06s linear; }
+  #tutorial .tut-hint { font-size: clamp(8px, 1.7vmin, 11px); color: #8890b8; margin-top: 4px; }
+  #tutorial .tut-panel.tut-ok { border-color: #7fffd4; box-shadow: 0 0 50px rgba(127,255,212,0.5); }
+  #tutorial #tutSkip { margin-top: 14px; }
 </style>
 </head>
 <body>
@@ -1037,9 +1063,21 @@
           <button type="button" class="ss-card" data-i="1"></button>
           <button type="button" class="ss-card" data-i="2"></button>
         </div>
-        <div class="ss-hint">機体を 3秒 重ねて選択 / タップ・クリック・キー [1] [2] [3]</div>
+        <div class="ss-hint">機体を重ねて ピンチ で選択（3秒滞在でも可）/ タップ・クリック・キー [1] [2] [3]</div>
       </div>
       <div id="ssCursor"></div>
+    </div>
+
+    <div id="tutorial" class="hidden">
+      <div class="tut-panel">
+        <div class="tut-step" id="tutStep">STEP 1 / 5</div>
+        <div class="tut-icon" id="tutIcon">🖐</div>
+        <div class="tut-title" id="tutTitle">手をカメラに映そう</div>
+        <div class="tut-sub" id="tutSub">人差し指で自機が動きます</div>
+        <div class="tut-meter"><div class="tut-fill" id="tutFill"></div></div>
+        <div class="tut-hint" id="tutHint">指示どおりの手の形を作るとクリア</div>
+        <button type="button" id="tutSkip" class="btn-ghost">スキップ ▶</button>
+      </div>
     </div>
 
     <div id="overlay">
@@ -1164,6 +1202,7 @@
             <div class="dot" id="dotHand"><span class="ind"></span>HAND</div>
           </div>
           <button id="playBtn" type="button" class="btn-cta btn-lg" disabled>LOADING…</button>
+          <button id="tutorialBtn" type="button" class="back btn-ghost">🖐 操作チュートリアル</button>
           <button class="back btn-ghost" id="backToHomeBtn" type="button" data-i18n="homeBtn">◀ HOME</button>
         </div>
       </div>
@@ -1271,6 +1310,7 @@
 
   // ---------- Canvas sizing ----------
   const VW = 800, VH = 600; // virtual game resolution
+  const DRAGON_MAX = 360;   // frames of cumulative thumbs-up to fully charge the dragon (~6s; grazing speeds it up)
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     const rect = stage.getBoundingClientRect();
@@ -1341,6 +1381,9 @@
     focus: false,        // (retired) peace-sign focus mode — kept false
     peace: false,        // peace gesture held -> fires the SUB weapon
     openPalm: false,     // open palm (パー) held -> fires the MAIN weapon
+    handRoll: 0,         // wrist tilt -1..1 -> bends the MAIN weapon's aim
+    gestureKind: 'none', // coarse current hand shape (for boss gesture seals + tutorial)
+    tutorial: { active: false, step: 0, hold: 0, moveAccum: 0, lastX: null, lastY: null },
     graze: { value: 0, max: 100, boost: 0 },
     mod: { name: 'NORMAL', bulletSpeedMul: 1, fanRays: 0, spinnerExtra: 0 },
     shake: 0,
@@ -2416,6 +2459,14 @@
       // Thumb-bend (others extended, thumb tucked across palm) → USE active item
       // palm size ~ distance from index MCP (5) to pinky MCP (17)
       const handSpan = Math.hypot(lm[5].x - lm[17].x, lm[5].y - lm[17].y) || 1;
+      // Wrist tilt -> MAIN-weapon aim bend. Slope of the knuckle line (index MCP 5 -> pinky MCP 17),
+      // deadzoned so an upright hand still shoots straight up; learnable -1..1 left/right lean.
+      {
+        let rollRaw = (lm[17].y - lm[5].y) / handSpan;
+        const ROLL_DZ = 0.18;
+        rollRaw = Math.abs(rollRaw) < ROLL_DZ ? 0 : rollRaw - Math.sign(rollRaw) * ROLL_DZ;
+        state.handRoll = clamp(rollRaw * 1.5, -1, 1);
+      }
       const palmCx = (wrist.x + lm[9].x) / 2;
       const palmCy = (wrist.y + lm[9].y) / 2;
       const thumbToPalm = Math.hypot(lm[4].x - palmCx, lm[4].y - palmCy);
@@ -2464,9 +2515,9 @@
         const dragonChargeable = state.dragonUnlocked && state.running
           && !state.paused && !state.autoPaused && !state.selecting && state.dragonFiring === 0;
         if (isThumbsUp && dragonChargeable) {
-          state.dragonCharge = Math.min(600, state.dragonCharge + 1);
+          state.dragonCharge = Math.min(DRAGON_MAX, state.dragonCharge + 1);
         }
-        if (state.thumbsUp && !isThumbsUp && state.dragonCharge >= 600
+        if (state.thumbsUp && !isThumbsUp && state.dragonCharge >= DRAGON_MAX
             && state.running && !state.paused && !state.autoPaused
             && state.dragonFiring === 0) {
           fireDragon();
@@ -2480,6 +2531,16 @@
         }
       }
       state.thumbsUp = isThumbsUp;
+
+      // Coarse hand-shape label used by the boss gesture-seal mechanic AND the tutorial.
+      // Uses a raw open-palm test (no state.running gate) so it also works on menus/tutorial.
+      const rawOpen = curled === 0 && !isPinch && !thumbInward;
+      state.gestureKind = isPinch ? 'pinch'
+        : isThumbsUp ? 'thumbs'
+        : isPeace ? 'peace'
+        : isFistOnly ? 'fist'
+        : rawOpen ? 'open'
+        : 'none';
 
       // Track raw target for viewer-facing aim reticle
       state.handAim = { x: state.player.tx, y: state.player.ty };
@@ -2496,6 +2557,8 @@
       state.handSeen = false;
       state.peace = false;
       state.openPalm = false;
+      state.handRoll = 0;
+      state.gestureKind = 'none';
       state.readyHandFrames = 0;
     }
     camCtx.restore();
@@ -2534,6 +2597,7 @@
       fireOffset: opts.fireOffset ?? 0,
       score: opts.score ?? 100,
       pattern: opts.pattern ?? 'aim',
+      tint: opts.tint ?? null,   // theme accent aura (midstage variety)
       angle: 0,
     };
     state.enemies.push(e);
@@ -2571,8 +2635,50 @@
     'ACID POOLS',       // 8 TOXIC
     'VOID COLLAPSE',    // 9 VOID
   ];
+  // Gesture seal (solo, stage 2+): the boss periodically raises a shape-shield. Copy the shown
+  // hand shape (PALM / PEACE / FIST) for ~0.6s to shatter it — clears the screen and chips the
+  // boss. Ignore it and it times out into an aimed fan. Each shape costs a different posture:
+  // PALM you'd be holding anyway (free-ish), PEACE swaps you to the SUB, FIST stops your fire.
+  const SEAL_KINDS = ['open', 'peace', 'fist'];
+  const SEAL_LABEL = { open: 'PALM', peace: 'PEACE', fist: 'FIST' };
+  function updateBossSeal(b, g, p) {
+    if (state.stageNo < 2 || state.mode === 'defender' || NET.active) return;
+    if (!g.seal) g.seal = { state: 'idle', cd: rand(360, 600), kind: 'open', t: 0, hold: 0 };
+    const s = g.seal;
+    if (s.state === 'idle') {
+      if (--s.cd <= 0 && b.hp > b.maxHp * 0.15) {
+        s.kind = SEAL_KINDS[(Math.random() * SEAL_KINDS.length) | 0];
+        s.state = 'up'; s.t = 240; s.hold = 0;   // 4s window to copy the shape
+        pushPopup(b.x, b.y - 42, 'SEAL: ' + SEAL_LABEL[s.kind], '#c89bff', 13);
+        SFX.warning();
+      }
+      return;
+    }
+    // s.state === 'up'
+    if (state.gestureKind === s.kind) {
+      if (++s.hold >= 36) {                       // ~0.6s of the correct shape -> BREAK
+        for (const bl of state.bullets) pushParticle(bl.x, bl.y, '#c89bff');
+        state.bullets.length = 0;
+        b.hp -= Math.max(24, b.maxHp * 0.06);
+        pushPopup(b.x, b.y - 42, 'SEAL BREAK!', '#7fffd4', 14);
+        state.shake = Math.max(state.shake, 12); SFX.bossDie();
+        s.state = 'idle'; s.cd = rand(420, 660);
+        return;
+      }
+    } else {
+      s.hold = Math.max(0, s.hold - 2);
+    }
+    if (--s.t <= 0) {                             // timed out -> punish with an aimed fan
+      const aim = Math.atan2(p.y - b.y, p.x - b.x);
+      for (let i = -3; i <= 3; i++) fireBullet(b.x, b.y, aim + i * 0.12, 3.0, '#c89bff', 5);
+      pushPopup(b.x, b.y - 42, 'SEAL HELD', '#ff6090', 12); SFX.warning();
+      s.state = 'idle'; s.cd = rand(360, 540);
+    }
+  }
+
   function updateBossGimmick(b) {
     const ti = state.themeIndex, p = state.player, g = b.gim;
+    updateBossSeal(b, g, p);
     switch (ti) {
       case 0: { // NEBULA — slow rings with one rotating safe gap (teaches gap-reading)
         if (b.t % 150 === 30) {
@@ -2745,17 +2851,20 @@
   // raised by power-ups DURING play). Each weapon scales differently.
   function emitWeapon(wid) {
     const p = state.player, lv = state.power;
+    // Wrist tilt bends only the MAIN weapon (std/spread/heavy); SUBs stay straight so they
+    // don't get a free aim buff. roll is -1..1; ~2px/frame of vx per unit at vy ~ -10.
+    const roll = (wid === 'std' || wid === 'spread' || wid === 'heavy') ? (state.handRoll || 0) : 0;
     if (wid === 'spread') {
       const rays = lv === 1 ? 3 : lv === 2 ? 5 : 7;
       const half = (rays - 1) / 2;
       for (let i = -half; i <= half; i++) {
-        state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5, vy: -9, r: 3, dmg: 1, kind: 'std' });
+        state.shots.push({ x: p.x + i * 3, y: p.y - 10, vx: i * 1.5 + roll * 2.2, vy: -9, r: 3, dmg: 1, kind: 'std' });
       }
     } else if (wid === 'heavy') {
       const lanes = lv >= 3 ? [-7, 0, 7] : lv === 2 ? [-5, 5] : [0];
       const dmg = 2 + lv;   // lv1=3 .. lv3=5
       for (const ox of lanes) {
-        state.shots.push({ x: p.x + ox, y: p.y - 12, vy: -9, r: 5, dmg, kind: 'std' });
+        state.shots.push({ x: p.x + ox, y: p.y - 12, vx: roll * 1.2, vy: -9, r: 5, dmg, kind: 'std' });
       }
     } else if (wid === 'homing') {
       // SEEKER: low-dmg auto-aim. Leveling adds ONE missile per level (modest);
@@ -2787,6 +2896,25 @@
         state.shots.push({ x: p.x, y: p.y - 10, vx: -sx, vy: -8.5, r: 4, dmg: 1, kind: 'boomer', pierce: true });
         state.shots.push({ x: p.x, y: p.y - 10, vx:  sx, vy: -8.5, r: 4, dmg: 1, kind: 'boomer', pierce: true });
       }
+    } else if (wid === 'wave') {
+      // WAVE (MAIN): bolts that snake side-to-side as they rise — wide moving coverage.
+      const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
+      for (let i = 0; i < n; i++) {
+        state.shots.push({ x: p.x + (i - (n - 1) / 2) * 10, y: p.y - 10, vx: 0, vy: -7.5,
+          r: 3, dmg: 1, kind: 'wave', life: 0, ph: i * Math.PI });
+      }
+    } else if (wid === 'flare') {
+      // FLARE (SUB): a lobbed shell — detonates on impact or fuse into a radial frag spray.
+      const rays = lv >= 3 ? 10 : lv >= 2 ? 8 : 6;
+      state.shots.push({ x: p.x, y: p.y - 12, vx: 0, vy: -6.5, r: 4, dmg: 1, kind: 'flare', fuse: 24, rays });
+    } else if (wid === 'bounce') {
+      // RICOCHET (SUB): bolts that reflect off the side walls. Pairs scale; damage fixed.
+      const pairs = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
+      for (let i = 0; i < pairs; i++) {
+        const sx = 2.2 + i * 0.8;
+        state.shots.push({ x: p.x, y: p.y - 10, vx: -sx, vy: -7.5, r: 3, dmg: 1, kind: 'bounce' });
+        state.shots.push({ x: p.x, y: p.y - 10, vx:  sx, vy: -7.5, r: 3, dmg: 1, kind: 'bounce' });
+      }
     } else {
       // 'std' (TWIN). Guard active = only center bolt.
       let lanes;
@@ -2795,9 +2923,22 @@
       else if (lv === 2) lanes = [[-8, 0], [0, -2], [8, 0]];
       else lanes = [[-10, 0], [-4, -2], [4, -2], [10, 0]];
       for (const [ox, oy] of lanes) {
-        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
+        state.shots.push({ x: p.x + ox, y: p.y - 10 + oy, vx: roll * 2.2, vy: -10 - lv * 0.5, r: 3, dmg: 1, kind: 'std' });
       }
     }
+  }
+
+  // FLARE detonation: spray short-lived frags in all directions from the shell's position.
+  function detonateFlare(s) {
+    const rays = s.rays || 6;
+    for (let i = 0; i < rays; i++) {
+      const a = (i / rays) * TAU + Math.random() * 0.25;
+      const sp = 5.5;
+      state.shots.push({ x: s.x, y: s.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        r: 3, dmg: 1, kind: 'frag', life: 0 });
+    }
+    for (let k = 0; k < 8; k++) pushParticle(s.x, s.y, '#ffb14e');
+    SFX.hit();
   }
 
   // ---------- Wingmen (友軍): solo-only escort NPCs ----------
@@ -2831,13 +2972,17 @@
       if (!ally) continue;
       // ---- autonomous target: where this escort decides to be this frame ----
       let tx, ty;
+      // AEGIS surges forward to actively screen the player while FIST guard is held.
+      const guarding = ally.kind === 'armor' && state.guard.active;
       if (ally.kind === 'armor') {
         // interpose between the player and the nearest incoming bullet (else nearest enemy)
-        let bx = null, by = null, best = 200 * 200;
+        const scan = guarding ? 300 : 200;
+        let bx = null, by = null, best = scan * scan;
         for (const b of state.bullets) { const d2 = dist2(b.x, b.y, p.x, p.y); if (d2 < best) { best = d2; bx = b.x; by = b.y; } }
         if (bx === null) { let nd = 280 * 280; for (const e of state.enemies) { const d2 = dist2(e.x, e.y, p.x, p.y); if (d2 < nd) { nd = d2; bx = e.x; by = e.y; } } }
         if (bx !== null) {
-          const dx = bx - p.x, dy = by - p.y, d = Math.hypot(dx, dy) || 1, stand = Math.min(46, d * 0.7);
+          const dx = bx - p.x, dy = by - p.y, d = Math.hypot(dx, dy) || 1;
+          const stand = guarding ? Math.min(64, d * 0.92) : Math.min(46, d * 0.7);
           tx = p.x + (dx / d) * stand; ty = p.y + (dy / d) * stand;
         } else { tx = p.x; ty = p.y - 26; }   // idle: hover just above the player
       } else {
@@ -2850,10 +2995,11 @@
       // leash so it never abandons the player
       const LEASH = 175, lx = tx - p.x, ly = ty - p.y, ld = Math.hypot(lx, ly) || 1;
       if (ld > LEASH) { tx = p.x + (lx / ld) * LEASH; ty = p.y + (ly / ld) * LEASH; }
-      // ---- steer with its own momentum (autonomous feel) ----
-      w.vx = w.vx * 0.86 + (tx - w.x) * 0.045;
-      w.vy = w.vy * 0.86 + (ty - w.y) * 0.045;
-      const sp = Math.hypot(w.vx, w.vy), MAXV = 6.5;
+      // ---- steer with its own momentum (autonomous feel; snappier while actively guarding) ----
+      const steer = guarding ? 0.10 : 0.045, damp = guarding ? 0.80 : 0.86;
+      w.vx = w.vx * damp + (tx - w.x) * steer;
+      w.vy = w.vy * damp + (ty - w.y) * steer;
+      const sp = Math.hypot(w.vx, w.vy), MAXV = guarding ? 8.5 : 6.5;
       if (sp > MAXV) { w.vx = w.vx / sp * MAXV; w.vy = w.vy / sp * MAXV; }
       w.x = clamp(w.x + w.vx, 8, VW - 8);
       w.y = clamp(w.y + w.vy, 8, VH - 8);
@@ -2861,7 +3007,8 @@
         //装甲特化: regenerate armor, then eat enemy bullets that drift close
         if (w.armor < ally.armorMax && --w.regenCd <= 0) { w.armor++; w.regenCd = ally.regen; }
         if (w.armor > 0) {
-          const r2 = ally.blockR * ally.blockR;
+          const blockR = guarding ? ally.blockR * 1.4 : ally.blockR;   // wider intercept while guarding
+          const r2 = blockR * blockR;
           for (let i = state.bullets.length - 1; i >= 0 && w.armor > 0; i--) {
             const b = state.bullets[i];
             if (dist2(b.x, b.y, w.x, w.y) < r2) {
@@ -2887,7 +3034,7 @@
       // 装甲特化: shield bubble — bright when charged, faint while depleted, white flash on a block
       if (ally && ally.kind === 'armor') {
         const frac = w.armor / ally.armorMax;
-        const R = ally.blockR;
+        const R = ally.blockR * (state.guard.active ? 1.4 : 1);   // bubble grows to match the wider guard intercept
         ctx.fillStyle = w.flash > 0 ? 'rgba(255,255,255,0.6)' : `rgba(127,255,212,${0.08 + 0.16 * frac})`;
         ctx.beginPath(); ctx.arc(w.x, w.y, R, 0, TAU); ctx.fill();
         const segs = 22;
@@ -3155,6 +3302,7 @@
   const SS_DWELL_MS = 3000;
   function resetStageSelectHover() {
     state.ssHover = -1; state.ssDwell = 0;
+    state.ssPinchPrev = true;   // require a fresh pinch (ignore one already held from the last stage)
     document.querySelectorAll('#stageSelect .ss-card').forEach(c => {
       c.classList.remove('ss-hot'); c.style.setProperty('--fill', 0);
     });
@@ -3183,6 +3331,11 @@
       state.ssHover = over; state.ssDwell = 0;
       cards.forEach((c, i) => { c.classList.toggle('ss-hot', i === over); if (i !== over) c.style.setProperty('--fill', 0); });
     }
+    // PINCH over a card = instant pick (fast path); dwell still works as a no-gesture fallback.
+    const pinchNow = state.pinch.active;
+    const pinchEdge = pinchNow && !state.ssPinchPrev;
+    state.ssPinchPrev = pinchNow;
+    if (over >= 0 && state.handSeen && pinchEdge) { chooseStage(over); return; }
     // only fill while the hand is actually tracked (so it can't auto-pick if the hand leaves)
     if (over >= 0 && state.handSeen) {
       state.ssDwell += dt;
@@ -3208,6 +3361,81 @@
     state.player.invuln = Math.max(state.player.invuln, 90);  // safe re-entry
     updateHud();
     SFX.stageStart();
+  }
+
+  // ---------- Interactive gesture tutorial (first-run onboarding, ~20s) ----------
+  // Reads state.gestureKind / state.player.tx (populated by onHandResults whenever the
+  // camera sees a hand, independent of state.running) and walks the player through each
+  // control, advancing only when they actually perform the gesture for a short hold.
+  const TUT_STEPS = [
+    { icon: '🖐', title: '手をカメラに映そう', sub: '人差し指の先で自機が動く。指を左右に動かしてみて！',
+      hint: '手を動かすとクリア', need: 10, test: (s) => s.tutorial.moveAccum > 240 },
+    { icon: '🖐', title: 'パー = メイン射撃', sub: '手を開くと正面に連射。手首を傾けると弾が斜めに曲がる！',
+      hint: 'パーをキープ', need: 45, test: (s) => s.gestureKind === 'open' },
+    { icon: '✌️', title: 'ピース = サブ射撃', sub: '人差し指と中指を立てるとサブ武器が出る',
+      hint: 'ピースをキープ', need: 45, test: (s) => s.gestureKind === 'peace' },
+    { icon: '✊', title: 'グー = ガード', sub: '握ると一定時間ダメージを防ぐ盾になる',
+      hint: 'グーをキープ', need: 45, test: (s) => s.gestureKind === 'fist' },
+    { icon: '🤏', title: 'つまむ = ボム', sub: '親指と人差し指をくっつけると画面全体ボム',
+      hint: 'つまんでクリア', need: 18, test: (s) => s.gestureKind === 'pinch' },
+  ];
+  function startTutorial() {
+    state.tutorial = { active: true, step: 0, hold: 0, moveAccum: 0, lastX: null, lastY: null };
+    overlay.classList.add('hidden');
+    document.getElementById('tutorial').classList.remove('hidden');
+    audio.resume();
+    renderTutorialDOM(false);
+  }
+  function finishTutorial() {
+    state.tutorial.active = false;
+    document.getElementById('tutorial').classList.add('hidden');
+    try { localStorage.setItem('hd_tutorial_done', '1'); } catch (e) {}
+    overlay.classList.remove('hidden');
+    showReadyView();
+    state.readyHandFrames = -60;   // grace so the held hand doesn't instantly auto-start the run
+    SFX.stageStart();
+  }
+  function maybeAutoTutorial() {
+    let done = false;
+    try { done = !!localStorage.getItem('hd_tutorial_done'); } catch (e) {}
+    if (!done && !state.running && !NET.active) startTutorial();
+  }
+  function updateTutorial(dt) {
+    const tut = state.tutorial;
+    const step = TUT_STEPS[tut.step];
+    if (!step) { finishTutorial(); return; }
+    if (state.handSeen) {
+      if (tut.lastX != null)
+        tut.moveAccum += Math.abs(state.player.tx - tut.lastX) + Math.abs(state.player.ty - tut.lastY);
+      tut.lastX = state.player.tx; tut.lastY = state.player.ty;
+    }
+    const f = dt / 16.67;             // count in ~frames regardless of refresh rate
+    const ok = state.handSeen && step.test(state);
+    if (ok) {
+      tut.hold += f;
+      if (tut.hold >= step.need) {
+        SFX.grazeMax();
+        tut.step++; tut.hold = 0; tut.moveAccum = 0; tut.lastX = null;
+        if (tut.step >= TUT_STEPS.length) { finishTutorial(); return; }
+      }
+    } else {
+      tut.hold = Math.max(0, tut.hold - f * 0.7);
+    }
+    renderTutorialDOM(ok);
+  }
+  function renderTutorialDOM(ok) {
+    const tut = state.tutorial;
+    const step = TUT_STEPS[tut.step]; if (!step) return;
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set('tutStep', 'STEP ' + (tut.step + 1) + ' / ' + TUT_STEPS.length);
+    set('tutIcon', step.icon);
+    set('tutTitle', step.title);
+    set('tutSub', step.sub);
+    set('tutHint', step.hint);
+    const fill = document.getElementById('tutFill');
+    if (fill) fill.style.width = Math.min(100, (tut.hold / step.need) * 100) + '%';
+    const panel = document.querySelector('#tutorial .tut-panel');
+    if (panel) panel.classList.toggle('tut-ok', !!ok);
   }
 
   function fireDragon() {
@@ -3285,53 +3513,59 @@
 
     const T = state.stageTimer;
     const lvl = state.stageNo;
+    const te = themeEnemy();
+    const acc = STAGE_THEMES[state.themeIndex % STAGE_THEMES.length].accent;
 
     // Opening salvo: a few grunts arrive almost immediately so a clip
     // recorded from the very start has action visible within ~0.5s.
     if (T === 6) {
       spawnEnemy('grunt', VW * 0.5 - 80, -10, {
-        vy: 1.1, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100,
+        vy: 1.1, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100, tint: acc,
       });
       spawnEnemy('grunt', VW * 0.5, -22, {
-        vy: 1.2, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100,
+        vy: 1.2, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100, tint: acc,
       });
       spawnEnemy('grunt', VW * 0.5 + 80, -10, {
-        vy: 1.1, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100,
+        vy: 1.1, hp: 3 + lvl, radius: 14, fireRate: 90, pattern: 'aim', score: 100, tint: acc,
       });
     }
 
-    // periodic small enemy waves
+    // periodic small enemy waves — flavoured by the current theme (pattern + stats)
     if (T % Math.max(120 - lvl * 4, 70) === 0) {
+      const typeFor = te.pat === 'spin' ? 'spinner' : te.pat === 'fan' ? 'fan' : 'grunt';
       const side = gameRand() < 0.5 ? 1 : -1;
       const x = VW * 0.5 + side * rand(120, 280);
-      spawnEnemy('grunt', x, -20, {
-        vy: rand(0.7, 1.2),
+      spawnEnemy(typeFor, x, -20, {
+        vy: rand(0.7, 1.2) * te.spd,
         vx: -side * rand(0.0, 0.3),
-        hp: 4 + lvl,
-        radius: 14,
-        fireRate: 160 - lvl * 4,
-        pattern: 'aim',
+        hp: Math.round((4 + lvl) * te.hp),
+        radius: te.pat === 'spin' ? 17 : te.pat === 'fan' ? 16 : 14,
+        fireRate: Math.round((160 - lvl * 4) * te.fire),
+        pattern: te.pat,
         score: 100,
+        tint: acc,
       });
     }
     if (T % Math.max(360 - lvl * 10, 220) === 0) {
       spawnEnemy('spinner', rand(120, VW - 120), -20, {
-        vy: 0.5,
-        hp: 18 + lvl * 3,
+        vy: 0.5 * te.spd,
+        hp: Math.round((18 + lvl * 3) * te.hp),
         radius: 20,
-        fireRate: 16,
+        fireRate: Math.round(16 * te.fire),
         pattern: 'spin',
         score: 600,
+        tint: acc,
       });
     }
     if (T % Math.max(480 - lvl * 12, 280) === 0) {
       spawnEnemy('fan', rand(140, VW - 140), -20, {
-        vy: 0.8,
-        hp: 12 + lvl * 2,
+        vy: 0.8 * te.spd,
+        hp: Math.round((12 + lvl * 2) * te.hp),
         radius: 18,
-        fireRate: 120,
+        fireRate: Math.round(120 * te.fire),
         pattern: 'fan',
         score: 400,
+        tint: acc,
       });
     }
 
@@ -3575,6 +3809,8 @@
       else update(dt);                       // solo / co-op host: authoritative sim
     } else if (state.selecting) {
       updateStageSelect(dt);                 // campaign: hand-hover next-stage pick
+    } else if (state.tutorial.active) {
+      updateTutorial(dt);                    // interactive gesture onboarding
     }
     NET.tick();
     draw();
@@ -3712,8 +3948,18 @@
         if (s.life % 2 === 0) pushParticle(s.x, s.y, '#88e0ff');
       }
       if (s.kind === 'boomer') s.vy += 0.26;   // BOOMERANG arc: decelerate, reverse, fall back
+      if (s.kind === 'wave') { s.life = (s.life || 0) + 1; s.vx = Math.sin(s.life * 0.22 + (s.ph || 0)) * 3.6; }
+      if (s.kind === 'flare') {
+        s.fuse--; s.vy += 0.10;                 // slow the lob, then burst on fuse
+        if (s.fuse <= 0) { detonateFlare(s); state.shots.splice(i, 1); continue; }
+      }
+      if (s.kind === 'frag') { s.life = (s.life || 0) + 1; if (s.life > 26) { state.shots.splice(i, 1); continue; } }
       s.x += s.vx || 0;
       s.y += s.vy;
+      if (s.kind === 'bounce') {                 // RICOCHET: reflect off the side walls
+        if (s.x < s.r) { s.x = s.r; s.vx = Math.abs(s.vx); }
+        else if (s.x > VW - s.r) { s.x = VW - s.r; s.vx = -Math.abs(s.vx); }
+      }
       // remove if too old or off-screen
       const offTop = s.y < -10 && s.kind !== 'homing' && s.kind !== 'boomer';
       if (offTop || s.x < -20 || s.x > VW + 20 || s.y > VH + 20
@@ -3742,7 +3988,10 @@
             break;
           }
         }
-        if (consumed) state.shots.splice(i, 1);
+        if (consumed) {
+          if (s.kind === 'flare') detonateFlare(s);   // burst on contact too
+          state.shots.splice(i, 1);
+        }
       }
     }
 
@@ -3819,6 +4068,10 @@
       if (!b.grazed && d2p < (GRAZE_R + b.r) ** 2 && d2p > (p.hitR + b.r + 2) ** 2) {
         b.grazed = true;
         state.graze.value = Math.min(state.graze.max, state.graze.value + 4);
+        // Charging the dragon (thumbs-up) while grazing fills it faster — rewards holding the
+        // charge pose inside danger instead of waiting in a safe corner.
+        if (state.thumbsUp && state.dragonUnlocked && state.dragonCharge < DRAGON_MAX)
+          state.dragonCharge = Math.min(DRAGON_MAX, state.dragonCharge + 12);
         state.score += 30;
         pushPopup(b.x, b.y - 4, '+30', '#ffd066', 8);
         SFX.graze();
@@ -4466,14 +4719,14 @@
     hud.useCharges.textContent = usable + (state.bulletTime > 0 ? '  ACTIVE' : '');
     hud.useCharges.style.color = state.bulletTime > 0 ? '#88e0ff'
                                : usable > 0 ? '#ffd066' : '#555a82';
-    const dpct = Math.min(100, Math.round(state.dragonCharge / 6));  // 600 frames -> 100%
+    const dpct = Math.min(100, Math.round(state.dragonCharge / DRAGON_MAX * 100));
     if (state.dragonFiring > 0) {
       hud.dragonText.textContent = 'FIRING!';
       hud.dragonText.style.color = '#ffffff';
     } else if (!state.dragonUnlocked) {
       hud.dragonText.textContent = 'LOCKED';
       hud.dragonText.style.color = '#555a82';
-    } else if (state.dragonCharge >= 600) {
+    } else if (state.dragonCharge >= DRAGON_MAX) {
       hud.dragonText.textContent = 'READY';
       hud.dragonText.style.color = '#ff77c8';
     } else {
@@ -4610,17 +4863,17 @@
     } else if (state.thumbsUp) {
       const px = state.player.x, py = state.player.y;
       if (state.dragonUnlocked) {
-        const charge = state.dragonCharge / 600;
+        const charge = state.dragonCharge / DRAGON_MAX;
         const r = 10 + charge * 24;
         const segs = 18;
         const t = state.t;
-        const col = state.dragonCharge >= 600 ? '#ffffff' : '#ffd066';
+        const col = state.dragonCharge >= DRAGON_MAX ? '#ffffff' : '#ffd066';
         ctx.fillStyle = col;
         for (let i = 0; i < segs; i++) {
           const a = (i / segs) * TAU + t * 0.08;
           ctx.fillRect(px + Math.cos(a) * r - 1.5, py + Math.sin(a) * r - 1.5, 3, 3);
         }
-        if (state.dragonCharge >= 600) {
+        if (state.dragonCharge >= DRAGON_MAX) {
           ctx.font = '10px monospace';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
@@ -4701,6 +4954,28 @@
         ctx.fillRect(s.x + cs - 2, s.y + sn - 2, 4, 4);
         ctx.fillRect(s.x - cs - 2, s.y - sn - 2, 4, 4);
         ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+      } else if (s.kind === 'wave') {
+        // WAVE: teal diamond that leans into its weave direction
+        ctx.fillStyle = '#5fe6c8';
+        ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 1.4, s.y - 1.4, 2.8, 2.8);
+      } else if (s.kind === 'bounce') {
+        // RICOCHET: gold ball with a white core
+        ctx.fillStyle = '#ffd066';
+        ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 1.4, s.y - 1.4, 2.8, 2.8);
+      } else if (s.kind === 'flare') {
+        // FLARE: orange shell with a hot core (pre-detonation)
+        ctx.fillStyle = '#ffb14e';
+        ctx.fillRect(s.x - 4, s.y - 4, 8, 8);
+        ctx.fillStyle = '#fff2c8';
+        ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+      } else if (s.kind === 'frag') {
+        // FLARE fragments: small orange sparks
+        ctx.fillStyle = '#ffd08a';
         ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
       } else {
         ctx.fillStyle = '#ffffff';
@@ -4837,6 +5112,18 @@
       ctx.fillRect(a.x - 7, a.y + 3, 1.5, 4);
       ctx.fillRect(a.x + 3, a.y + 5.5, 4, 1.5);
       ctx.fillRect(a.x + 5.5, a.y + 3, 1.5, 4);
+    }
+
+    // Aim-bend guide: when firing the MAIN weapon with the wrist tilted, trace where the
+    // volley will lean so the wrist-roll aim is learnable.
+    if (state.openPalm && state.handSeen && Math.abs(state.handRoll) > 0.02) {
+      const p = state.player, slope = (state.handRoll * 2.2) / 10;
+      ctx.fillStyle = 'rgba(154,216,255,0.5)';
+      for (let i = 1; i <= 6; i++) {
+        const yy = p.y - 14 - i * 10;
+        const xx = p.x + slope * (i * 10);
+        ctx.fillRect(xx - 1.3, yy - 1.3, 2.6, 2.6);
+      }
     }
 
     // Floating popups (score, item, erase counters)
@@ -5013,6 +5300,23 @@
     { name: 'TOXIC',   sky: ['#0a1203','#162808','#28460d'], planet: '#4a7a14', planetHi: '#8ac02a', accent: '#b6ff3a', neb: '#2e4a0d' },
     { name: 'VOID',    sky: ['#050510','#0a0a1e','#15152e'], planet: '#3a3a5a', planetHi: '#6a6a9a', accent: '#c0c4e0', neb: '#1a1a3a' },
   ];
+
+  // Per-theme MIDSTAGE flavor: biases the frequent grunt-wave pattern + tunes stats so each
+  // theme's road feels different (not just a recoloured grunt). pat: dominant pattern,
+  // spd/fire/hp: multipliers (fire<1 = shoots faster). Grunts also pick up the theme accent tint.
+  const THEME_ENEMY = [
+    { pat: 'aim',  spd: 1.00, fire: 1.00, hp: 1.00 }, // 0 NEBULA  — calm aimed baseline
+    { pat: 'aim',  spd: 1.25, fire: 0.78, hp: 0.90 }, // 1 CRIMSON — fast & aggressive
+    { pat: 'fan',  spd: 0.90, fire: 1.00, hp: 1.10 }, // 2 EMERALD — fan spreaders
+    { pat: 'spin', spd: 0.85, fire: 1.00, hp: 1.15 }, // 3 AMBER   — tanky spinners
+    { pat: 'aim',  spd: 1.10, fire: 0.90, hp: 1.00 }, // 4 COSMIC  — brisk aimed
+    { pat: 'spin', spd: 1.05, fire: 0.92, hp: 1.00 }, // 5 VIOLET  — quick spinners
+    { pat: 'fan',  spd: 0.80, fire: 1.10, hp: 1.30 }, // 6 GLACIER — slow, tanky fans
+    { pat: 'aim',  spd: 1.35, fire: 0.72, hp: 0.85 }, // 7 INFERNO — fastest, fragile rushers
+    { pat: 'fan',  spd: 0.95, fire: 0.88, hp: 1.10 }, // 8 TOXIC   — busy fans
+    { pat: 'spin', spd: 1.15, fire: 0.85, hp: 1.05 }, // 9 VOID    — fast spinners
+  ];
+  function themeEnemy() { return THEME_ENEMY[state.themeIndex % THEME_ENEMY.length]; }
 
   // 3 parallax star layers — back/mid/front
   function makeLayer(n, vMin, vMax, sz, alpha) {
@@ -5224,6 +5528,9 @@
     { id: 'heavy',  name: 'CANNON', slot: 'main', cost: 1200, fireMul: 1.9, color: '#ff8a3a',
       descJa: '低速・高威力の太い弾', desc: 'Slow, heavy bolts',
       icon: '<svg viewBox="0 0 16 16"><rect x="5" y="3" width="6" height="10" rx="3" fill="currentColor"/></svg>' },
+    { id: 'wave',   name: 'WAVE',   slot: 'main', cost: 1000, fireMul: 1.2, color: '#5fe6c8',
+      descJa: '左右に蛇行して広く薙ぐ波動弾', desc: 'Weaving bolts that rake a wide path',
+      icon: '<svg viewBox="0 0 16 16"><path d="M2 8 Q5 2 8 8 T14 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
     // ----- SUB-slot -----
     { id: 'homing', name: 'SEEKER', slot: 'sub', cost: 0,   fireMul: 1.25, color: '#ff77c8',
       descJa: '追尾弾（ピース由来）', desc: 'Homing missiles',
@@ -5237,6 +5544,12 @@
     { id: 'boomer', name: 'BOOMERANG', slot: 'sub', cost: 1000, fireMul: 1.6, color: '#b6ff3a',
       descJa: '弧を描いて往復・行きも帰りも貫通', desc: 'Arcs out and back — pierces both ways',
       icon: '<svg viewBox="0 0 16 16"><path d="M3 4 Q13 2 13 12" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>' },
+    { id: 'flare',  name: 'FLARE',  slot: 'sub', cost: 1100, fireMul: 1.8, color: '#ffb14e',
+      descJa: '前方で炸裂し全方位に破片を撒く・群れ掃討', desc: 'Bursts into a radial frag spray — crowd clear',
+      icon: '<svg viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M8 8 V2 M8 8 V14 M8 8 H2 M8 8 H14 M8 8 L4 4 M8 8 L12 4 M8 8 L4 12 M8 8 L12 12"/></g></svg>' },
+    { id: 'bounce', name: 'RICOCHET', slot: 'sub', cost: 1300, fireMul: 1.4, color: '#ffd066',
+      descJa: '左右の壁で反射して画面端を薙ぐ', desc: 'Ricochets off the walls — rakes the edges',
+      icon: '<svg viewBox="0 0 16 16"><path d="M3 14 L7 3 L9 9 L13 2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
   ];
   // ----- DRAGON ultimates (chosen in the shop; fired via the thumbs-up charge) -----
   const DRAGONS = [
@@ -5887,7 +6200,30 @@
     if (e.isBoss) {
       const v = getBossVariant();
       drawSprite(v.sprite, v.pal, e.x, e.y, 4.5);
+      // Gesture seal ring + "copy this shape" prompt (solo stage 2+ mechanic).
+      const seal = state.boss && state.boss.gim && state.boss.gim.seal;
+      if (seal && seal.state === 'up') {
+        const col = seal.kind === 'open' ? '#9ad8ff' : seal.kind === 'peace' ? '#88e0ff' : '#7fffd4';
+        const R = e.radius + 14, segs = 30, lit = Math.round(segs * Math.min(1, seal.hold / 36));
+        for (let i = 0; i < segs; i++) {
+          const a = (i / segs) * TAU - Math.PI / 2;
+          ctx.globalAlpha = i < lit ? 1 : 0.28;
+          ctx.fillStyle = col;
+          ctx.fillRect(e.x + Math.cos(a) * R - 1.6, e.y + Math.sin(a) * R - 1.6, 3.2, 3.2);
+        }
+        ctx.globalAlpha = 1;
+        ctx.font = '9px monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillStyle = col;
+        ctx.fillText('COPY: ' + (SEAL_LABEL[seal.kind] || ''), e.x, e.y - e.radius - 22);
+      }
     } else {
+      // theme-accent aura — gives each stage's grunts a distinct colour without new sprites
+      if (e.tint) {
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = e.tint;
+        ctx.beginPath(); ctx.arc(e.x, e.y, e.radius + 2, 0, TAU); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
       const pal = e.pattern === 'spin' ? GRUNT_PAL_SPIN
                 : e.pattern === 'fan'  ? GRUNT_PAL_FAN
                 : GRUNT_PAL_AIM;
@@ -5916,6 +6252,7 @@
       playBtn.disabled = false;
       playBtn.textContent = 'PLAY';
       readyStat.textContent = t('readyDone');
+      maybeAutoTutorial();
       return;
     }
     playBtn.disabled = true;
@@ -5934,6 +6271,7 @@
     playBtn.disabled = false;
     playBtn.textContent = 'PLAY';
     readyStat.textContent = t('readyDone');
+    maybeAutoTutorial();
   }
 
   function start() {
@@ -6071,6 +6409,8 @@
 
   startBtn.addEventListener('click', goToReady);
   playBtn.addEventListener('click', () => { if (!playBtn.disabled) start(); });
+  document.getElementById('tutorialBtn').addEventListener('click', () => { if (hands) startTutorial(); });
+  document.getElementById('tutSkip').addEventListener('click', () => { finishTutorial(); });
   backHome.addEventListener('click', () => { showHomeView(); });
   shopBtn.addEventListener('click', () => { showShopView(); });
   document.getElementById('coopBtn').addEventListener('click', () => { showCoopView(); });
