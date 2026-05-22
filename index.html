@@ -3365,6 +3365,31 @@
         state.shots.push({ x: p.x, y: p.y - 10, vx: -sx, vy: -7.5, r: 3, dmg: 1, kind: 'bounce' });
         state.shots.push({ x: p.x, y: p.y - 10, vx:  sx, vy: -7.5, r: 3, dmg: 1, kind: 'bounce' });
       }
+    } else if (wid === 'swarm') {
+      // SWARM (SUB): a cloud of tiny micro-seekers — sharp turn, short range, weak each.
+      const n = lv >= 3 ? 8 : lv >= 2 ? 6 : 4;
+      for (let i = 0; i < n; i++) {
+        const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.30;
+        state.shots.push({ x: p.x, y: p.y - 10, vx: Math.cos(a) * 3.2, vy: Math.sin(a) * 3.2,
+          r: 2.5, dmg: 1, kind: 'homing', swarm: true, maxSp: 7, turn: 0.24, life: 0 });
+      }
+    } else if (wid === 'scatter') {
+      // SCATTER (SUB): a short-range shotgun cone of fast pellets that fade quickly.
+      const rays = lv >= 3 ? 11 : lv >= 2 ? 9 : 7;
+      for (let i = 0; i < rays; i++) {
+        const a = -Math.PI / 2 + (i - (rays - 1) / 2) * 0.12;
+        const sp = 8 + Math.random() * 1.5;
+        state.shots.push({ x: p.x, y: p.y - 12, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+          r: 3, dmg: 1, kind: 'frag', life: 0 });
+      }
+    } else if (wid === 'split') {
+      // SPLITTER (SUB): bolts that burst into an upward fan partway up the screen.
+      const bolts = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;
+      for (let i = 0; i < bolts; i++) {
+        const ox = (i - (bolts - 1) / 2) * 12;
+        state.shots.push({ x: p.x + ox, y: p.y - 12, vx: 0, vy: -9, r: 3.5, dmg: 1,
+          kind: 'split', life: 0, splitAt: 16 });
+      }
     } else {
       // 'std' (TWIN). Guard active = only center bolt.
       let lanes;
@@ -4618,6 +4643,15 @@
         if (s.fuse <= 0) { detonateFlare(s); state.shots.splice(i, 1); continue; }
       }
       if (s.kind === 'frag') { s.life = (s.life || 0) + 1; if (s.life > 26) { state.shots.splice(i, 1); continue; } }
+      if (s.kind === 'split') {
+        s.life = (s.life || 0) + 1;
+        if (s.life > (s.splitAt || 16)) {
+          for (let k = -2; k <= 2; k++)
+            state.shots.push({ x: s.x, y: s.y, vx: k * 2.4, vy: -8, r: 3, dmg: (s.dmg || 1), kind: 'std' });
+          for (let k = 0; k < 6; k++) pushParticle(s.x, s.y, '#9bff8a');
+          state.shots.splice(i, 1); continue;
+        }
+      }
       s.x += s.vx || 0;
       s.y += s.vy;
       if (s.kind === 'bounce') {                 // RICOCHET: reflect off the side walls
@@ -4627,7 +4661,7 @@
       // remove if too old or off-screen
       const offTop = s.y < -10 && s.kind !== 'homing' && s.kind !== 'boomer';
       if (offTop || s.x < -20 || s.x > VW + 20 || s.y > VH + 20
-          || (s.kind === 'homing' && s.life > (s.missile ? 150 : 240))) {
+          || (s.kind === 'homing' && s.life > (s.missile ? 90 : s.swarm ? 60 : 240))) {
         state.shots.splice(i, 1); continue;
       }
       if (s.pierce) {
@@ -5749,6 +5783,11 @@
           ctx.fillRect(s.x - 1, s.y - 6, 2, 9);
           ctx.fillStyle = '#ff5a3a';
           ctx.fillRect(s.x - 2.5, s.y + 4, 5, 3);
+        } else if (s.swarm) {
+          // SWARM: tiny pink micro-seeker
+          ctx.fillStyle = '#ff9be0';
+          ctx.fillRect(s.x - 2.5, s.y - 1, 5, 2);
+          ctx.fillRect(s.x - 1, s.y - 2.5, 2, 5);
         } else {
           ctx.fillStyle = '#88e0ff';
           ctx.fillRect(s.x - 4, s.y - 1.5, 8, 3);
@@ -5792,6 +5831,12 @@
         // FLARE fragments: small orange sparks
         ctx.fillStyle = '#ffd08a';
         ctx.fillRect(s.x - 2, s.y - 2, 4, 4);
+      } else if (s.kind === 'split') {
+        // SPLITTER: green bolt (bursts into a fan)
+        ctx.fillStyle = '#9bff8a';
+        ctx.fillRect(s.x - 2.5, s.y - 5, 5, 10);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(s.x - 1, s.y - 5, 2, 10);
       } else {
         ctx.fillStyle = '#ffffff';
         ctx.fillRect(s.x - 2.5, s.y - 7.5, 5, 12.5);
@@ -6519,6 +6564,15 @@
     { id: 'bounce', name: 'RICOCHET', slot: 'sub', cost: 1300, fireMul: 1.4, color: '#ffd066',
       descJa: '左右の壁で反射して画面端を薙ぐ', desc: 'Ricochets off the walls — rakes the edges',
       icon: '<svg viewBox="0 0 16 16"><path d="M3 14 L7 3 L9 9 L13 2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
+    { id: 'swarm',  name: 'SWARM',    slot: 'sub', cost: 1000, fireMul: 1.15, color: '#ff9be0',
+      descJa: '極小の追尾弾を多数ばらまく・短射程', desc: 'A cloud of tiny short-range seekers',
+      icon: '<svg viewBox="0 0 16 16"><g fill="currentColor"><circle cx="4" cy="5" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="12" cy="7" r="1.5"/><circle cx="6" cy="10.5" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/></g></svg>' },
+    { id: 'scatter', name: 'SCATTER', slot: 'sub', cost: 900, fireMul: 1.0, color: '#ffb14e',
+      descJa: '近距離に拡散する散弾・接近戦向き', desc: 'Short-range shotgun cone — point blank',
+      icon: '<svg viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"><path d="M8 14 L4 5 M8 14 L8 3 M8 14 L12 5 M8 14 L2 8 M8 14 L14 8"/></g></svg>' },
+    { id: 'split',  name: 'SPLITTER', slot: 'sub', cost: 1100, fireMul: 1.25, color: '#9bff8a',
+      descJa: '上空で炸裂し扇状に分裂する弾', desc: 'Bolts that burst into an upward fan',
+      icon: '<svg viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"><path d="M8 8 V14 M8 8 L4 2 M8 8 L8 1 M8 8 L12 2"/></g></svg>' },
   ];
   // ----- DRAGON ultimates (chosen in the shop; fired via the thumbs-up charge) -----
   const DRAGONS = [
