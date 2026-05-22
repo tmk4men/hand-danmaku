@@ -45,6 +45,15 @@ html = must_replace(
     "relay url",
 )
 
+# 2b) The CO-OP button is gone, so null-guard its click listener (otherwise
+#     getElementById('coopBtn').addEventListener throws and halts init).
+html = must_replace(
+    html,
+    "document.getElementById('coopBtn').addEventListener('click', () => { showCoopView(); });",
+    "document.getElementById('coopBtn')?.addEventListener('click', () => { showCoopView(); });",
+    "coop listener",
+)
+
 # 3) Free build = ACT I demo only (stops at stage 10, teases ACT II). The paid
 #    "product" build keeps PREMIUM=true and unlocks ACT II (stages 11-20).
 html = must_replace(
