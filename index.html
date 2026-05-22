@@ -3314,9 +3314,9 @@
         x: p.x + ox, y: p.y - 12, vx, vy: -3, r: 4, dmg: 1,
         kind: 'homing', maxSp: 5, turn: 0.1, life: 0,
       });
-      mk(0, 0);
-      if (lv >= 2) mk(-7, -1.2);
-      if (lv >= 3) mk(7, 1.2);              // lv1=1, lv2=2, lv3=3 missiles, dmg 1 each
+      mk(-5, -0.8); mk(5, 0.8);             // lv1 = 2 seekers (was 1 — the free default was too weak)
+      if (lv >= 2) mk(0, 0);                // lv2 = 3
+      if (lv >= 3) mk(-9, -1.4);            // lv3 = 4, dmg 1 each
     } else if (wid === 'option') {
       const n = lv >= 3 ? 3 : lv >= 2 ? 2 : 1;   // pairs scale; damage stays 1
       for (let i = 1; i <= n; i++) {
@@ -3367,15 +3367,15 @@
       }
     } else if (wid === 'swarm') {
       // SWARM (SUB): a cloud of tiny micro-seekers — sharp turn, short range, weak each.
-      const n = lv >= 3 ? 8 : lv >= 2 ? 6 : 4;
+      const n = lv >= 3 ? 6 : lv >= 2 ? 4 : 3;   // trimmed: SWARM was out-classing the other subs
       for (let i = 0; i < n; i++) {
-        const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.30;
+        const a = -Math.PI / 2 + (i - (n - 1) / 2) * 0.34;
         state.shots.push({ x: p.x, y: p.y - 10, vx: Math.cos(a) * 3.2, vy: Math.sin(a) * 3.2,
           r: 2.5, dmg: 1, kind: 'homing', swarm: true, maxSp: 7, turn: 0.24, life: 0 });
       }
     } else if (wid === 'scatter') {
       // SCATTER (SUB): a short-range shotgun cone of fast pellets that fade quickly.
-      const rays = lv >= 3 ? 11 : lv >= 2 ? 9 : 7;
+      const rays = lv >= 3 ? 10 : lv >= 2 ? 8 : 6;   // point-blank cone, trimmed slightly
       for (let i = 0; i < rays; i++) {
         const a = -Math.PI / 2 + (i - (rays - 1) / 2) * 0.12;
         const sp = 8 + Math.random() * 1.5;
@@ -4646,7 +4646,7 @@
       if (s.kind === 'split') {
         s.life = (s.life || 0) + 1;
         if (s.life > (s.splitAt || 16)) {
-          for (let k = -2; k <= 2; k++)
+          for (const k of [-2.2, -0.8, 0.8, 2.2])   // 4-way fan (was 5 — split was over-budget)
             state.shots.push({ x: s.x, y: s.y, vx: k * 2.4, vy: -8, r: 3, dmg: (s.dmg || 1), kind: 'std' });
           for (let k = 0; k < 6; k++) pushParticle(s.x, s.y, '#9bff8a');
           state.shots.splice(i, 1); continue;
@@ -6542,7 +6542,7 @@
     { id: 'wave',   name: 'WAVE',   slot: 'main', cost: 1000, fireMul: 1.2, color: '#5fe6c8',
       descJa: '左右に蛇行して広く薙ぐ波動弾', desc: 'Weaving bolts that rake a wide path',
       icon: '<svg viewBox="0 0 16 16"><path d="M2 8 Q5 2 8 8 T14 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
-    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 5.0, color: '#ff9f43',
+    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 4.0, color: '#ff9f43',
       descJa: '低速の追尾ミサイル・Lvで威力UP（弾数は控えめ）', desc: 'Slow homing rockets — leveling boosts damage',
       icon: '<svg viewBox="0 0 16 16"><path d="M8 1 C10 4 10 7 10 10 H6 C6 7 6 4 8 1 Z" fill="currentColor"/><path d="M6 9 L4 13 L6 11 Z M10 9 L12 13 L10 11 Z" fill="currentColor"/><circle cx="8" cy="6" r="1.1" fill="#06081a"/></svg>' },
     // ----- SUB-slot -----
@@ -6564,13 +6564,13 @@
     { id: 'bounce', name: 'RICOCHET', slot: 'sub', cost: 1300, fireMul: 1.4, color: '#ffd066',
       descJa: '左右の壁で反射して画面端を薙ぐ', desc: 'Ricochets off the walls — rakes the edges',
       icon: '<svg viewBox="0 0 16 16"><path d="M3 14 L7 3 L9 9 L13 2" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>' },
-    { id: 'swarm',  name: 'SWARM',    slot: 'sub', cost: 1000, fireMul: 1.15, color: '#ff9be0',
+    { id: 'swarm',  name: 'SWARM',    slot: 'sub', cost: 1000, fireMul: 1.2, color: '#ff9be0',
       descJa: '極小の追尾弾を多数ばらまく・短射程', desc: 'A cloud of tiny short-range seekers',
       icon: '<svg viewBox="0 0 16 16"><g fill="currentColor"><circle cx="4" cy="5" r="1.5"/><circle cx="9" cy="3" r="1.5"/><circle cx="12" cy="7" r="1.5"/><circle cx="6" cy="10.5" r="1.5"/><circle cx="11.5" cy="12" r="1.5"/></g></svg>' },
-    { id: 'scatter', name: 'SCATTER', slot: 'sub', cost: 900, fireMul: 1.0, color: '#ffb14e',
+    { id: 'scatter', name: 'SCATTER', slot: 'sub', cost: 900, fireMul: 1.3, color: '#ffb14e',
       descJa: '近距離に拡散する散弾・接近戦向き', desc: 'Short-range shotgun cone — point blank',
       icon: '<svg viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round"><path d="M8 14 L4 5 M8 14 L8 3 M8 14 L12 5 M8 14 L2 8 M8 14 L14 8"/></g></svg>' },
-    { id: 'split',  name: 'SPLITTER', slot: 'sub', cost: 1100, fireMul: 1.25, color: '#9bff8a',
+    { id: 'split',  name: 'SPLITTER', slot: 'sub', cost: 1100, fireMul: 1.4, color: '#9bff8a',
       descJa: '上空で炸裂し扇状に分裂する弾', desc: 'Bolts that burst into an upward fan',
       icon: '<svg viewBox="0 0 16 16"><g stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round"><path d="M8 8 V14 M8 8 L4 2 M8 8 L8 1 M8 8 L12 2"/></g></svg>' },
   ];
