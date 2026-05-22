@@ -86,9 +86,9 @@
     border: 2px solid #2a2f55;
     box-shadow: 0 0 0 2px #06081a, 0 0 12px rgba(120,140,255,0.25);
     padding: 8px 10px;
-    font-size: 10px;
+    font-size: 13px;
     color: #cfd2f0;
-    min-width: 144px;
+    min-width: 160px;
     line-height: 1.2;
     image-rendering: pixelated;
   }
@@ -549,7 +549,7 @@
 
   /* Shrink the HUD + heal button on small / portrait screens */
   @media (max-width: 600px) {
-    #hud { font-size: 8px; min-width: 104px; padding: 5px 7px; gap: 2px; }
+    #hud { font-size: 10px; min-width: 118px; padding: 5px 7px; gap: 2px; }
     #hud .row.lives { font-size: 10px; }
     #healHostBtn { font-size: 11px; padding: 9px 14px; bottom: 10px; }
   }
@@ -568,7 +568,7 @@
     #overlay h1 { font-size: 22px; }
     #overlay .kicker { font-size: 9px; }
     #overlayMsg.howto { grid-template-columns: repeat(3, 1fr); gap: 4px; }
-    #hud { font-size: 8px; min-width: 104px; padding: 5px 7px; gap: 2px; }
+    #hud { font-size: 10px; min-width: 118px; padding: 5px 7px; gap: 2px; }
   }
 
   /* ---------- Unified pixel-button system ---------- */
@@ -1425,9 +1425,22 @@
   function resize() {
     const dpr = window.devicePixelRatio || 1;
     const rect = stage.getBoundingClientRect();
-    displayCanvas.width  = Math.round(rect.width  * dpr);
-    displayCanvas.height = Math.round(rect.height * dpr);
+    const dw = Math.max(2, Math.round(rect.width  * dpr));
+    const dh = Math.max(2, Math.round(rect.height * dpr));
+    displayCanvas.width  = dw;
+    displayCanvas.height = dh;
     displayCtx.imageSmoothingEnabled = false;
+    // Render the world into an offscreen buffer at (capped) display resolution.
+    // Previously this was a fixed 320x240 buffer: every glyph was rasterised at
+    // ~0.4x (a 7px font became ~3px) and then nearest-neighbour upscaled, so all
+    // in-game text looked tiny AND jagged. Sprites are vector fillRects so they
+    // stay crisp at any buffer size; bumping the buffer makes text/edges sharp.
+    // Cap the long side so fill cost stays sane on hi-DPI / mobile screens.
+    const MAXB = 1280;
+    const k = Math.min(1, MAXB / Math.max(dw, dh));
+    canvas.width  = Math.max(2, Math.round(dw * k));
+    canvas.height = Math.max(2, Math.round(dh * k));
+    ctx.imageSmoothingEnabled = false;
   }
   window.addEventListener('resize', resize);
   resize();
@@ -2803,8 +2816,9 @@
   }
 
   function spawnBoss() {
-    // Boss durability scales harder per stage so it keeps up with leveled ships/weapons.
-    const hp = 240 + state.stageNo * 150;
+    // Boss durability scales per ACT + per stage so it keeps up with leveled ships/weapons.
+    const ac = ACTS[actIndexOf(state.stageNo)];
+    const hp = Math.round(ac.hpBase + stageInAct(state.stageNo) * ac.hpPer);
     state.boss = {
       x: VW * 0.5, y: -60, tx: VW * 0.5, ty: 120,
       hp, maxHp: hp,
@@ -2837,6 +2851,17 @@
     'FLAME WALL',       // 7 INFERNO
     'ACID POOLS',       // 8 TOXIC
     'VOID COLLAPSE',    // 9 VOID
+    // ===== ACT II gimmicks (themes 10..19) =====
+    'REFLECT WALL',      // 10 ABYSSAL
+    'RIFT SHEAR',        // 11 RIFT
+    'SHADOW CLONES',     // 12 UMBRAL
+    'SPORE BURST',       // 13 MIASMA
+    'ECLIPSE FREEZE',    // 14 ECLIPSE
+    'MUTATION SPLIT',    // 15 CHIMERA
+    'BLACK-HOLE PULSE',  // 16 SINGULAR
+    'POLARIZE GRID',     // 17 NULLFIELD
+    'METEOR SHOWER',     // 18 CATACLYSM
+    'TRUE COLLAPSE',     // 19 SOURCE
   ];
   // Gesture seal (solo, stage 2+): the boss periodically raises a shape-shield. Copy the shown
   // hand shape (PALM / PEACE / FIST) for ~0.6s to shatter it — clears the screen and chips the
@@ -3025,6 +3050,177 @@
         if (g.enraged && b.t % 6 === 0) {
           const base = b.t * 0.2;
           for (let k = 0; k < 4; k++) fireBullet(b.x, b.y, base + k * TAU / 4, 2.4, '#ffffff', 4);
+        }
+        break;
+      }
+      // ===== ACT II gimmicks (themes 10..19) =====
+      case 10: { // ABYSSAL — REFLECT WALL: bullets bounce off side walls for a window
+        if (g.rbT == null) g.rbT = 0;
+        if (b.t % 240 === 90) { g.rbT = 180; pushPopup(b.x, b.y - 30, 'REFLECT', '#aeb4ff', 12); SFX.warning(); }
+        if (g.rbT > 0) {
+          g.rbT--;
+          for (const bl of state.bullets) {
+            if (bl._fz) continue;
+            if (bl.x < bl.r + 4) { bl.x = bl.r + 4; bl.vx = Math.abs(bl.vx); pushParticle(bl.x, bl.y, '#aeb4ff'); }
+            else if (bl.x > VW - bl.r - 4) { bl.x = VW - bl.r - 4; bl.vx = -Math.abs(bl.vx); pushParticle(bl.x, bl.y, '#aeb4ff'); }
+          }
+        }
+        break;
+      }
+      case 11: { // RIFT — RIFT SHEAR: velocity field twists bullets left/right by side
+        if (!g.shear) g.shear = { cd: 210, t: 0, dir: 1 };
+        const sh = g.shear;
+        if (sh.t <= 0) {
+          if (--sh.cd <= 0) {
+            sh.t = 150; sh.dir = gameRand() < 0.5 ? -1 : 1;
+            pushPopup(b.x, b.y - 30, 'RIFT SHEAR', '#55ffe6', 12); SFX.warning();
+            sh.cd = rand(240, 340);
+          }
+        } else {
+          sh.t--;
+          if (b.t % 2 === 0) for (const bl of state.bullets) {
+            const sp = Math.hypot(bl.vx, bl.vy) || 1;
+            const a = Math.atan2(bl.vy, bl.vx);
+            const side = bl.x < VW * 0.5 ? -1 : 1;
+            const na = a + sh.dir * side * 0.025;
+            bl.vx = Math.cos(na) * sp; bl.vy = Math.sin(na) * sp;
+          }
+        }
+        break;
+      }
+      case 12: { // UMBRAL — SHADOW CLONES: orbiting turrets that mirror the boss
+        if (!g.cl) g.cl = { cd: 120, a: rand(0, TAU), refs: [] };
+        const cl = g.cl;
+        for (let i = cl.refs.length - 1; i >= 0; i--) if (cl.refs[i].hp <= 0) cl.refs.splice(i, 1);
+        if (cl.refs.length === 0 && --cl.cd <= 0) {
+          for (const s of [-1, 1]) {
+            const d = spawnEnemy('spinner', b.x + s * 80, b.y + 22,
+              { vy: 0.00, hp: 18 + state.stageNo * 0.6, radius: 18, fireRate: 36, pattern: 'spiral', score: 0 });
+            d.fromBoss = true;
+            cl.refs.push(d);
+          }
+          pushPopup(b.x, b.y - 30, 'CLONES', '#ff5a88', 12); SFX.warning();
+          cl.cd = rand(420, 560);
+        }
+        cl.a += 0.025;
+        for (let i = 0; i < cl.refs.length; i++) {
+          const d = cl.refs[i];
+          const ang = cl.a + i * Math.PI;
+          d.x = clamp(b.x + Math.cos(ang) * 96, 30, VW - 30);
+          d.y = clamp(b.y + 28 + Math.sin(ang) * 22, 40, 220);
+          d.vx = 0; d.vy = 0;
+        }
+        break;
+      }
+      case 13: { // MIASMA — SPORE BURST: slow spores fall then detonate into rings
+        if (b.t % 210 === 70) {
+          state.bullets.push({ x: rand(40, VW - 40), y: -10, vx: rand(-0.35, 0.35), vy: 1.05, r: 8,
+            color: '#c8ff4a', life: 0, grazed: false, _spore: 120 });
+          pushPopup(b.x, b.y - 30, 'SPORES', '#c8ff4a', 11);
+        }
+        let burst = false;
+        for (const bl of state.bullets) {
+          if (bl._spore && --bl._spore <= 0) {
+            bl._dead = true; burst = true;
+            const n = 14, off = b.t * 0.02;
+            for (let i = 0; i < n; i++) fireBullet(bl.x, bl.y, (i / n) * TAU + off, 2.1, '#dfffa0', 4);
+          }
+        }
+        if (burst) for (let i = state.bullets.length - 1; i >= 0; i--) if (state.bullets[i]._dead) state.bullets.splice(i, 1);
+        break;
+      }
+      case 14: { // ECLIPSE — ECLIPSE FREEZE: brief freeze, then tight relaunch toward player
+        if (!g.ez) g.ez = { state: 'idle', t: 0, cd: 300 };
+        const z = g.ez;
+        if (z.state === 'idle') {
+          if (--z.cd <= 0 && state.bullets.length > 10) {
+            z.state = 'hold'; z.t = 36;
+            for (const bl of state.bullets) { bl._sp = Math.hypot(bl.vx, bl.vy) || 2.2; bl._ez = 1; bl.vx = 0; bl.vy = 0; }
+            pushPopup(b.x, b.y - 30, 'ECLIPSE', '#ffd66a', 12); SFX.warning();
+          }
+        } else {
+          if (--z.t <= 0) {
+            for (const bl of state.bullets) if (bl._ez) {
+              const a = Math.atan2(p.y - bl.y, p.x - bl.x) + rand(-0.26, 0.26);
+              const sp = Math.max(2.4, Math.min(bl._sp * 1.15, 3.6));
+              bl.vx = Math.cos(a) * sp; bl.vy = Math.sin(a) * sp; bl._ez = 0;
+            }
+            z.state = 'idle'; z.cd = rand(320, 420); SFX.bomb();
+          }
+        }
+        break;
+      }
+      case 15: { // CHIMERA — MUTATION SPLIT: eggs split mid-flight into two diverging shards
+        if (b.t % 90 === 20) {
+          const aim = Math.atan2(p.y - b.y, p.x - b.x);
+          for (let i = -2; i <= 2; i++) {
+            const a = aim + i * 0.16;
+            const sp = 2.0;
+            state.bullets.push({ x: b.x, y: b.y + 12, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6,
+              color: '#b6ffa0', life: 0, grazed: false, _split: 55 });
+          }
+          pushPopup(b.x, b.y - 30, 'MUTATE', '#b6ffa0', 11);
+        }
+        let split = false;
+        for (const bl of state.bullets) {
+          if (bl._split && --bl._split <= 0) {
+            bl._dead = true; split = true;
+            const a = Math.atan2(bl.vy, bl.vx);
+            const sp = Math.hypot(bl.vx, bl.vy) || 2.2;
+            fireBullet(bl.x, bl.y, a + 0.55, sp * 1.25, '#ff77c8', 4);
+            fireBullet(bl.x, bl.y, a - 0.55, sp * 1.25, '#55ffe6', 4);
+          }
+        }
+        if (split) for (let i = state.bullets.length - 1; i >= 0; i--) if (state.bullets[i]._dead) state.bullets.splice(i, 1);
+        break;
+      }
+      case 16: { // SINGULAR — BLACK-HOLE PULSE: stronger pull + periodic pulse rings
+        const dx = b.x - p.x, dy = b.y - p.y, d = Math.hypot(dx, dy) || 1;
+        const pull = 1.4 * (1 - clamp(d / 420, 0, 1));
+        state.smoothX += (dx / d) * pull;
+        state.smoothY += (dy / d) * pull;
+        if (b.t % 7 === 0) pushParticle(p.x + (dx / d) * 18, p.y + (dy / d) * 18, '#aef4ff');
+        if (b.t % 160 === 80) {
+          const n = 34, off = b.t * 0.01;
+          for (let i = 0; i < n; i++) fireBullet(b.x, b.y, (i / n) * TAU + off, (1.4 + (i % 2) * 0.8), '#aef4ff', 5);
+          SFX.bomb();
+        }
+        break;
+      }
+      case 17: { // NULLFIELD — POLARIZE GRID: bullets snap toward the nearest axis (grid feeling)
+        if (b.t % 3 === 0) for (const bl of state.bullets) {
+          const sp = Math.hypot(bl.vx, bl.vy) || 1;
+          let a = Math.atan2(bl.vy, bl.vx);
+          const step = TAU / 4;
+          const tgt = Math.round(a / step) * step;
+          const da = Math.atan2(Math.sin(tgt - a), Math.cos(tgt - a));
+          a += clamp(da, -0.05, 0.05);
+          bl.vx = Math.cos(a) * sp; bl.vy = Math.sin(a) * sp;
+        }
+        break;
+      }
+      case 18: { // CATACLYSM — METEOR SHOWER: occasional meteor + extra falling embers
+        if (state.meteors.length < 2 && b.t % 340 === 180) spawnMeteor();
+        if (b.t % 150 === 60) {
+          const gapX = rand(VW * 0.2, VW * 0.8), gapW = 84;
+          for (let x = 10; x < VW; x += 18) {
+            if (Math.abs(x - gapX) < gapW / 2) continue;
+            state.bullets.push({ x, y: -8, vx: rand(-0.10, 0.10), vy: 1.9, r: 6, color: '#ff8a3a', life: 0, grazed: false });
+          }
+          pushPopup(VW / 2, VH * 0.18, 'EMBER RAIN', '#ff8a3a', 12);
+        }
+        break;
+      }
+      case 19: { // SOURCE — TRUE COLLAPSE: rotating no-safe rings + final-phase pressure
+        if (b.t % 190 === 60) {
+          const n = 40, off = b.t * 0.03;
+          for (let i = 0; i < n; i++) fireBullet(b.x, b.y, (i / n) * TAU + off, 1.9, '#c0c4e0', 5);
+          for (let i = 0; i < n; i += 2) fireBullet(b.x, b.y, (i / n) * TAU - off, 2.7, '#ff5050', 4);
+          SFX.bomb();
+        }
+        if (b.phaseIdx >= 2 && b.t % 24 === 0) {
+          const aim = Math.atan2(p.y - b.y, p.x - b.x);
+          for (let i = -2; i <= 2; i++) fireBullet(b.x, b.y + 10, aim + i * 0.14, 3.5, '#ffffff', 5);
         }
         break;
       }
@@ -3464,8 +3660,20 @@
     state.mod = mods[Math.floor(gameRand() * mods.length)];
   }
 
-  // ---------- Campaign: finite 10-stage solo run with a stage-select between stages ----------
-  const CAMPAIGN_STAGES = 10;
+  // ---------- Campaign: multi-ACT solo run; each ACT = 10 stages, stage-select between ----------
+  const STAGES_PER_ACT = 10;
+  const ACTS = [
+    { name: 'ACT I',  sub: '侵食', hpBase: 240, hpPer: 150 },
+    { name: 'ACT II', sub: '深層', hpBase: 700, hpPer: 175 },
+  ];
+  const TOTAL_STAGES = STAGES_PER_ACT * ACTS.length;   // 20 in a full premium run
+  // Paid "product" build = the full multi-ACT run. The free build flips PREMIUM to
+  // false (stops at stage 10 and teases ACT II). make_dist_plicy.py rewrites this line.
+  const PREMIUM = true;
+  const CAMPAIGN_STAGES = TOTAL_STAGES;                // referenced by HUD / stage-select
+  function actIndexOf(n) { return Math.min(ACTS.length - 1, Math.max(0, Math.floor((n - 1) / STAGES_PER_ACT))); }
+  function stageInAct(n) { return ((n - 1) % STAGES_PER_ACT) + 1; }
+  function lastStage() { return PREMIUM ? TOTAL_STAGES : STAGES_PER_ACT; }
   // Campaign mode applies to the SOLO, non-daily game only (co-op stays host-synced
   // endless; daily stays a comparable score attack).
   function CAMPAIGN_ON() { return !NET.active && !state.daily; }
@@ -3486,7 +3694,13 @@
 
   // Build 3 distinct next-stage cards: each = a theme/boss + a perk reward.
   function buildChoices() {
-    const themes = shuffled(STAGE_THEMES.map((_, i) => i)).slice(0, 3);
+    // Pick themes only from the ACT the NEXT stage belongs to, so ACT I draws from
+    // themes 0..9 and ACT II from 10..19 (a distinct "別のとこ" region).
+    const act = actIndexOf(state.stageNo + 1);
+    const lo = act * STAGES_PER_ACT;
+    const pool = [];
+    for (let i = lo; i < lo + STAGES_PER_ACT && i < STAGE_THEMES.length; i++) pool.push(i);
+    const themes = shuffled(pool).slice(0, 3);
     const perks = shuffled(PERKS).slice(0, 3);
     return themes.map((t, i) => ({ theme: t, perk: perks[i] }));
   }
@@ -3513,14 +3727,18 @@
     state.hazards.length = 0;
     state.stageChoices = buildChoices();
     const el = document.getElementById('stageSelect');
-    document.getElementById('ssTitle').textContent = 'STAGE ' + state.stageNo + ' CLEAR';
+    const nextAct = actIndexOf(state.stageNo + 1);
+    const crossingAct = (state.stageNo % STAGES_PER_ACT === 0) && nextAct > actIndexOf(state.stageNo);
+    document.getElementById('ssTitle').textContent = crossingAct
+      ? '▶▶ ' + ACTS[nextAct].name + ' 突入 ―― ' + ACTS[nextAct].sub
+      : 'STAGE ' + state.stageNo + ' CLEAR';
     const cards = el.querySelectorAll('.ss-card');
     state.stageChoices.forEach((c, idx) => {
       const th = STAGE_THEMES[c.theme];
       const card = cards[idx];
       card.style.setProperty('--accent', th.accent);
       card.innerHTML =
-        '<div class="ss-num">STAGE ' + (state.stageNo + 1) + ' / ' + CAMPAIGN_STAGES + '</div>' +
+        '<div class="ss-num">' + ACTS[nextAct].name + '  STAGE ' + stageInAct(state.stageNo + 1) + ' / ' + STAGES_PER_ACT + '</div>' +
         '<div class="ss-theme">' + th.name + '</div>' +
         '<div class="ss-perk" style="color:' + c.perk.color + '">' + c.perk.icon + ' ' + c.perk.label + '</div>' +
         '<div class="ss-key">[' + (idx + 1) + ']</div>';
@@ -3977,7 +4195,8 @@
       }
       { const frac = e.hp / b.maxHp, want = frac <= 0.33 ? 2 : frac <= 0.66 ? 1 : 0;
         if (want > b.phaseIdx) { bossPhaseTransition(b, e, want); return; } }
-      const numPatterns = lvl >= 6 ? 6 : lvl >= 4 ? 5 : lvl >= 2 ? 4 : 3;
+      const bossAct = Math.floor((lvl - 1) / STAGES_PER_ACT);
+      const numPatterns = bossAct >= 1 ? 10 : (lvl >= 6 ? 6 : lvl >= 4 ? 5 : lvl >= 2 ? 4 : 3);
       const pat = Math.floor(b.t / 360) % numPatterns;
       const phase = b.t % 360;
 
@@ -4057,7 +4276,7 @@
             fireBullet(b.x, b.y + 18, -base + k * TAU / arms, 2.0 * spd, '#88e0ff', 5);
           }
         }
-      } else {
+      } else if (pat === 5) {
         // PETAL STORM — layered expanding rings + aimed volley (stage 6+)
         if (phase % 60 === 0) {
           const n = 24, off = b.t * 0.03;
@@ -4070,6 +4289,74 @@
         if (phase % 24 === 12) {
           const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
           for (let i = -1; i <= 1; i++) fireBullet(b.x, b.y + 10, aim + i * 0.22, 3.0 * spd, '#ff5050', 6);
+        }
+      } else if (pat === 6) {
+        // ACT II — CONVERGING LATTICE: aimed rails at tiered speeds (net-like pressure)
+        const tick = Math.max(12, 24 - lvl);
+        if (phase % tick === 0) {
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          const rays = 4 + Math.min((lvl / 2) | 0, 6);
+          const wob = Math.sin(b.t * 0.04) * 0.06;
+          for (let i = -rays; i <= rays; i++) {
+            const sp = (2.0 + Math.abs(i) * 0.16) * spd;
+            fireBullet(b.x, b.y + 18, aim + i * 0.08 + wob, sp, '#ff5a88', 5);
+          }
+        }
+        if (phase % 90 === 45) {
+          const n = 20 + Math.min(lvl, 12) * 2;
+          const off = b.t * 0.02;
+          for (let i = 0; i < n; i++) fireBullet(b.x, b.y + 10, (i / n) * TAU + off, 1.6 * spd, '#c0c4e0', 4);
+        }
+      } else if (pat === 7) {
+        // ACT II — DOUBLE COUNTER-SPIRAL (GAP): two spirals with a rotating safe wedge
+        if (phase % 6 === 0) {
+          const base = b.t * 0.13;
+          const arms = 10 + Math.min(lvl, 18);
+          const gap = (b.t * 0.045) % TAU;
+          const half = 0.38;
+          for (let k = 0; k < arms; k++) {
+            const a1 = base + k * TAU / arms;
+            const a2 = -base + k * TAU / arms;
+            const d1 = Math.atan2(Math.sin(a1 - gap), Math.cos(a1 - gap));
+            const d2 = Math.atan2(Math.sin(a2 - gap), Math.cos(a2 - gap));
+            if (Math.abs(d1) >= half) fireBullet(b.x, b.y + 18, a1, 2.1 * spd, '#55ffe6', 4);
+            if (Math.abs(d2) >= half) fireBullet(b.x, b.y + 18, a2, 2.1 * spd, '#aeb4ff', 4);
+          }
+        }
+        if (phase % 80 === 10) {
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          for (let i = -2; i <= 2; i++) fireBullet(b.x, b.y + 10, aim + i * 0.16, 3.1 * spd, '#ffd66a', 6);
+        }
+      } else if (pat === 8) {
+        // ACT II — PREDICTIVE LEAD BURST: aims where the hand target is pulling you
+        if (phase % Math.max(28, 42 - ((lvl / 2) | 0)) === 0) {
+          const p = state.player;
+          const lx = p.x + clamp(p.tx - p.x, -90, 90) * 0.55;
+          const ly = p.y + clamp(p.ty - p.y, -90, 90) * 0.55;
+          const aim = Math.atan2(ly - b.y, lx - b.x);
+          for (let i = -3; i <= 3; i++) {
+            const sp = (2.6 + (Math.abs(i) * 0.08)) * spd;
+            fireBullet(b.x, b.y + 12, aim + i * 0.10, sp, '#ffffff', 5);
+          }
+        }
+        if (phase % 72 === 36) {
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          for (let k = 0; k < 6; k++) fireBullet(b.x, b.y + 18, aim + (k - 2.5) * 0.22, 1.8 * spd, '#ff5a88', 4);
+        }
+      } else {
+        // ACT II — WALL (MOVING GAP): screen-wide rain with an oscillating safe lane
+        if (phase % 140 === 20) {
+          const gapX = VW * 0.5 + Math.sin(b.t * 0.02) * (VW * 0.34);
+          const gapW = Math.max(56, 110 - lvl * 2);
+          for (let x = 10; x < VW; x += 14) {
+            if (Math.abs(x - gapX) < gapW / 2) continue;
+            fireBullet(x, -10, Math.PI / 2, 2.2 * spd, '#c0c4e0', 5);
+          }
+          for (let k = 0; k < 10; k++) fireBullet(b.x, b.y + 10, (k / 10) * TAU + b.t * 0.01, 1.2 * spd, '#7a7aff', 4);
+        }
+        if (phase % 140 === 85) {
+          const aim = Math.atan2(state.player.y - b.y, state.player.x - b.x);
+          for (let i = -1; i <= 1; i++) fireBullet(b.x, b.y + 10, aim + i * 0.18, 3.4 * spd, '#ff5050', 7);
         }
       }
       // Phase escalation overlays — extra pressure layered on top each phase.
@@ -4104,6 +4391,25 @@
         for (let i = -wings; i <= wings; i++) {
           fireBullet(e.x, e.y, aim + i * 0.22, 2.1, '#ffd27a', 5);
         }
+      } else if (e.pattern === 'wave') {
+        const aim = Math.atan2(state.player.y - e.y, state.player.x - e.x);
+        const wig = Math.sin(e.t * 0.22) * 0.42;
+        fireBullet(e.x, e.y, aim + wig, 2.3, '#aeb4ff', 5);
+        if (e.t % (e.fireRate * 4) === 0) fireBullet(e.x, e.y, aim - wig, 2.0, '#55ffe6', 4);
+      } else if (e.pattern === 'cross') {
+        const base = e.t * 0.07;
+        const spokes = 4;
+        for (let k = 0; k < spokes; k++) {
+          fireBullet(e.x, e.y, base + k * TAU / spokes, 1.9, '#c0c4e0', 5);
+        }
+        if (e.t % (e.fireRate * 3) === 0) {
+          const off = TAU / 8;
+          for (let k = 0; k < spokes; k++) fireBullet(e.x, e.y, base + off + k * TAU / spokes, 2.2, '#ff5a88', 4);
+        }
+      } else if (e.pattern === 'spiral') {
+        const a = e.t * 0.15;
+        fireBullet(e.x, e.y, a, 2.4, '#ffffff', 4);
+        if (e.t % (e.fireRate * 2) === 0) fireBullet(e.x, e.y, a + Math.PI, 1.7, '#ffd66a', 5);
       }
     }
   }
@@ -4369,9 +4675,13 @@
           const lore = STORY.worlds[state.themeIndex % STORY.worlds.length];
           if (lore && lore.die) pushPopup(e.x, e.y - 30, '「' + lore.die + '」', '#ffe0ea', 11, 170);
           if (CAMPAIGN_ON()) {
-            // Finite campaign: clear stage 10 => win; otherwise choose the next stage.
+            // Multi-ACT campaign: final clear ends the run; an ACT boundary or any
+            // ordinary stage opens the next-stage picker (the boundary swaps the region).
             updateHud();
-            if (state.stageNo >= CAMPAIGN_STAGES) { gameOver(true); return; }
+            if (state.stageNo >= lastStage()) {
+              if (!PREMIUM && ACTS.length > 1) pushPopup(VW / 2, VH * 0.4, '★ ACT II は製品版で解放', '#ffd066', 13, 220);
+              gameOver(true); return;
+            }
             openStageSelect();
             continue;
           }
@@ -5224,11 +5534,11 @@
           ctx.fillRect(px + Math.cos(a) * r - 1.5, py + Math.sin(a) * r - 1.5, 3, 3);
         }
         if (state.dragonCharge >= DRAGON_MAX) {
-          ctx.font = '10px monospace';
+          ctx.font = 'bold 13px monospace';
           ctx.textAlign = 'center';
           ctx.textBaseline = 'top';
           ctx.fillStyle = '#ffffff';
-          ctx.fillText('RELEASE TO FIRE', px, py - 56);
+          ctx.fillText('RELEASE TO FIRE', px, py - 58);
         }
       } else {
         // locked: faint gray ring hint
@@ -5238,11 +5548,11 @@
           const a = (i / 12) * TAU + state.t * 0.04;
           ctx.fillRect(px + Math.cos(a) * r - 1, py + Math.sin(a) * r - 1, 2, 2);
         }
-        ctx.font = '8px monospace';
+        ctx.font = '11px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'top';
         ctx.fillStyle = '#888';
-        ctx.fillText('FIND DRAGON CRYSTAL', px, py - 38);
+        ctx.fillText('FIND DRAGON CRYSTAL', px, py - 40);
       }
     }
 
@@ -5452,13 +5762,13 @@
         ctx.fillStyle = 'rgba(180,16,40,0.20)';
         ctx.fillRect(0, VH / 2 - 22, VW, 44);
         ctx.fillStyle = '#ffffff';
-        ctx.font = '12px monospace';
+        ctx.font = 'bold 18px monospace';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText('!! WARNING !!', VW / 2, VH / 2 - 4);
         ctx.fillStyle = '#ffd066';
-        ctx.font = '8px monospace';
-        ctx.fillText('BOSS APPROACHING', VW / 2, VH / 2 + 8);
+        ctx.font = '11px monospace';
+        ctx.fillText('BOSS APPROACHING', VW / 2, VH / 2 + 10);
       }
     }
 
@@ -5515,7 +5825,7 @@
     ctx.textBaseline = 'middle';
     for (const pu of state.popups) {
       const a = clamp(pu.life / pu.maxLife, 0, 1);
-      ctx.font = `${pu.size}px monospace`;
+      ctx.font = `${Math.round(pu.size * 1.4)}px monospace`;
       // shadow
       ctx.fillStyle = `rgba(0,0,0,${0.65 * a})`;
       ctx.fillText(pu.text, pu.x + 1, pu.y + 1);
@@ -5530,11 +5840,11 @@
       const g = state.gestureFx;
       const a = clamp(g.life / g.maxLife, 0, 1);
       const cy = VH * 0.30;
-      const padX = 12, padY = 6;
-      ctx.font = '16px monospace';
+      const padX = 14, padY = 8;
+      ctx.font = 'bold 20px monospace';
       const tw = ctx.measureText(g.label).width;
       const w = tw + padX * 2;
-      const h = 22 + padY;
+      const h = 28 + padY;
       const x = (VW - w) / 2;
       const y = cy - h / 2;
       // frame
@@ -5550,10 +5860,10 @@
       ctx.fillStyle = g.color;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
-      ctx.fillText(g.label, VW / 2, y + 5);
+      ctx.fillText(g.label, VW / 2, y + 6);
       // sub
       ctx.fillStyle = '#ffffff';
-      ctx.font = '8px monospace';
+      ctx.font = '11px monospace';
       ctx.fillText(g.sub, VW / 2, y + h + 4);
       ctx.globalAlpha = 1;
     }
@@ -5574,22 +5884,22 @@
       ctx.fillStyle = theme.accent;
       ctx.fillRect(0, VH / 2 - 28, VW, 2);
       ctx.fillRect(0, VH / 2 + 26, VW, 2);
-      ctx.font = '20px monospace';
+      ctx.font = 'bold 26px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';
       ctx.fillText(big, VW / 2, VH / 2 - 8);
-      ctx.font = '11px monospace';
+      ctx.font = '14px monospace';
       ctx.fillStyle = theme.accent;
       ctx.fillText(sub, VW / 2, VH / 2 + 12);
       // L1: one-line world flavor caption under the banner
       const lore = STORY.worlds[state.themeIndex % STORY.worlds.length];
       if (lore && lore.cap) {
-        ctx.font = '9px monospace';
+        ctx.font = '12px monospace';
         ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillText(lore.cap, VW / 2 + 1, VH / 2 + 43);
+        ctx.fillText(lore.cap, VW / 2 + 1, VH / 2 + 47);
         ctx.fillStyle = '#cfd6ff';
-        ctx.fillText(lore.cap, VW / 2, VH / 2 + 42);
+        ctx.fillText(lore.cap, VW / 2, VH / 2 + 46);
       }
       ctx.globalAlpha = 1;
     }
@@ -5602,7 +5912,7 @@
       ctx.fillStyle = '#88e0ff';
       ctx.fillRect(0, 0, VW, 2);
       ctx.fillRect(0, VH - 2, VW, 2);
-      ctx.font = '10px monospace';
+      ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#88e0ff';
@@ -5636,7 +5946,7 @@
       const c = state.combo.count;
       const mult = 1 + Math.min(c - 1, 19) * 0.1;
       const remain = Math.max(0, Math.min(1, state.combo.timer / 120));
-      const W = 64, H = 30;
+      const W = 76, H = 36;
       const x = VW - W - 6;
       const y = Math.max(60, VH * 0.30);
       ctx.fillStyle = '#0a0c20';
@@ -5645,12 +5955,12 @@
       ctx.fillRect(x, y, W, H);
       ctx.fillStyle = '#ffd066';
       ctx.fillRect(x, y, W, 2);
-      ctx.font = '11px monospace';
+      ctx.font = 'bold 15px monospace';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'top';
       ctx.fillStyle = '#ffd066';
       ctx.fillText(`x${mult.toFixed(1)}`, x + W - 6, y + 5);
-      ctx.font = '8px monospace';
+      ctx.font = '11px monospace';
       ctx.fillStyle = '#cfd2f0';
       ctx.fillText(`${c} CHAIN`, x + W - 6, y + 17);
       ctx.fillStyle = '#ffd066';
@@ -5662,12 +5972,12 @@
     if (state.running && !state.handSeen) {
       const blink = Math.floor(state.t / 18) % 2 === 0;
       ctx.fillStyle = 'rgba(0,0,0,0.4)';
-      ctx.fillRect(VW / 2 - 92, 5, 184, 15);
+      ctx.fillRect(VW / 2 - 120, 5, 240, 20);
       ctx.fillStyle = blink ? '#ffeb6e' : '#c89a3a';
-      ctx.font = '9px monospace';
+      ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('✋ カメラに手を映してね', VW / 2, 13);
+      ctx.fillText('✋ カメラに手を映してね', VW / 2, 15);
     }
 
     drawDefenderHud();
@@ -5692,6 +6002,17 @@
     { name: 'INFERNO', sky: ['#1a0603','#2e0c06','#4a160a'], planet: '#8a2e0e', planetHi: '#d05a1a', accent: '#ff8a3a', neb: '#5a1a0a' },
     { name: 'TOXIC',   sky: ['#0a1203','#162808','#28460d'], planet: '#4a7a14', planetHi: '#8ac02a', accent: '#b6ff3a', neb: '#2e4a0d' },
     { name: 'VOID',    sky: ['#050510','#0a0a1e','#15152e'], planet: '#3a3a5a', planetHi: '#6a6a9a', accent: '#c0c4e0', neb: '#1a1a3a' },
+    // ===== ACT II — 深層 (themes 10..19) =====
+    { name: 'ABYSSAL',   sky: ['#02020a','#05051a','#0b0b2a'], planet: '#26264a', planetHi: '#3a3a78', accent: '#aeb4ff', neb: '#10103a' },
+    { name: 'RIFT',      sky: ['#020a10','#051a22','#0a2e3a'], planet: '#0a4a52', planetHi: '#0fb2a8', accent: '#55ffe6', neb: '#0a2e2a' },
+    { name: 'UMBRAL',    sky: ['#0a0206','#1a050a','#2e0a14'], planet: '#4a0d1a', planetHi: '#8a1f3a', accent: '#ff5a88', neb: '#2a0a14' },
+    { name: 'MIASMA',    sky: ['#060a02','#121a05','#22300a'], planet: '#355a0a', planetHi: '#6aa814', accent: '#c8ff4a', neb: '#1a2a08' },
+    { name: 'ECLIPSE',   sky: ['#0a0702','#161108','#2a1e0d'], planet: '#5a3a10', planetHi: '#b87a2a', accent: '#ffd66a', neb: '#2a2010' },
+    { name: 'CHIMERA',   sky: ['#02080a','#04151a','#082a2e'], planet: '#0d3a4a', planetHi: '#2aa08a', accent: '#b6ffa0', neb: '#0a2a22' },
+    { name: 'SINGULAR',  sky: ['#020513','#040a24','#081046'], planet: '#102a78', planetHi: '#3aa8c8', accent: '#aef4ff', neb: '#0a144a' },
+    { name: 'NULLFIELD', sky: ['#050509','#0b0b12','#141424'], planet: '#2a2a36', planetHi: '#6a6a82', accent: '#c0c4e0', neb: '#101018' },
+    { name: 'CATACLYSM', sky: ['#100402','#220806','#3a0d0a'], planet: '#5a140e', planetHi: '#d05a1a', accent: '#ff8a3a', neb: '#2a0a06' },
+    { name: 'SOURCE',    sky: ['#000004','#03030b','#0a0a1a'], planet: '#15152e', planetHi: '#3a3a5a', accent: '#ffffff', neb: '#06060f' },
   ];
 
   // Per-theme MIDSTAGE flavor: biases the frequent grunt-wave pattern + tunes stats so each
@@ -5708,6 +6029,17 @@
     { pat: 'aim',  spd: 1.35, fire: 0.72, hp: 0.85 }, // 7 INFERNO — fastest, fragile rushers
     { pat: 'fan',  spd: 0.95, fire: 0.88, hp: 1.10 }, // 8 TOXIC   — busy fans
     { pat: 'spin', spd: 1.15, fire: 0.85, hp: 1.05 }, // 9 VOID    — fast spinners
+    // ===== ACT II — harder mobs (themes 10..19) =====
+    { pat: 'wave',   spd: 1.20, fire: 0.86, hp: 1.20 }, // 10 ABYSSAL   — weaving aimed stream
+    { pat: 'cross',  spd: 1.35, fire: 0.78, hp: 1.15 }, // 11 RIFT      — rotating crosses
+    { pat: 'spiral', spd: 1.10, fire: 0.82, hp: 1.35 }, // 12 UMBRAL    — tight spirals, tanky
+    { pat: 'fan',    spd: 1.05, fire: 0.80, hp: 1.30 }, // 13 MIASMA    — dense fans
+    { pat: 'aim',    spd: 1.45, fire: 0.72, hp: 1.10 }, // 14 ECLIPSE   — fast snipers
+    { pat: 'wave',   spd: 1.25, fire: 0.74, hp: 1.25 }, // 15 CHIMERA   — wave pressure
+    { pat: 'spiral', spd: 1.30, fire: 0.70, hp: 1.20 }, // 16 SINGULAR  — fast spirals
+    { pat: 'cross',  spd: 1.20, fire: 0.74, hp: 1.35 }, // 17 NULLFIELD — heavy cross drones
+    { pat: 'fan',    spd: 1.40, fire: 0.68, hp: 1.15 }, // 18 CATACLYSM — rushing fans
+    { pat: 'spin',   spd: 1.50, fire: 0.62, hp: 1.25 }, // 19 SOURCE    — relentless spinners
   ];
   function themeEnemy() { return THEME_ENEMY[state.themeIndex % THEME_ENEMY.length]; }
 
@@ -5727,6 +6059,17 @@
       { cap: '炎の最前線。残された道は、一筋だけ。',       in: '焼き尽くしてやる！',                   die: '道を…開け、その手で' },
       { cap: '腐蝕の沼。蝕まれた大地が呼吸する。',         in: '溶けて、混ざり合おう',                 die: '浄化を…頼んだぞ' },
       { cap: '虚無の心臓。全ての侵食の、源。',             in: 'ここまで来たか。だが、無に還るのみ',   die: '手よ……ありがとう' },
+      // ===== ACT II — 深層 (worlds 10..19) =====
+      { cap: '深層の門。祈りは、黒い海へ沈む。',                 in: 'その手の光…まだ残っているのか',         die: '…消さずに、握り締めろ' },
+      { cap: '裂け目の回廊。空間が、きしんで笑う。',             in: '世界の縫い目を、ほどいてやろう',         die: '…ほどけたのは、私の心か' },
+      { cap: '影糸の舞台。守護者は、操られていた。',             in: '踊れ。糸が切れるまで',                 die: '糸が…ほどけた。ありがとう' },
+      { cap: '瘴気の温床。呼吸するだけで、侵食が広がる。',       in: '吸え。混ざれ。優しく、腐れ',           die: '胸の奥が…軽い' },
+      { cap: '日蝕の玉座。光が、裏返る場所。',                   in: '光など幻だ。闇だけが真実だ',           die: '…真実は、恐れだった' },
+      { cap: '混成の巣。異物が交わり、形を得る。',               in: '君の手も、私の一部にしよう',           die: '混ざる前に…止めてくれたな' },
+      { cap: '特異点。重力が、意思を持って絡みつく。',           in: '落ちて来い。ここが“中心”だ',           die: '中心は…空っぽだった' },
+      { cap: '無の磁場。秩序が、意味を失う。',                   in: '整列しろ。抵抗はノイズだ',             die: 'ノイズが…人だった' },
+      { cap: '終末の奔流。崩壊が、音もなく迫る。',               in: '崩れるのは世界か、君の心か',           die: '崩れても…手は残る' },
+      { cap: '侵食源。虚無の胎動が、ここにある。',               in: 'ようこそ、守護の手。終点だ',           die: '…やっと、終わるのだな' },
     ],
     prologue: [
       { title: '序章 ―― 守護の手', accent: '#7fdcff', lines: [
@@ -6620,6 +6963,227 @@
         '......######......',
       ],
     },
+    // ===== ACT II bosses (variants 10..19) =====
+    {
+      name: 'ABYSS SERAPH',
+      pal: { '#': '#2a2a6a', 'E': '#aef4ff', 'W': '#ffffff', 'D': '#06081a' },
+      sprite: [
+        '......######......',
+        '....##########....',
+        '..##############..',
+        '.#####WWWWWW#####.',
+        '#####WW####WW#####',
+        '##E############E##',
+        '##E##WW####WW##E##',
+        '###DD########DD###',
+        '######W####W######',
+        '#####WWWWWWWW#####',
+        '##################',
+        '.######D##D######.',
+        '..#####D##D#####..',
+        '....##########....',
+        '......######......',
+        '.......####.......',
+      ],
+    },
+    {
+      name: 'RIFT REVENANT',
+      pal: { '#': '#0a8a7a', 'E': '#ff77c8', 'W': '#55ffe6', 'D': '#06081a' },
+      sprite: [
+        '......######......',
+        '....##########....',
+        '..######DD######..',
+        '.#####D####D#####.',
+        '#####D##WW##D#####',
+        '##E####WWWW####E##',
+        '##E############E##',
+        '#####D########D###',
+        '#######WWWW#######',
+        '######WWWWWW######',
+        '#####WWWWWWWW#####',
+        '##D############D##',
+        '.##DD########DD##.',
+        '..###DD####DD###..',
+        '....##########....',
+        '......######......',
+      ],
+    },
+    {
+      name: 'UMBRAL MARIONETTE',
+      pal: { '#': '#5a0d1a', 'E': '#ffd066', 'W': '#ffffff', 'D': '#06081a' },
+      sprite: [
+        '........##........',
+        '.......####.......',
+        '......######......',
+        '.....########.....',
+        '....##D####D##....',
+        '...###DD##DD###...',
+        '..####DEEEED####..',
+        '.#####D####D#####.',
+        '######D####D######',
+        '#####W######W#####',
+        '####WW######WW####',
+        '##E############E##',
+        '##E##DD####DD##E##',
+        '.#####DD##DD#####.',
+        '....##########....',
+        '......######......',
+      ],
+    },
+    {
+      name: 'MIASMA ORACLE',
+      pal: { '#': '#355a0a', 'E': '#c8ff4a', 'W': '#dfffa0', 'D': '#0a1203' },
+      sprite: [
+        '......######......',
+        '....##########....',
+        '..##############..',
+        '.#####WWWWWW#####.',
+        '#####WWWWWWWW#####',
+        '####WWWEEEEWWW####',
+        '###WWEE####EEWW###',
+        '###WWEE####EEWW###',
+        '####WWWEEEEWWW####',
+        '#####WWWWWWWW#####',
+        '.#####WWDDWW#####.',
+        '..#####DDDD#####..',
+        '....##########....',
+        '....##.####.##....',
+        '......##..##......',
+        '.......####.......',
+      ],
+    },
+    {
+      name: 'ECLIPSE EMPEROR',
+      pal: { '#': '#6a4a14', 'E': '#ffd66a', 'W': '#ffffff', 'D': '#1a1006' },
+      sprite: [
+        '....####..####....',
+        '...#####..#####...',
+        '..######WW######..',
+        '.#####WWWWWW#####.',
+        '####W##WWWW##W####',
+        '##E##WW####WW##E##',
+        '##################',
+        '###DD########DD###',
+        '######W####W######',
+        '#####WWWWWWWW#####',
+        '####W##WWWW##W####',
+        '.#####WWDDWW#####.',
+        '..#####DDDD#####..',
+        '....##########....',
+        '......######......',
+        '.......####.......',
+      ],
+    },
+    {
+      name: 'CHIMERA MAW',
+      pal: { '#': '#2a5a8a', 'E': '#ff77c8', 'W': '#b6ffa0', 'D': '#06081a' },
+      sprite: [
+        '......######......',
+        '....##########....',
+        '..##############..',
+        '.#######DD#######.',
+        '#######D##D#######',
+        '#####DD####DD#####',
+        '####D##WWWW##D####',
+        '###D##WEEEEW##D###',
+        '###D##WEEEEW##D###',
+        '####D##WWWW##D####',
+        '#####DD####DD#####',
+        '######D####D######',
+        '..###DD######DD###',
+        '....##########....',
+        '......######......',
+        '........##........',
+      ],
+    },
+    {
+      name: 'SINGULARITY JUDGE',
+      pal: { '#': '#1a3a78', 'E': '#aef4ff', 'W': '#ffffff', 'D': '#050510' },
+      sprite: [
+        '........##........',
+        '.......####.......',
+        '......######......',
+        '.....########.....',
+        '....##########....',
+        '...####WWWW####...',
+        '..####WEEEEW####..',
+        '.####WWWEEWWW####.',
+        '.####WWWEEWWW####.',
+        '..####WWWWWW####..',
+        '...####WWWW####...',
+        '....##########....',
+        '.....########.....',
+        '......######......',
+        '.......####.......',
+        '........##........',
+      ],
+    },
+    {
+      name: 'NULLFIELD ARCHON',
+      pal: { '#': '#2a2a36', 'E': '#c0c4e0', 'W': '#ffffff', 'D': '#050510' },
+      sprite: [
+        '..#..#..##..#..#..',
+        '.###..######..###.',
+        '..##############..',
+        '.################.',
+        '##################',
+        '###EE########EE###',
+        '###EE########EE###',
+        '#####DD####DD#####',
+        '#####WWWWWWWW#####',
+        '####W########W####',
+        '##################',
+        '.################.',
+        '..##############..',
+        '....##########....',
+        '......######......',
+        '.......####.......',
+      ],
+    },
+    {
+      name: 'CATACLYSM BEHEMOTH',
+      pal: { '#': '#5a140e', 'E': '#ff8a3a', 'W': '#ffd066', 'D': '#06081a' },
+      sprite: [
+        '......######......',
+        '....##########....',
+        '..######DD######..',
+        '.###DD######DD###.',
+        '##D############D##',
+        '##D##WW####WW##D##',
+        '#######EEEE#######',
+        '######EEEEEE######',
+        '#######EEEE#######',
+        '##D##WW####WW##D##',
+        '##D############D##',
+        '.###DD######DD###.',
+        '...##DD####DD##...',
+        '....##########....',
+        '......######......',
+        '........##........',
+      ],
+    },
+    {
+      name: 'TRUE SOURCE',
+      pal: { '#': '#15152e', 'E': '#ffffff', 'W': '#ff5050', 'D': '#050510' },
+      sprite: [
+        '......######......',
+        '....##########....',
+        '..##############..',
+        '.######DDDD######.',
+        '#####DD####DD#####',
+        '####D##WWWW##D####',
+        '###D##WEEEEW##D###',
+        '##D###WEEEEW###D##',
+        '##D###WEEEEW###D##',
+        '###D##WEEEEW##D###',
+        '####D##WWWW##D####',
+        '#####DD####DD#####',
+        '.######DDDD######.',
+        '..##############..',
+        '....##########....',
+        '......######......',
+      ],
+    },
   ];
 
   function getBossVariant() {
@@ -6659,7 +7223,7 @@
   }
 
   function drawModBanner() {
-    const stageLabel = CAMPAIGN_ON() ? `STAGE ${state.stageNo}/${CAMPAIGN_STAGES}` : `STAGE ${state.stageNo}`;
+    const stageLabel = CAMPAIGN_ON() ? `${ACTS[actIndexOf(state.stageNo)].name} ${stageInAct(state.stageNo)}/${STAGES_PER_ACT}` : `STAGE ${state.stageNo}`;
     const label = (state.daily ? `DAILY ${state.dailyKey}  ` : '')
                 + `${stageLabel}  ${state.mod.name}`;
     ctx.font = 'bold 12px monospace';
