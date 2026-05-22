@@ -1852,6 +1852,15 @@
       localStorage.setItem('hd_ally', shop.ally);
     } catch {}
   }
+  // Stage-10 (ACT I) clear reward: unlock + free-grant the OBLIVION machine, once.
+  function grantStage10Unlock() {
+    if (s10Unlocked()) return;
+    try { localStorage.setItem('hd_unlock_s10', '1'); } catch {}
+    const rewards = SHIPS.filter(s => s.unlock === 'clear10');
+    for (const s of rewards) if (!shop.ships.includes(s.id)) shop.ships.push(s.id);
+    saveShop();
+    for (const s of rewards) pushPopup(VW / 2, VH * 0.46, '★ 新機体 ' + s.name + ' 解放！', '#c89bff', 14, 240);
+  }
   function skinStatLine(sk) {
     const ja = lang === 'ja';
     const spd = sk.speed || 1, hit = sk.hitMul || 1, life = sk.lifeBonus || 0, fire = sk.fireMul || 1;
@@ -1860,6 +1869,7 @@
     if (hit < 1) parts.push(ja ? '判定小' : 'HITBOX-'); else if (hit > 1) parts.push(ja ? '判定大' : 'HITBOX+');
     if (life > 0) parts.push((ja ? 'ライフ+' : 'LIFE+') + life);
     if (fire < 1) parts.push(ja ? '連射↑' : 'RATE+'); else if (fire > 1) parts.push(ja ? '連射↓' : 'RATE-');
+    if ((sk.dmgMul || 1) > 1) parts.push(ja ? '攻撃↑' : 'PWR+'); else if ((sk.dmgMul || 1) < 1) parts.push(ja ? '攻撃↓' : 'PWR-');
     if (!parts.length) parts.push(ja ? 'バランス型' : 'Balanced');
     return parts.join(' · ');
   }
@@ -1952,21 +1962,25 @@
       rows.appendChild(mnote);
       for (const sk of SHIPS) {
         const owned = shop.ships.includes(sk.id), equipped = shop.ship === sk.id, lv = shipLevel(sk.id);
+        const locked = sk.unlock === 'clear10' && !s10Unlocked() && !owned;
         const row = document.createElement('div');
-        row.className = 'item' + (equipped ? ' equipped' : '');
+        row.className = 'item' + (equipped ? ' equipped' : '') + (locked ? ' maxed' : '');
         const ico = document.createElement('span'); ico.className = 'shop-ico'; ico.appendChild(skinPreview(sk));
+        if (locked) ico.style.filter = 'grayscale(1) brightness(0.6)';
         const lvTag = owned ? ` <span style="color:#ffd066">Lv${lv}${lv >= MAX_SHIP_LV ? ' MAX' : ''}</span>` : '';
         const mid = document.createElement('div');
-        mid.innerHTML = `<div class="name">${sk.name}${lvTag}</div><div class="desc">${skinStatLine(sk)}</div>`;
-        const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = owned ? '—' : sk.cost;
+        const desc = locked ? (ja ? '🔒 ステージ10クリアで解放' : '🔒 Clear stage 10 to unlock') : skinStatLine(sk);
+        mid.innerHTML = `<div class="name">${sk.name}${lvTag}</div><div class="desc">${desc}</div>`;
+        const cost = document.createElement('div'); cost.className = 'cost'; cost.textContent = locked ? '🔒' : (owned ? '—' : sk.cost);
         const actions = document.createElement('div');
         actions.style.cssText = 'display:flex;flex-direction:column;gap:4px;align-items:flex-end;';
         const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'btn-cta';
-        if (equipped) { btn.textContent = ja ? '装備中' : 'EQUIPPED'; btn.disabled = true; }
+        if (locked) { btn.textContent = ja ? '未解放' : 'LOCKED'; btn.disabled = true; }
+        else if (equipped) { btn.textContent = ja ? '装備中' : 'EQUIPPED'; btn.disabled = true; }
         else if (owned) { btn.textContent = ja ? '装備' : 'EQUIP'; }
         else { btn.textContent = t('buy'); btn.disabled = shop.coins < sk.cost; }
         btn.addEventListener('click', () => {
-          if (equipped) return;
+          if (equipped || locked) return;
           if (owned) { shop.ship = sk.id; }
           else { if (shop.coins < sk.cost) return; shop.coins -= sk.cost; shop.ships.push(sk.id); shop.ship = sk.id; }
           saveShop(); renderShop(); SFX.pickup();
@@ -4678,6 +4692,7 @@
             // Multi-ACT campaign: final clear ends the run; an ACT boundary or any
             // ordinary stage opens the next-stage picker (the boundary swaps the region).
             updateHud();
+            if (state.stageNo >= STAGES_PER_ACT) grantStage10Unlock();   // cleared stage 10 → unlock reward machine
             if (state.stageNo >= lastStage()) {
               if (!PREMIUM && ACTS.length > 1) pushPopup(VW / 2, VH * 0.4, '★ ACT II は製品版で解放', '#ffd066', 13, 220);
               gameOver(true); return;
@@ -6294,6 +6309,26 @@
   ];
   const SHIP_PAL = shipPalette('#3563d6', '#9ad8ff', '#ffd066');
   const PARTNER_PAL = shipPalette('#d6a52b', '#ffe9a0', '#ff8a3a');
+  // OBLIVION — the stage-10-clear reward machine: a DIFFERENT silhouette (swept-wing
+  // void manta, not the rounded hero hull) so its shape reads as distinct at a glance.
+  const OBLIVION_SPRITE = [
+    '.......CC.......',
+    '.......CC.......',
+    '......OCCO......',
+    '......OCCO......',
+    '.....OBCCBO.....',
+    '.....OBCCBO.....',
+    '....OBMLLMBO....',
+    'O...OBMLLMBO...O',
+    'OO.OBMMLLMMBO.OO',
+    'OOOBMMMLLMMMBOOO',
+    '.OBDMMMLLMMMDBO.',
+    '..OBDMMMMMMDBO..',
+    '...OBDDMMDDBO...',
+    '....OBD..DBO....',
+    '....OEE..EEO....',
+    '.....E....E.....',
+  ];
 
   // Equippable MACHINE skins (shared shape, palette swap) + WEAPONS (mount any).
   // Each machine has a stat identity: speed (move responsiveness), hitMul
@@ -6310,6 +6345,11 @@
     { id: 'nebula',   name: 'NEBULA',   cost: 1000,
       speed: 1.0, hitMul: 1.0, lifeBonus: 0, fireMul: 0.85,
       pal: shipPalette('#7a5ad6', '#c8b6ff', '#88e0ff') },
+    // Unlocked by clearing stage 10 (ACT I). Distinct shape + a new stat axis
+    // (dmgMul = base attack power) → a high-DPS assault ace, not a palette clone.
+    { id: 'oblivion', name: 'OBLIVION', cost: 0, unlock: 'clear10',
+      speed: 1.1, hitMul: 0.9, lifeBonus: 0, fireMul: 0.82, dmgMul: 1.2,
+      pal: shipPalette('#7b3ff2', '#d8b6ff', '#ff4da6'), sprite: OBLIVION_SPRITE },
   ];
   // Weapons are split by slot: MAIN-slot vs SUB-slot. Strength scales with the
   // in-run power level (picked up during play), NOT a shop purchase.
@@ -6441,7 +6481,9 @@
   function skinSpeed()     { return (currentSkin().speed    || 1) * (1 + (shipLevel() - 1) * 0.05); }   // +5%/lv
   function skinFireMul()   { return (currentSkin().fireMul  || 1); }   // unchanged by level
   function skinHitMul()    { return (currentSkin().hitMul   || 1); }   // unchanged by level
-  function shipDmgMul()    { return 1 + (shipLevel() - 1) * 0.08; }     // attack power +8%/lv
+  function shipDmgMul()    { return (currentSkin().dmgMul || 1) * (1 + (shipLevel() - 1) * 0.08); }   // per-ship base × +8%/lv
+  function skinSprite(sk = currentSkin()) { return (sk && sk.sprite) || SHIP_SPRITE; }
+  function s10Unlocked()   { try { return localStorage.getItem('hd_unlock_s10') === '1'; } catch { return false; } }
   function skinLifeBonus() { const lv = shipLevel(); return (currentSkin().lifeBonus || 0) + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0); }
   function currentMainWeapon() { return WEAPONS.find(w => w.id === shop.weaponMain) || WEAPONS[0]; }
   function currentSubWeapon()  { return shop.weaponSub === 'none' ? null : (WEAPONS.find(w => w.id === shop.weaponSub) || null); }
@@ -6449,7 +6491,7 @@
     const c = document.createElement('canvas');
     c.width = 30; c.height = 30;
     const cx = c.getContext('2d'); cx.imageSmoothingEnabled = false;
-    const grid = SHIP_SPRITE, pal = skin.pal, cell = 1.7;
+    const grid = skin.sprite || SHIP_SPRITE, pal = skin.pal, cell = 1.7;
     const x0 = (c.width - grid[0].length * cell) / 2, y0 = (c.height - grid.length * cell) / 2;
     for (let y = 0; y < grid.length; y++) for (let x = 0; x < grid[y].length; x++) {
       const ch = grid[y][x]; if (ch === '.') continue;
@@ -6676,7 +6718,7 @@
       }
     }
 
-    if (!blink) drawSprite(SHIP_SPRITE, currentSkin().pal, p.x, p.y, 2.6);
+    if (!blink) drawSprite(skinSprite(currentSkin()), currentSkin().pal, p.x, p.y, 2.6);
 
     // focus indicator: narrow ring of dim cyan dots
     if (state.focus) {
