@@ -3422,11 +3422,10 @@
       const armor = ally.kind === 'armor';
       if (armor) {
         // AEGIS does its own thing — it roams the whole field (no leash to the player),
-        // chasing the nearest enemy bullet to body-block it, else the nearest enemy,
-        // else weaving around the play area.
+        // chasing the nearest enemy BULLET to body-block it, else weaving around the
+        // play area. It deliberately does NOT chase enemies (that made it camp on them).
         let bx = null, by = null, best = Infinity;
         for (const b of state.bullets) { const d2 = dist2(b.x, b.y, w.x, w.y); if (d2 < best) { best = d2; bx = b.x; by = b.y; } }
-        if (bx === null) { let nd = Infinity; for (const e of state.enemies) { const d2 = dist2(e.x, e.y, w.x, w.y); if (d2 < nd) { nd = d2; bx = e.x; by = e.y + 28; } } }
         if (bx !== null) { tx = bx; ty = by; }
         else { tx = VW * 0.5 + Math.sin(state.t * 0.02 + w.phase) * (VW * 0.34); ty = VH * 0.42 + Math.cos(state.t * 0.016 + w.phase) * (VH * 0.20); }
       } else {
