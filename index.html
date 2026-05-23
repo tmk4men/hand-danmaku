@@ -4469,9 +4469,18 @@
     document.getElementById('dotModel').classList.toggle('on', modelOk);
     document.getElementById('dotHand').classList.toggle('on', handOk);
   }
+  const SIM_STEP = 1000 / 60;   // fixed sim tick (ms): the whole simulation is frame-tuned at 60Hz
+  let simAcc = 0;
   function loop(now) {
-    const dt = Math.min(50, now - last); // ms
+    // Decouple the simulation from the display refresh rate. Every game timer (bullets, cooldowns,
+    // state.t, particles) advances per-tick, not per-second — so a phone rendering at 30fps used to
+    // run the whole game at half speed (slow bullets), and a 120/144Hz screen at double speed.
+    // Fix: accumulate real elapsed time and step the sim a fixed number of 60Hz ticks per frame.
+    let frameMs = now - last;
     last = now;
+    if (frameMs > 250) frameMs = 250;   // after a tab switch / hitch, don't replay a huge backlog
+    simAcc += frameMs;
+    let steps = 0;
     try {
     // MediaPipe stall watchdog: if results stop arriving while the camera should be live
     // (hand visible but unresponsive), auto-restart instead of needing a manual reload.
@@ -4481,19 +4490,28 @@
     }
     // Refresh READY status dots only when on ready view
     if (overlayPanel.classList.contains('readyView')) syncReadyDots();
-    // No auto-pause: if the hand leaves the frame the ship just holds its last
-    // position (player.tx/ty stop updating) and the game keeps running — including
-    // in online co-op, so one player's tracking drop never freezes the other.
-    if (state.running && !state.paused && !state.autoPaused && !state.selecting) {
-      if (NET.isGuest()) updateGuest(dt);   // thin client: render host's world, run own ship
-      else update(dt);                       // solo / co-op host: authoritative sim
-    } else if (state.selecting) {
-      updateStageSelect(dt);                 // campaign: hand-hover next-stage pick
-    } else if (state.tutorial.active) {
-      updateTutorial(dt);                    // interactive gesture onboarding
-    } else if (state.story && state.story.active) {
-      updateStory(dt);                       // prologue/ending: pinch or auto-advance
+    // Run the sim at a fixed step, with a few catch-up ticks for slow frames. The step cap stops a
+    // device that can't keep up from entering a spiral of death: it just runs slightly slow.
+    // No auto-pause: if the hand leaves the frame the ship just holds its last position
+    // (player.tx/ty stop updating) and the game keeps running — including in online co-op, so one
+    // player's tracking drop never freezes the other.
+    while (simAcc >= SIM_STEP && steps < 5) {
+      simAcc -= SIM_STEP;
+      steps++;
+      if (state.running && !state.paused && !state.autoPaused && !state.selecting) {
+        if (NET.isGuest()) updateGuest(SIM_STEP);   // thin client: render host's world, run own ship
+        else update(SIM_STEP);                       // solo / co-op host: authoritative sim
+      } else if (state.selecting) {
+        updateStageSelect(SIM_STEP);                 // campaign: hand-hover next-stage pick
+      } else if (state.tutorial.active) {
+        updateTutorial(SIM_STEP);                    // interactive gesture onboarding
+      } else if (state.story && state.story.active) {
+        updateStory(SIM_STEP);                       // prologue/ending: pinch or auto-advance
+      } else {
+        simAcc = 0; break;                           // idle (menus): don't bank time to replay later
+      }
     }
+    if (steps === 5) simAcc = 0;   // hit the catch-up cap: drop the backlog rather than fast-forward
     NET.tick();
     draw();
     renderTitleFx();
