@@ -2816,10 +2816,19 @@
   async function initCamera() {
     try {
       // camera_utils.Camera handles video + onFrame ticking
+      let lastHandSend = 0;
+      // Hand inference (MediaPipe) is the biggest heat source on phones. Cap it to ~22Hz there —
+      // the ship target is smoothed in the sim so it still feels fluid at 60Hz. Desktop runs every
+      // frame (HAND_MIN_MS = 0).
+      const HAND_MIN_MS = IS_MOBILE ? 45 : 0;
       camera = new Camera(video, {
         onFrame: async () => {
           // Guard each send: a single rejected/failed frame must not break the capture loop.
-          try { if (hands) await hands.send({ image: video }); } catch (e) {}
+          const t = performance.now();
+          if (hands && t - lastHandSend >= HAND_MIN_MS) {
+            lastHandSend = t;
+            try { await hands.send({ image: video }); } catch (e) {}
+          }
           // Face detection is for the privacy mosaic; skip it on mobile for perf.
           if (faceDet && !IS_MOBILE && (frameTick++ & 1) === 0) {
             try { await faceDet.send({ image: video }); } catch (e) {}
@@ -4524,6 +4533,11 @@
   }
   const SIM_STEP = 1000 / 60;   // fixed sim tick (ms): the whole simulation is frame-tuned at 60Hz
   let simAcc = 0;
+  // Mobile thermal cap: render at ~32fps (the sim still runs a full 60Hz via the accumulator, so
+  // gameplay speed is unchanged — we just draw half as many frames to cut GPU/fill heat). Desktop
+  // draws every frame.
+  const DRAW_MIN_MS = IS_MOBILE ? 31 : 0;
+  let _lastDraw = 0;
   function loop(now) {
     // Decouple the simulation from the display refresh rate. Every game timer (bullets, cooldowns,
     // state.t, particles) advances per-tick, not per-second — so a phone rendering at 30fps used to
@@ -4565,9 +4579,12 @@
       }
     }
     if (steps === 5) simAcc = 0;   // hit the catch-up cap: drop the backlog rather than fast-forward
-    NET.tick();
-    draw();
-    renderTitleFx();
+    NET.tick();                    // network send/recv timing — every frame (cheap), not draw-gated
+    if (now - _lastDraw >= DRAW_MIN_MS) {   // render-rate cap (mobile heat); sim above is unaffected
+      _lastDraw = now;
+      draw();
+      renderTitleFx();
+    }
     } catch (e) {
       // A transient error must never permanently freeze the game: log once, keep looping
       // (otherwise an uncaught throw skips the rAF below and the screen locks up).
