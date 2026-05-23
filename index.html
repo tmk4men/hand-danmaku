@@ -2079,7 +2079,9 @@
     partner: { x: VW * 0.5, y: VH * 0.4, seen: false, lastT: 0 },
     ping: 0, _pingAt: 0, _sendT: 0, partnerStarted: false, starting: false,
     guestTauntT: 0, lastSnapT: 0, stalled: false, _prevBossPhase: 0,
-    partnerFire: false, _pFireCd: 0,   // partner-OFFENSE fire state (host re-sims its shots)
+    // partner-OFFENSE fire state (host re-sims its real main+sub weapons from the streamed pose)
+    partnerFire: false, partnerSubFire: false, partnerRoll: 0,
+    partnerMainW: 'std', partnerSubW: null, _pMainCd: 0, _pSubCd: 0,
     // Co-op authority: the OFFENSE player runs the authoritative world sim (host); the other
     // player is a thin client that renders the host's snapshots. When the roles DIFFER, offense
     // hosts. When BOTH pick OFFENSE, the relay's first-joiner (connRole 'host') is the authority
@@ -2137,7 +2139,9 @@
         case 'hello': this.peerHere = true; this.partnerRole = m.role; this.setMeta(); break;
         case 'ping': this.send({ type: 'pong', t: m.t }); break;
         case 'pong': this.ping = Math.round(performance.now() - m.t); this.setMeta(); break;
-        case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t; this.partnerFire = !!m.f; break;
+        case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t;
+          this.partnerFire = !!m.f; this.partnerSubFire = !!m.g; this.partnerRoll = (m.r || 0) / 100; break;
+        case 'loadout': this.partnerMainW = m.m || 'std'; this.partnerSubW = m.s || null; break;   // partner's equipped weapons
         case 'start': this.partnerStarted = true; if (!state.running) startCoop(); break; // 相手が開始 → こちらも自動開始
         // ---- shared-world co-op ----
         case 'snap':   if (this.isGuest()) this.applySnap(m); break;          // guest: adopt host's world
@@ -2164,8 +2168,11 @@
         if (state.t - this._sendT >= 2) {
           this._sendT = state.t;
           const msg = { type: 'pos', x: Math.round(state.player.x), y: Math.round(state.player.y) };
-          if (state.mode !== 'defender')
-            msg.f = (state.handSeen && state.openPalm && !state.thumbsUp) ? 1 : 0;
+          if (state.mode !== 'defender') {
+            msg.f = (state.handSeen && state.openPalm && !state.thumbsUp) ? 1 : 0;   // MAIN (open palm)
+            msg.g = (state.handSeen && state.peace && !state.thumbsUp) ? 1 : 0;      // SUB (peace)
+            msg.r = Math.round((state.handRoll || 0) * 100);                          // wrist tilt for aimed mains
+          }
           this.send(msg);
         }
       }
@@ -3430,6 +3437,19 @@
     if (dm !== 1) for (let i = _emitStart; i < state.shots.length; i++) state.shots[i].dmg = (state.shots[i].dmg || 1) * dm;
   }
 
+  // Co-op: re-emit the partner OFFENSE player's REAL weapon (main or sub) from the position it
+  // streams. emitWeapon() reads the global player/roll, so swap them to the partner for the call
+  // (it's synchronous — no await — so the swap is safe) and restore afterwards. Power is shared
+  // (snapshot-synced) so the host's state.power is already the partner's level.
+  function hostEmitPartnerWeapon(wid) {
+    if (!wid || wid === 'none') return;
+    const realP = state.player, realRoll = state.handRoll;
+    state.player = { x: NET.partner.x, y: NET.partner.y };
+    state.handRoll = NET.partnerRoll || 0;
+    try { emitWeapon(wid); } finally { state.player = realP; state.handRoll = realRoll; }
+  }
+  function weaponFireMul(wid) { const w = WEAPONS.find(w => w.id === wid); return (w && w.fireMul) || 1; }
+
   // FLARE detonation: spray short-lived frags in all directions from the shell's position.
   function detonateFlare(s) {
     const rays = s.rays || 6;
@@ -4653,17 +4673,23 @@
     // friendly escorts trail + chip in (solo only; array is empty in co-op)
     updateWingmen();
 
-    // Co-op both-OFFENSE: the partner is an offense thin client. It streams a fire flag; the host
-    // re-sims its shots from the position it streams so they damage the shared enemies and ride
-    // along in the snapshot back to it. (Skipped vs a DEFENSE partner — the tank doesn't shoot.)
+    // Co-op both-OFFENSE: the partner is an offense thin client. It streams MAIN/SUB fire flags +
+    // its equipped weapon ids; the host re-sims its REAL weapons (open palm = main, peace = sub)
+    // from the position it streams, so they damage the shared enemies and ride along in the
+    // snapshot back to it. (Skipped vs a DEFENSE partner — the tank doesn't shoot.)
     if (NET.active && NET.isHost() && NET.partnerRole === 'offense' && NET.partner.seen) {
-      NET._pFireCd--;
-      if (NET.partnerFire && NET._pFireCd <= 0) {
-        const wx = NET.partner.x, wy = NET.partner.y, dmg = 2 + Math.floor(state.power / 3);
-        state.shots.push({ x: wx - 5, y: wy - 10, vx: -1.0, vy: -9.5, r: 3, dmg, kind: 'std', ally: true });
-        state.shots.push({ x: wx + 5, y: wy - 10, vx:  1.0, vy: -9.5, r: 3, dmg, kind: 'std', ally: true });
-        NET._pFireCd = 6;
-      }
+      if (NET.partnerFire) {
+        if (--NET._pMainCd <= 0) {
+          hostEmitPartnerWeapon(NET.partnerMainW || 'std');
+          NET._pMainCd = Math.max(4, Math.round(6 * weaponFireMul(NET.partnerMainW || 'std')));
+        }
+      } else NET._pMainCd = 0;
+      if (NET.partnerSubFire && NET.partnerSubW && NET.partnerSubW !== 'none') {
+        if (--NET._pSubCd <= 0) {
+          hostEmitPartnerWeapon(NET.partnerSubW);
+          NET._pSubCd = Math.max(8, Math.round(14 * weaponFireMul(NET.partnerSubW)));
+        }
+      } else NET._pSubCd = 0;
     }
 
     // Player shots
@@ -7832,6 +7858,8 @@
       state.host = NET.isGuest() ? { hp: 0 } : null;   // guest: truthy host -> heal button shows
       NET._sendT = -999;                               // force an immediate first snapshot/pos
       NET.lastSnapT = performance.now(); NET.stalled = false;  // grace before the stall check fires
+      // tell the partner our equipped weapons so (if we're an OFFENSE guest) the host can re-sim them
+      if (state.mode !== 'defender') NET.send({ type: 'loadout', m: shop.weaponMain, s: shop.weaponSub });
       start();
     } catch (err) {
       NET.setStatus('開始に失敗: ' + (err && err.message ? err.message : err));
