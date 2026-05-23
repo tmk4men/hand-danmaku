@@ -2076,6 +2076,11 @@
     partner: { x: VW * 0.5, y: VH * 0.4, seen: false, lastT: 0 },
     ping: 0, _pingAt: 0, _sendT: 0, partnerStarted: false, starting: false,
     guestTauntT: 0, lastSnapT: 0, stalled: false, _prevBossPhase: 0,
+    // Auto-reconnect: a dropped WebSocket (mobile blip, relay hiccup) must NOT freeze the run
+    // forever — we transparently rejoin the same room. pinnedRole locks our host/guest authority
+    // so a mid-run rejoin can't flip it (the relay assigns slots by join order; after a drop the
+    // survivor could grab our old slot).
+    room: null, pinnedRole: null, _reconnects: 0, _reconnectTimer: null,
     // partner-OFFENSE fire state (host re-sims its real main+sub weapons from the streamed pose)
     partnerFire: false, partnerSubFire: false, partnerRoll: 0,
     partnerMainW: 'std', partnerSubW: null, _pMainCd: 0, _pSubCd: 0, partnerGuard: false,
@@ -2085,6 +2090,7 @@
     // and the second is an offense thin client.
     isHost() {
       if (!this.active) return false;
+      if (this.pinnedRole) return this.pinnedRole === 'host';   // locked across a reconnect
       if (this.partnerRole && this.partnerRole === this.gameRole) return this.connRole === 'host';
       return this.gameRole === 'offense';
     },
@@ -2107,23 +2113,55 @@
         && !(this.partnerRole === 'defense' && this.gameRole === 'defense'));
     },
     connect(room) {
-      if (!room) { this.setStatus('合言葉を入力してね'); return; }
-      try { if (this.ws) this.ws.close(); } catch (e) {}
+      if (room) this.room = String(room).toUpperCase();
+      if (!this.room) { this.setStatus('合言葉を入力してね'); return; }
+      clearTimeout(this._reconnectTimer);
       this.active = true; this.connected = false; this.peerHere = false;
-      this.connRole = null; this.partnerRole = null; this.partner.seen = false; this.partnerStarted = false; this.starting = false;
+      this.connRole = null; this.partnerRole = null; this.pinnedRole = null;
+      this.partner.seen = false; this.partnerStarted = false; this.starting = false;
+      this._reconnects = 0;
       if (RELAY_URL.indexOf('CHANGE-ME') >= 0) {
         this.setStatus('worker未設定: RELAY_URL を設定するか ?relay=wss://… を付けて');
         return;
       }
-      this.setStatus('接続中…');
+      this._open();
+    },
+    // (Re)open the socket to the current room. Used by connect() and by auto-reconnect — the latter
+    // keeps the run alive when the WebSocket drops mid-game (the reported "froze partway" case).
+    _open() {
+      // Detach the old socket first so its async onclose can't schedule a stale reconnect.
+      if (this.ws) { try { this.ws.onopen = this.ws.onmessage = this.ws.onclose = this.ws.onerror = null; this.ws.close(); } catch (e) {} }
+      this.setStatus(this._reconnects > 0 ? '再接続中…（' + this._reconnects + '）' : '接続中…');
       let ws;
-      try { ws = new WebSocket(RELAY_URL + '?room=' + encodeURIComponent(String(room).toUpperCase())); }
-      catch (e) { this.setStatus('URLエラー: ' + e.message); return; }
+      try { ws = new WebSocket(RELAY_URL + '?room=' + encodeURIComponent(this.room)); }
+      catch (e) { this.setStatus('URLエラー: ' + e.message); this._scheduleReconnect(); return; }
       this.ws = ws;
-      ws.onopen = () => { this.connected = true; this.setStatus('接続OK・相手待ち'); this.send({ type: 'hello', role: this.gameRole }); this.setMeta(); };
+      ws.onopen = () => {
+        this.connected = true; this._reconnects = 0;
+        this.setStatus('接続OK・相手待ち');
+        this.send({ type: 'hello', role: this.gameRole });
+        // Mid-run rejoin: re-announce our loadout so the host re-sims our weapons, and force an
+        // immediate snapshot/pos so the partner unfreezes fast.
+        if (state.running && this.gameRole !== 'defense') this.send({ type: 'loadout', m: shop.weaponMain, s: shop.weaponSub });
+        this._sendT = -999;
+        this.setMeta();
+      };
       ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } this.onMsg(m); };
-      ws.onclose = () => { this.connected = false; this.peerHere = false; this.setStatus('切断'); this.setMeta(); };
-      ws.onerror = () => { this.setStatus('接続エラー（URL/デプロイ確認）'); };
+      ws.onclose = () => {
+        this.connected = false; this.peerHere = false; this.setMeta();
+        if (this.active) { this.setStatus('再接続中…'); this._scheduleReconnect(); }
+        else this.setStatus('切断');
+      };
+      ws.onerror = () => {};   // onclose fires next; reconnect is handled there
+    },
+    _scheduleReconnect() {
+      if (!this.active) return;
+      // Pin our current authority so the rejoin can't flip host<->guest (see pinnedRole note above).
+      if (state.running && !this.pinnedRole) this.pinnedRole = this.isHost() ? 'host' : 'guest';
+      this._reconnects++;
+      const delay = Math.min(8000, 400 * Math.pow(1.6, Math.min(this._reconnects, 8)));
+      clearTimeout(this._reconnectTimer);
+      this._reconnectTimer = setTimeout(() => this._open(), delay);
     },
     onMsg(m) {
       switch (m.type) {
@@ -2158,7 +2196,14 @@
       if (!state.running) return;
       if (this.isHost()) {
         // Host streams the authoritative world ~20Hz; guest dead-reckons between snaps.
-        if (state.t - this._sendT >= 3) { this._sendT = state.t; this.sendSnap(); }
+        if (state.t - this._sendT >= 3) {
+          // Backpressure: if the send buffer is backing up (slow/mobile uplink under a dense
+          // bullet field), DROP this snapshot instead of queueing another stale one. Always
+          // pushing the freshest world keeps the guest from lagging progressively into a "freeze".
+          // _sendT isn't advanced, so we retry as soon as the buffer drains.
+          if (this.ws && this.ws.bufferedAmount > 48 * 1024) return;
+          this._sendT = state.t; this.sendSnap();
+        }
       } else if (this.isGuest()) {
         // Guest streams its own ship position ~30Hz (+ fire flag when it's an OFFENSE thin client,
         // so the host can re-sim its shots against the shared enemies).
@@ -2178,7 +2223,18 @@
     // Host → guest: one compact snapshot of the whole hazard field + shared HUD.
     sendSnap() {
       const bp = [], bpIdx = new Map(), bl = [];
-      for (const b of state.bullets) {
+      // Cap how many bullets we serialize so a dense pattern can't bloat the snapshot (which would
+      // back up the relay and stall the guest). Keep the ones NEAREST the guest — those are the only
+      // ones it can be hit by / needs to dodge (its hit-detection is local); distant ones are just
+      // cosmetic for it.
+      let bullets = state.bullets;
+      const BCAP = 320;
+      if (bullets.length > BCAP) {
+        const gx = this.partner.x, gy = this.partner.y;
+        bullets = bullets.slice().sort((a, b) =>
+          ((a.x - gx) ** 2 + (a.y - gy) ** 2) - ((b.x - gx) ** 2 + (b.y - gy) ** 2)).slice(0, BCAP);
+      }
+      for (const b of bullets) {
         let ci = bpIdx.get(b.color);
         if (ci === undefined) { ci = bp.length; bp.push(b.color); bpIdx.set(b.color, ci); }
         bl.push(b.x | 0, b.y | 0, Math.round(b.vx * 100), Math.round(b.vy * 100), b.r | 0, ci);
@@ -5077,7 +5133,9 @@
     // snapshots. If those stall (disconnect, host paused/auto-paused, lag, start race) we must
     // HOLD that field — but the defender's OWN ship is driven by local hand input, so it has to
     // keep moving AND keep broadcasting its position, or the offense player sees it freeze.
-    const stalled = performance.now() - NET.lastSnapT > 700;
+    const stallMs = performance.now() - NET.lastSnapT;
+    const stalled = stallMs > 700;     // no fresh snapshot: don't take hits from a non-authoritative field
+    const holdField = stallMs > 1500;  // long stall: stop moving ghosts too (re-snap fixes them on resume)
     NET.stalled = stalled;
     state.t++; state.themeT++;   // always advances → the ~30Hz `pos` broadcast keeps firing
 
@@ -5090,9 +5148,10 @@
     p.y = clamp(state.smoothY, 12, VH - 12);
     p.hitR = 4 * skinHitMul();
 
-    // Past here everything depends on the shared field, so hold it while snapshots are stalled
-    // (don't dead-reckon ghosts or take hits from a frozen field). The own ship already moved.
-    if (stalled) return;
+    // Our own ship + local FX/timers keep ticking even while snapshots are stalled, so a brief
+    // network hiccup GLIDES instead of hard-freezing (the old behaviour froze the whole screen at
+    // 700ms — the reported "動きが止まった"). Only the SHARED field's hit-detection is gated off
+    // while stalled (below): you can't fairly die to a field we no longer authoritatively own.
     if (state.shake > 0) state.shake--;
     if (state.graze.boost > 0) state.graze.boost--;
     if (p.invuln > 0) p.invuln--;
@@ -5106,15 +5165,17 @@
 
     // Dead-reckon the shared hazards locally so they move at 60fps between the
     // ~20Hz snapshots (each snapshot re-snaps them to the authoritative position).
-    for (const b of state.bullets) { b.x += b.vx; b.y += b.vy; }
-    for (const m of state.meteors) { m.x += m.vx; m.y += m.vy; m.rot += m.rotV; if (m.warning > 0) m.warning--; }
+    if (!holdField) {
+      for (const b of state.bullets) { b.x += b.vx; b.y += b.vy; }
+      for (const m of state.meteors) { m.x += m.vx; m.y += m.vy; m.rot += m.rotV; if (m.warning > 0) m.warning--; }
+    }
 
     // GUARD (offense guest): same fist-shield as the host — drain while held, eat nearby bullets,
     // recharge passively when not guarding. (Defender keeps its armour, no guard.)
     if (state.guard.active && state.guard.remaining > 0) {
       state.guard.remaining -= 1.6;
       const GR = 46;
-      for (let i = state.bullets.length - 1; i >= 0; i--) {
+      if (!stalled) for (let i = state.bullets.length - 1; i >= 0; i--) {
         const b = state.bullets[i];
         if (dist2(b.x, b.y, p.x, p.y) < (GR + b.r) ** 2) {
           pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1);
@@ -5129,6 +5190,9 @@
     }
     const shielded = isShielded();   // own guard or a guarding partner nearby
 
+    // Hit-detection runs against the shared field ONLY while snapshots are fresh — a stalled field
+    // is not authoritative, so taking damage from it would be unfair (the host never saw the hit).
+    if (!stalled) {
     // hit vs bullets. (Graze is intentionally OFF for the guest: each snapshot
     // rebuilds bullets with grazed=false, so graze can't be tracked without bullet ids.)
     for (let i = state.bullets.length - 1; i >= 0; i--) {
@@ -5160,6 +5224,7 @@
     // boss body contact (e.g. while it's parked at centre)
     if (state.boss && p.invuln <= 0 && !shielded && dist2(p.x, p.y, state.boss.x, state.boss.y) < (state.boss.radius + p.hitR) ** 2)
       guestAbsorb(DEF.ARMOR_HIT);
+    }   // end if (!stalled) — shared-field hit detection
 
     // particles + popups (locally generated by hits / taunt / stations)
     for (let i = state.particles.length - 1; i >= 0; i--) {
