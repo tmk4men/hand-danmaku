@@ -2079,10 +2079,17 @@
     partner: { x: VW * 0.5, y: VH * 0.4, seen: false, lastT: 0 },
     ping: 0, _pingAt: 0, _sendT: 0, partnerStarted: false, starting: false,
     guestTauntT: 0, lastSnapT: 0, stalled: false, _prevBossPhase: 0,
-    // Co-op authority: the OFFENSE player runs the authoritative world sim (host);
-    // the DEFENSE player is a thin client that renders the host's snapshots.
-    isHost() { return this.active && this.gameRole === 'offense'; },
-    isGuest() { return this.active && this.gameRole === 'defense'; },
+    partnerFire: false, _pFireCd: 0,   // partner-OFFENSE fire state (host re-sims its shots)
+    // Co-op authority: the OFFENSE player runs the authoritative world sim (host); the other
+    // player is a thin client that renders the host's snapshots. When the roles DIFFER, offense
+    // hosts. When BOTH pick OFFENSE, the relay's first-joiner (connRole 'host') is the authority
+    // and the second is an offense thin client.
+    isHost() {
+      if (!this.active) return false;
+      if (this.partnerRole && this.partnerRole === this.gameRole) return this.connRole === 'host';
+      return this.gameRole === 'offense';
+    },
+    isGuest() { return this.active && !this.isHost(); },
     setStatus(msg) { const el = document.getElementById('coopStatus'); if (el) el.textContent = msg; },
     setMeta() {
       const el = document.getElementById('coopMeta');
@@ -2090,14 +2097,15 @@
         const parts = ['自分: ' + (this.gameRole === 'defense' ? 'DEFENSE' : 'OFFENSE'),
           '相手: ' + (this.peerHere ? (this.partnerRole ? this.partnerRole.toUpperCase() : '接続済') : '未接続')];
         if (this.connected) parts.push('PING ' + this.ping + 'ms');
-        if (this.peerHere && this.partnerRole && this.partnerRole === this.gameRole)
-          parts.push('⚠ 役割が同じ — 片方を変更');
+        if (this.peerHere && this.partnerRole === 'defense' && this.gameRole === 'defense')
+          parts.push('⚠ 両方DEFENSE — 片方をOFFENSEに');
         el.textContent = parts.join('  /  ');
       }
       const sb = document.getElementById('coopStartBtn');
-      // Co-op needs one OFFENSE + one DEFENSE (host = offense runs the sim).
-      if (sb) sb.disabled = !(this.connected && this.peerHere
-        && this.partnerRole && this.partnerRole !== this.gameRole);
+      // Co-op needs at least one OFFENSE to fight the shared world; both-OFFENSE is allowed,
+      // only both-DEFENSE (nobody shoots → enemies never die) is blocked.
+      if (sb) sb.disabled = !(this.connected && this.peerHere && this.partnerRole
+        && !(this.partnerRole === 'defense' && this.gameRole === 'defense'));
     },
     connect(room) {
       if (!room) { this.setStatus('合言葉を入力してね'); return; }
@@ -2129,7 +2137,7 @@
         case 'hello': this.peerHere = true; this.partnerRole = m.role; this.setMeta(); break;
         case 'ping': this.send({ type: 'pong', t: m.t }); break;
         case 'pong': this.ping = Math.round(performance.now() - m.t); this.setMeta(); break;
-        case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t; break;
+        case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t; this.partnerFire = !!m.f; break;
         case 'start': this.partnerStarted = true; if (!state.running) startCoop(); break; // 相手が開始 → こちらも自動開始
         // ---- shared-world co-op ----
         case 'snap':   if (this.isGuest()) this.applySnap(m); break;          // guest: adopt host's world
@@ -2151,10 +2159,14 @@
         // Host streams the authoritative world ~20Hz; guest dead-reckons between snaps.
         if (state.t - this._sendT >= 3) { this._sendT = state.t; this.sendSnap(); }
       } else if (this.isGuest()) {
-        // Guest streams only its own ship position ~30Hz.
+        // Guest streams its own ship position ~30Hz (+ fire flag when it's an OFFENSE thin client,
+        // so the host can re-sim its shots against the shared enemies).
         if (state.t - this._sendT >= 2) {
           this._sendT = state.t;
-          this.send({ type: 'pos', x: Math.round(state.player.x), y: Math.round(state.player.y) });
+          const msg = { type: 'pos', x: Math.round(state.player.x), y: Math.round(state.player.y) };
+          if (state.mode !== 'defender')
+            msg.f = (state.handSeen && state.openPalm && !state.thumbsUp) ? 1 : 0;
+          this.send(msg);
         }
       }
     },
@@ -2825,14 +2837,19 @@
 
   // ---------- Gameplay: spawning ----------
   function spawnEnemy(type, x, y, opts = {}) {
+    // Co-op is a bit harder: enemies are tankier and fire a little faster (two players output
+    // more damage, so this keeps the bullet pressure up). Solo is unchanged (NET.active false).
+    const hpMul = NET.active ? 1.35 : 1;
+    const fireMul = NET.active ? 0.85 : 1;   // lower fireRate = faster firing
+    const baseHp = opts.hp ?? 6;
     const e = {
       type, x, y,
       vx: opts.vx ?? 0, vy: opts.vy ?? 0,
-      hp: opts.hp ?? 6,
-      maxHp: opts.hp ?? 6,
+      hp: Math.round(baseHp * hpMul),
+      maxHp: Math.round(baseHp * hpMul),
       radius: opts.radius ?? 16,
       t: 0,
-      fireRate: opts.fireRate ?? 60,
+      fireRate: Math.max(8, Math.round((opts.fireRate ?? 60) * fireMul)),
       fireOffset: opts.fireOffset ?? 0,
       score: opts.score ?? 100,
       pattern: opts.pattern ?? 'aim',
@@ -2846,7 +2863,7 @@
   function spawnBoss() {
     // Boss durability scales per ACT + per stage so it keeps up with leveled ships/weapons.
     const ac = ACTS[actIndexOf(state.stageNo)];
-    const hp = Math.round(ac.hpBase + stageInAct(state.stageNo) * ac.hpPer);
+    const hp = Math.round((ac.hpBase + stageInAct(state.stageNo) * ac.hpPer) * (NET.active ? 1.3 : 1));
     state.boss = {
       x: VW * 0.5, y: -60, tx: VW * 0.5, ty: 120,
       hp, maxHp: hp,
@@ -4636,6 +4653,19 @@
     // friendly escorts trail + chip in (solo only; array is empty in co-op)
     updateWingmen();
 
+    // Co-op both-OFFENSE: the partner is an offense thin client. It streams a fire flag; the host
+    // re-sims its shots from the position it streams so they damage the shared enemies and ride
+    // along in the snapshot back to it. (Skipped vs a DEFENSE partner — the tank doesn't shoot.)
+    if (NET.active && NET.isHost() && NET.partnerRole === 'offense' && NET.partner.seen) {
+      NET._pFireCd--;
+      if (NET.partnerFire && NET._pFireCd <= 0) {
+        const wx = NET.partner.x, wy = NET.partner.y, dmg = 2 + Math.floor(state.power / 3);
+        state.shots.push({ x: wx - 5, y: wy - 10, vx: -1.0, vy: -9.5, r: 3, dmg, kind: 'std', ally: true });
+        state.shots.push({ x: wx + 5, y: wy - 10, vx:  1.0, vy: -9.5, r: 3, dmg, kind: 'std', ally: true });
+        NET._pFireCd = 6;
+      }
+    }
+
     // Player shots
     for (let i = state.shots.length - 1; i >= 0; i--) {
       const s = state.shots[i];
@@ -4958,6 +4988,20 @@
   // is owned by the host and arrives via NET.applySnap(); the guest does NOT sim
   // it. Here we only: move our own tank, dead-reckon hazards smoothly between
   // snapshots, and run LOCAL hit/graze detection against that shared field.
+  // A guest takes a hit: the DEFENSE thin-client soaks it with armour; an OFFENSE thin-client
+  // has no armour, so a hit is a 1-shot life loss — it tells the host to drop a shared life and
+  // goes briefly invulnerable (the snapshot then reflects the new life count on both screens).
+  function guestAbsorb(armorCost) {
+    if (state.mode === 'defender') { armorHit(armorCost); return; }
+    const p = state.player;
+    if (p.invuln > 0) return;
+    p.invuln = 120;
+    state.shake = Math.max(state.shake, 20);
+    for (let k = 0; k < 40; k++) pushParticle(p.x, p.y, '#ff6666');
+    SFX.playerHit();
+    NET.send({ type: 'damage' });
+  }
+
   function updateGuest(dt) {
     // The shared world (enemies/bullets/boss/meteors) is host-authoritative and arrives via
     // snapshots. If those stall (disconnect, host paused/auto-paused, lag, start race) we must
@@ -4986,8 +5030,8 @@
     if (p.dashCd > 0) p.dashCd--;
     for (let i = p.dashTrail.length - 1; i >= 0; i--) if (--p.dashTrail[i].life <= 0) p.dashTrail.splice(i, 1);
 
-    // tank upkeep: repair stations (guest-local) + taunt timers/aura
-    updateDefender();
+    // tank upkeep: repair stations (guest-local) + taunt timers/aura (DEFENSE only)
+    if (state.mode === 'defender') updateDefender();
     if (state.t % 6 === 0) updateHud();
 
     // Dead-reckon the shared hazards locally so they move at 60fps between the
@@ -5002,7 +5046,7 @@
       const b = state.bullets[i];
       if (p.invuln <= 0 && dist2(b.x, b.y, p.x, p.y) < (b.r + p.hitR) ** 2) {
         state.bullets.splice(i, 1);
-        armorHit(DEF.ARMOR_HIT);
+        guestAbsorb(DEF.ARMOR_HIT);
       }
     }
     // meteors — tank soaks them as armour damage (never instant death)
@@ -5014,7 +5058,7 @@
         state.meteors.splice(i, 1);
         state.shake = Math.max(state.shake, 20);
         SFX.bomb();
-        armorHit(DEF.ARMOR_METEOR);
+        guestAbsorb(DEF.ARMOR_METEOR);
       }
     }
     // boss laser beam
@@ -5022,11 +5066,11 @@
       const b = state.boss, L = b.laser, ca = Math.cos(L.angle), sa = Math.sin(L.angle);
       const dx = p.x - b.x, dy = p.y - b.y;
       const along = dx * ca + dy * sa, across = -dx * sa + dy * ca;
-      if (along > 8 && Math.abs(across) < 7 + p.hitR) armorHit(DEF.ARMOR_HIT);
+      if (along > 8 && Math.abs(across) < 7 + p.hitR) guestAbsorb(DEF.ARMOR_HIT);
     }
     // boss body contact (e.g. while it's parked at centre)
     if (state.boss && p.invuln <= 0 && dist2(p.x, p.y, state.boss.x, state.boss.y) < (state.boss.radius + p.hitR) ** 2)
-      armorHit(DEF.ARMOR_HIT);
+      guestAbsorb(DEF.ARMOR_HIT);
 
     // particles + popups (locally generated by hits / taunt / stations)
     for (let i = state.particles.length - 1; i >= 0; i--) {
@@ -7831,8 +7875,8 @@
   });
   document.getElementById('coopStartBtn').addEventListener('click', () => {
     if (!(NET.connected && NET.peerHere)) return;
-    if (NET.partnerRole === NET.gameRole) {
-      NET.setStatus('役割が同じです。OFFENSE / DEFENSE に分けてください');
+    if (NET.partnerRole === 'defense' && NET.gameRole === 'defense') {
+      NET.setStatus('両方DEFENSEは不可。片方をOFFENSEにしてください');
       return;
     }
     NET.send({ type: 'start' });   // tell the partner to launch too
