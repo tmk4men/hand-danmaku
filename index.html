@@ -1268,12 +1268,9 @@
 
         <div class="coop-only" id="coopView">
           <h1 style="font-size:22px; margin:0 0 4px;">🌐 CO-OP</h1>
-          <p style="font-size:11px; color:#8890b8; margin:0 0 6px;">合言葉を決めて2人で同じ部屋へ。役割を選んで接続。</p>
+          <p style="font-size:11px; color:#8890b8; margin:0 0 6px;">合言葉を決めて2人で同じ部屋へ。2人とも自機で撃って回避、FISTでガード（近くの相方も守る）。</p>
           <input id="coopRoom" maxlength="8" placeholder="合言葉 (例 ABCD)" value="" />
-          <div class="role-row">
-            <button type="button" class="role-btn on" id="roleOffense">OFFENSE<small>撃つ・回避</small></button>
-            <button type="button" class="role-btn" id="roleDefense">DEFENSE<small>装甲・タウント・回復</small></button>
-          </div>
+          <div class="role-note" style="font-size:11px; color:#7fffd4; margin:6px 0;">▶ 2人とも OFFENSE（協力）</div>
           <div id="coopStatus">未接続</div>
           <div id="coopMeta"></div>
           <div style="display:flex; gap:8px; align-items:center;">
@@ -2081,7 +2078,7 @@
     guestTauntT: 0, lastSnapT: 0, stalled: false, _prevBossPhase: 0,
     // partner-OFFENSE fire state (host re-sims its real main+sub weapons from the streamed pose)
     partnerFire: false, partnerSubFire: false, partnerRoll: 0,
-    partnerMainW: 'std', partnerSubW: null, _pMainCd: 0, _pSubCd: 0,
+    partnerMainW: 'std', partnerSubW: null, _pMainCd: 0, _pSubCd: 0, partnerGuard: false,
     // Co-op authority: the OFFENSE player runs the authoritative world sim (host); the other
     // player is a thin client that renders the host's snapshots. When the roles DIFFER, offense
     // hosts. When BOTH pick OFFENSE, the relay's first-joiner (connRole 'host') is the authority
@@ -2140,7 +2137,7 @@
         case 'ping': this.send({ type: 'pong', t: m.t }); break;
         case 'pong': this.ping = Math.round(performance.now() - m.t); this.setMeta(); break;
         case 'pos': this.partner.x = m.x; this.partner.y = m.y; this.partner.seen = true; this.partner.lastT = state.t;
-          this.partnerFire = !!m.f; this.partnerSubFire = !!m.g; this.partnerRoll = (m.r || 0) / 100; break;
+          this.partnerFire = !!m.f; this.partnerSubFire = !!m.g; this.partnerRoll = (m.r || 0) / 100; this.partnerGuard = !!m.gd; break;
         case 'loadout': this.partnerMainW = m.m || 'std'; this.partnerSubW = m.s || null; break;   // partner's equipped weapons
         case 'start': this.partnerStarted = true; if (!state.running) startCoop(); break; // 相手が開始 → こちらも自動開始
         // ---- shared-world co-op ----
@@ -2172,6 +2169,7 @@
             msg.f = (state.handSeen && state.openPalm && !state.thumbsUp) ? 1 : 0;   // MAIN (open palm)
             msg.g = (state.handSeen && state.peace && !state.thumbsUp) ? 1 : 0;      // SUB (peace)
             msg.r = Math.round((state.handRoll || 0) * 100);                          // wrist tilt for aimed mains
+            msg.gd = state.guard.active ? 1 : 0;                                      // GUARD held (huddle co-op shield)
           }
           this.send(msg);
         }
@@ -2210,6 +2208,7 @@
         type: 'snap', f: state.t, ti: state.themeIndex, mn: state.mod.name,
         sc: state.score, lv: state.lives, st: state.stageNo, bm: state.bombs, pw: state.power,
         bw: state.bossWarning, sb: state.stageBanner, sd: state.hostShieldT | 0,
+        gd: state.guard.active ? 1 : 0,   // host GUARD held (so the guest can huddle under it)
         px: state.player.x | 0, py: state.player.y | 0,
         bl, bp, en, bo, me, it, sh,
       });
@@ -2217,6 +2216,7 @@
     // Guest: rebuild the renderable world from a host snapshot.
     applySnap(m) {
       this.partner.x = m.px; this.partner.y = m.py; this.partner.seen = true; this.partner.lastT = state.t;
+      state.hostGuard = !!m.gd;   // host's GUARD state → lets the guest huddle under it (isShielded)
       state.score = m.sc; state.lives = m.lv; state.stageNo = m.st; state.bombs = m.bm;
       state.power = m.pw; state.bossWarning = m.bw; state.stageBanner = m.sb; state.themeIndex = m.ti;
       state.hostShieldT = m.sd || 0;
@@ -2257,6 +2257,7 @@
     overlayPanel.classList.add('coopView');
     overlayPanel.classList.remove('shopView', 'readyView', 'loadoutView');
     document.body.classList.remove('playing');
+    NET.gameRole = 'offense';   // co-op is OFFENSE-only (DEFENSE role retired); ignore any ?role= dev override
     NET.setStatus(NET.connected ? '接続OK' : '未接続');
     NET.setMeta();
     replayPanelAnim();
@@ -2273,6 +2274,14 @@
     pt.ry += (pt.y - pt.ry) * 0.4;
     const px = pt.rx, py = pt.ry;
     drawSprite(SHIP_SPRITE, PARTNER_PAL, px, py, 2.4);
+    // Partner GUARD up → cyan shield ring (matches the huddle radius, so you can see when to
+    // tuck in close to be covered, or that you're covering them).
+    const partnerGuarding = NET.isGuest() ? state.hostGuard : NET.partnerGuard;
+    if (partnerGuarding) {
+      ctx.strokeStyle = 'rgba(127,255,212,' + (0.5 + 0.3 * Math.sin(state.t * 0.3)) + ')';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(px, py, GUARD_COOP_R, 0, TAU); ctx.stroke();
+    }
     ctx.strokeStyle = '#ffd066'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(px, py, 14, 0, TAU); ctx.stroke();
     ctx.fillStyle = '#ffd066'; ctx.font = '7px monospace';
@@ -2676,7 +2685,7 @@
       const prevGuardOn = state.guard.active;
       state.focus = false;                       // focus retired — peace fires the SUB weapon
       state.peace = isPeace && state.running;
-      state.guard.active = isFist && state.guard.remaining > 0 && state.running && state.mode === 'normal';
+      state.guard.active = isFist && state.guard.remaining > 0 && state.running && state.mode !== 'defender';
 
       if (state.peace && !prevPeace) {
         if (state.mode === 'defender') healHost();          // tank: PEACE = one-time heal the host
@@ -2715,7 +2724,7 @@
       const isThumbsUp = thumbExtended && curled === 4 && !isPinch && !isPeace;
       // Re-evaluate fist so thumbs-up wins ambiguity
       const isFistOnly = isFist && !isThumbsUp;
-      state.guard.active = isFistOnly && state.guard.remaining > 0 && state.running && state.mode === 'normal';
+      state.guard.active = isFistOnly && state.guard.remaining > 0 && state.running && state.mode !== 'defender';
       // Co-op tank: FIST = TAUNT (guard is removed for the defender)
       if (state.mode === 'defender') {
         if (isFistOnly && !state.taunt.prevFist && state.running) triggerTaunt();
@@ -2844,9 +2853,9 @@
 
   // ---------- Gameplay: spawning ----------
   function spawnEnemy(type, x, y, opts = {}) {
-    // Co-op is a bit harder: enemies are tankier and fire a little faster (two players output
-    // more damage, so this keeps the bullet pressure up). Solo is unchanged (NET.active false).
-    const hpMul = NET.active ? 1.35 : 1;
+    // Co-op is harder: two OFFENSE ships output ~2x damage, so enemies are tankier and fire a
+    // little faster to keep the bullet pressure up. Solo is unchanged (NET.active false).
+    const hpMul = NET.active ? 1.6 : 1;
     const fireMul = NET.active ? 0.85 : 1;   // lower fireRate = faster firing
     const baseHp = opts.hp ?? 6;
     const e = {
@@ -2870,7 +2879,7 @@
   function spawnBoss() {
     // Boss durability scales per ACT + per stage so it keeps up with leveled ships/weapons.
     const ac = ACTS[actIndexOf(state.stageNo)];
-    const hp = Math.round((ac.hpBase + stageInAct(state.stageNo) * ac.hpPer) * (NET.active ? 1.3 : 1));
+    const hp = Math.round((ac.hpBase + stageInAct(state.stageNo) * ac.hpPer) * (NET.active ? 1.55 : 1));
     state.boss = {
       x: VW * 0.5, y: -60, tx: VW * 0.5, ty: 120,
       hp, maxHp: hp,
@@ -4232,7 +4241,7 @@
     e.x = b.x; e.y = b.y;
     // Contact damage during the rush (telegraphed, so dodgeable)
     if ((ch.phase === 'dash' || ch.phase === 'burst')
-        && p.invuln <= 0 && !state.guard.active
+        && p.invuln <= 0 && !isShielded()
         && dist2(p.x, p.y, b.x, b.y) < (b.radius + p.hitR) ** 2) {
       if (state.mode === 'defender') armorHit(DEF.ARMOR_HIT); else playerHit();
     }
@@ -4347,7 +4356,7 @@
           const dx = p.x - b.x, dy = p.y - b.y;
           const along = dx * ca + dy * sa;
           const across = -dx * sa + dy * ca;
-          if (along > 8 && Math.abs(across) < 7 + p.hitR && p.invuln <= 0 && !state.guard.active) {
+          if (along > 8 && Math.abs(across) < 7 + p.hitR && p.invuln <= 0 && !isShielded()) {
             if (state.mode === 'defender') armorHit(DEF.ARMOR_HIT); else playerHit();
           }
           // High stages spit side bullets along the beam
@@ -4567,6 +4576,18 @@
     requestAnimationFrame(loop);
   }
 
+  // Co-op "huddle" guard: a guarding player shields not just itself but a nearby partner, so the
+  // fun pattern "one holds GUARD to cover both while the other keeps firing" emerges naturally.
+  const GUARD_COOP_R = 130;   // partner-protection radius (VW coords)
+  function isShielded() {
+    if (state.guard.active) return true;                       // own guard
+    if (!NET.active || !NET.partner.seen) return false;
+    const partnerGuarding = NET.isGuest() ? state.hostGuard : NET.partnerGuard;
+    if (!partnerGuarding) return false;
+    const dx = state.player.x - NET.partner.x, dy = state.player.y - NET.partner.y;
+    return dx * dx + dy * dy < GUARD_COOP_R * GUARD_COOP_R;     // close to a guarding partner
+  }
+
   function update(dt) {
     state.t++;
     state.themeT++;
@@ -4601,9 +4622,9 @@
       if (--p.dashTrail[i].life <= 0) p.dashTrail.splice(i, 1);
     }
 
-    // Guard: while fist + budget remains, consume time and block hits
+    // Guard: while fist + budget remains, consume time and block hits.
     if (state.guard.active && state.guard.remaining > 0) {
-      state.guard.remaining--;
+      state.guard.remaining -= NET.active ? 1.6 : 1;   // co-op: guard drains faster (anti-turtle)
       // Destroy bullets inside guard radius
       const GR = 46;
       for (let i = state.bullets.length - 1; i >= 0; i--) {
@@ -4611,11 +4632,17 @@
         if (dist2(b.x, b.y, p.x, p.y) < (GR + b.r) ** 2) {
           pushParticle(b.x, b.y, b.color);
           state.bullets.splice(i, 1);
+          if (NET.active) state.guard.remaining -= 0.6;   // tanking dense fire burns the meter fast
         }
       }
       if (state.guard.remaining <= 0) state.guard.active = false;
-    } else if (state.guard.active && state.guard.remaining <= 0) {
-      state.guard.active = false;
+    } else {
+      if (state.guard.active) state.guard.active = false;
+      // Co-op: the meter recharges passively when not guarding (the guest can't grab GUARD pickups,
+      // and a shared anti-turtle resource needs to come back so both can keep using it). Solo stays
+      // pickup-only.
+      if (NET.active && state.guard.remaining < 300)
+        state.guard.remaining = Math.min(300, state.guard.remaining + 0.6);
     }
     if (state.t % 6 === 0) updateHud();
 
@@ -4872,7 +4899,7 @@
         }
       }
       // collide with player hitbox (guard also blocks)
-      if (p.invuln <= 0 && !state.guard.active && d2p < (b.r + p.hitR) ** 2) {
+      if (p.invuln <= 0 && !isShielded() && d2p < (b.r + p.hitR) ** 2) {
         state.bullets.splice(i, 1);
         if (state.mode === 'defender') armorHit(DEF.ARMOR_HIT); else playerHit();
       }
@@ -4904,7 +4931,7 @@
       const d2 = dist2(m.x, m.y, p.x, p.y);
       const reach = (m.r + p.hitR + 2) ** 2;
       if (d2 < reach) {
-        if (state.guard.active) {
+        if (isShielded()) {
           for (let k = 0; k < 36; k++) pushParticle(m.x, m.y, '#c8a878');
           state.meteors.splice(i, 1);
           state.shake = Math.max(state.shake, 22);
@@ -5065,20 +5092,39 @@
     for (const b of state.bullets) { b.x += b.vx; b.y += b.vy; }
     for (const m of state.meteors) { m.x += m.vx; m.y += m.vy; m.rot += m.rotV; if (m.warning > 0) m.warning--; }
 
+    // GUARD (offense guest): same fist-shield as the host — drain while held, eat nearby bullets,
+    // recharge passively when not guarding. (Defender keeps its armour, no guard.)
+    if (state.guard.active && state.guard.remaining > 0) {
+      state.guard.remaining -= 1.6;
+      const GR = 46;
+      for (let i = state.bullets.length - 1; i >= 0; i--) {
+        const b = state.bullets[i];
+        if (dist2(b.x, b.y, p.x, p.y) < (GR + b.r) ** 2) {
+          pushParticle(b.x, b.y, b.color); state.bullets.splice(i, 1);
+          state.guard.remaining -= 0.6;
+        }
+      }
+      if (state.guard.remaining <= 0) state.guard.active = false;
+    } else {
+      if (state.guard.active) state.guard.active = false;
+      if (state.mode !== 'defender' && state.guard.remaining < 300)
+        state.guard.remaining = Math.min(300, state.guard.remaining + 0.6);
+    }
+    const shielded = isShielded();   // own guard or a guarding partner nearby
+
     // hit vs bullets. (Graze is intentionally OFF for the guest: each snapshot
-    // rebuilds bullets with grazed=false, so graze can't be tracked without bullet
-    // ids and the gauge does nothing for a non-shooting tank — it would just spam.)
+    // rebuilds bullets with grazed=false, so graze can't be tracked without bullet ids.)
     for (let i = state.bullets.length - 1; i >= 0; i--) {
       const b = state.bullets[i];
-      if (p.invuln <= 0 && dist2(b.x, b.y, p.x, p.y) < (b.r + p.hitR) ** 2) {
+      if (p.invuln <= 0 && !shielded && dist2(b.x, b.y, p.x, p.y) < (b.r + p.hitR) ** 2) {
         state.bullets.splice(i, 1);
         guestAbsorb(DEF.ARMOR_HIT);
       }
     }
-    // meteors — tank soaks them as armour damage (never instant death)
+    // meteors — tank soaks them as armour damage; offense takes a life (both unless shielded)
     for (let i = state.meteors.length - 1; i >= 0; i--) {
       const m = state.meteors[i];
-      if (p.invuln > 0) continue;
+      if (p.invuln > 0 || shielded) continue;
       if (dist2(m.x, m.y, p.x, p.y) < (m.r + p.hitR + 2) ** 2) {
         for (let kk = 0; kk < 24; kk++) pushParticle(m.x, m.y, '#88e0ff');
         state.meteors.splice(i, 1);
@@ -5088,14 +5134,14 @@
       }
     }
     // boss laser beam
-    if (state.boss && state.boss.laser.fire > 0 && p.invuln <= 0) {
+    if (state.boss && state.boss.laser.fire > 0 && p.invuln <= 0 && !shielded) {
       const b = state.boss, L = b.laser, ca = Math.cos(L.angle), sa = Math.sin(L.angle);
       const dx = p.x - b.x, dy = p.y - b.y;
       const along = dx * ca + dy * sa, across = -dx * sa + dy * ca;
       if (along > 8 && Math.abs(across) < 7 + p.hitR) guestAbsorb(DEF.ARMOR_HIT);
     }
     // boss body contact (e.g. while it's parked at centre)
-    if (state.boss && p.invuln <= 0 && dist2(p.x, p.y, state.boss.x, state.boss.y) < (state.boss.radius + p.hitR) ** 2)
+    if (state.boss && p.invuln <= 0 && !shielded && dist2(p.x, p.y, state.boss.x, state.boss.y) < (state.boss.radius + p.hitR) ** 2)
       guestAbsorb(DEF.ARMOR_HIT);
 
     // particles + popups (locally generated by hits / taunt / stations)
@@ -7883,20 +7929,8 @@
   shopBtn.addEventListener('click', () => { showShopView(); });
   document.getElementById('coopBtn').addEventListener('click', () => { showCoopView(); });
   document.getElementById('coopBack').addEventListener('click', () => { showHomeView(); });
-  document.getElementById('roleOffense').addEventListener('click', () => {
-    NET.gameRole = 'offense';
-    document.getElementById('roleOffense').classList.add('on');
-    document.getElementById('roleDefense').classList.remove('on');
-    if (NET.connected) NET.send({ type: 'hello', role: NET.gameRole });
-    NET.setMeta();
-  });
-  document.getElementById('roleDefense').addEventListener('click', () => {
-    NET.gameRole = 'defense';
-    document.getElementById('roleDefense').classList.add('on');
-    document.getElementById('roleOffense').classList.remove('on');
-    if (NET.connected) NET.send({ type: 'hello', role: NET.gameRole });
-    NET.setMeta();
-  });
+  // Co-op is OFFENSE-only now (the DEFENSE/tank role was scrapped). No role picker; both players
+  // are always OFFENSE and the relay's first-joiner is the authoritative host.
   document.getElementById('coopConnectBtn').addEventListener('click', () => {
     NET.connect(document.getElementById('coopRoom').value.trim());
     ensureTracking();   // warm up camera/hands now (user gesture) so both ships actually move
