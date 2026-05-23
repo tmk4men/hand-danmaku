@@ -2081,6 +2081,9 @@
     // so a mid-run rejoin can't flip it (the relay assigns slots by join order; after a drop the
     // survivor could grab our old slot).
     room: null, pinnedRole: null, _reconnects: 0, _reconnectTimer: null,
+    // Reusable scratch buffers for snapshot encode (host) — avoids allocating ~7 arrays + a Map per
+    // snapshot (20Hz), a source of GC jank ("重い") during dense online fights.
+    _sbl: [], _sbp: [], _sbpIdx: new Map(), _sen: [], _sme: [], _sit: [], _ssh: [],
     // partner-OFFENSE fire state (host re-sims its real main+sub weapons from the streamed pose)
     partnerFire: false, partnerSubFire: false, partnerRoll: 0,
     partnerMainW: 'std', partnerSubW: null, _pMainCd: 0, _pSubCd: 0, partnerGuard: false,
@@ -2195,8 +2198,11 @@
       if (now - this._pingAt > 1500) { this._pingAt = now; this.send({ type: 'ping', t: now }); }
       if (!state.running) return;
       if (this.isHost()) {
-        // Host streams the authoritative world ~20Hz; guest dead-reckons between snaps.
-        if (state.t - this._sendT >= 3) {
+        // Host streams the authoritative world ~20Hz; guest dead-reckons between snaps. Bullets are
+        // LINEAR so dead-reckoning them is near-exact — under a dense field we drop to ~15Hz to cut
+        // the host's serialize+bandwidth load (the main online "重い" cost) with little visible change.
+        const interval = state.bullets.length > 200 ? 4 : 3;
+        if (state.t - this._sendT >= interval) {
           // Backpressure: if the send buffer is backing up (slow/mobile uplink under a dense
           // bullet field), DROP this snapshot instead of queueing another stale one. Always
           // pushing the freshest world keeps the guest from lagging progressively into a "freeze".
@@ -2222,7 +2228,8 @@
     },
     // Host → guest: one compact snapshot of the whole hazard field + shared HUD.
     sendSnap() {
-      const bp = [], bpIdx = new Map(), bl = [];
+      const bp = this._sbp, bpIdx = this._sbpIdx, bl = this._sbl;
+      bp.length = 0; bl.length = 0; bpIdx.clear();
       // Cap how many bullets we serialize so a dense pattern can't bloat the snapshot (which would
       // back up the relay and stall the guest). Keep the ones NEAREST the guest — those are the only
       // ones it can be hit by / needs to dodge (its hit-detection is local); distant ones are just
@@ -2239,7 +2246,7 @@
         if (ci === undefined) { ci = bp.length; bp.push(b.color); bpIdx.set(b.color, ci); }
         bl.push(b.x | 0, b.y | 0, Math.round(b.vx * 100), Math.round(b.vy * 100), b.r | 0, ci);
       }
-      const en = [];
+      const en = this._sen; en.length = 0;
       let bo = 0;
       for (const e of state.enemies) {
         if (e.isBoss) continue;
@@ -2252,13 +2259,13 @@
         bo = [b.x | 0, b.y | 0, b.radius | 0, Math.round(clamp(b.hp / b.maxHp, 0, 1) * 100),
               L.charge | 0, L.fire | 0, Math.round(L.angle * 1000), cp];
       }
-      const me = [];
+      const me = this._sme; me.length = 0;
       for (const m of state.meteors)
         me.push(m.x | 0, m.y | 0, Math.round(m.rot * 100), m.warning | 0,
                 Math.round(m.vx * 100), Math.round(m.vy * 100), Math.round(m.rotV * 1000));
-      const it = [];
+      const it = this._sit; it.length = 0;
       for (const o of state.items) it.push(SNAP_ITEMS.indexOf(o.type), o.x | 0, o.y | 0, o.life | 0);
-      const sh = [];
+      const sh = this._ssh; sh.length = 0;
       for (const s of state.shots) sh.push(s.x | 0, s.y | 0, s.kind === 'homing' ? 1 : 0);
       this.send({
         type: 'snap', f: state.t, ti: state.themeIndex, mn: state.mod.name,
@@ -2277,33 +2284,57 @@
       state.power = m.pw; state.bossWarning = m.bw; state.stageBanner = m.sb; state.themeIndex = m.ti;
       state.hostShieldT = m.sd || 0;
       state.mod.name = m.mn;
-      const bl = m.bl, bp = m.bp, ba = [];
-      for (let i = 0; i < bl.length; i += 6)
-        ba.push({ x: bl[i], y: bl[i + 1], vx: bl[i + 2] / 100, vy: bl[i + 3] / 100, r: bl[i + 4], color: bp[bl[i + 5]] || '#fff', life: 1, grazed: false });
-      state.bullets = ba;
-      const en = m.en, ea = [];
-      for (let i = 0; i < en.length; i += 5) {
-        const pat = en[i + 3] === 1 ? 'spin' : en[i + 3] === 2 ? 'fan' : 'aim';
-        ea.push({ x: en[i], y: en[i + 1], radius: en[i + 2], pattern: pat, hp: en[i + 4], maxHp: 100, isBoss: false });
+      // Object POOLING: reuse the existing arrays + their member objects in place instead of
+      // allocating hundreds of fresh objects every snapshot (20Hz). The old full-rebuild was the
+      // main GC source behind the online "重い" stutter. Identity doesn't matter (no per-bullet ids;
+      // each snapshot fully redefines every slot), so reuse is safe.
+      const bl = m.bl, bp = m.bp, ba = state.bullets, nb = bl.length / 6;
+      for (let i = 0, j = 0; i < nb; i++, j += 6) {
+        const o = ba[i] || (ba[i] = {});
+        o.x = bl[j]; o.y = bl[j + 1]; o.vx = bl[j + 2] / 100; o.vy = bl[j + 3] / 100;
+        o.r = bl[j + 4]; o.color = bp[bl[j + 5]] || '#fff'; o.life = 1; o.grazed = false;
       }
+      ba.length = nb;
+      const en = m.en, ea = state.enemies, ne = en.length / 5;
+      for (let i = 0, j = 0; i < ne; i++, j += 5) {
+        const o = ea[i] || (ea[i] = {});
+        o.x = en[j]; o.y = en[j + 1]; o.radius = en[j + 2];
+        o.pattern = en[j + 3] === 1 ? 'spin' : en[j + 3] === 2 ? 'fan' : 'aim';
+        o.hp = en[j + 4]; o.maxHp = 100; o.isBoss = false; o.ref = null;
+      }
+      let ecount = ne;
       if (m.bo) {
         const b = m.bo, cp = b[7] || 0;
-        state.boss = { x: b[0], y: b[1], radius: b[2], hp: b[3], maxHp: 100, laser: { charge: b[4], fire: b[5], angle: b[6] / 1000 }, chPhase: cp };
-        ea.push({ x: b[0], y: b[1], radius: b[2], hp: b[3], maxHp: 100, isBoss: true, ref: state.boss, pattern: 'aim' });
+        const bo = state.boss || (state.boss = { laser: {} });
+        if (!bo.laser) bo.laser = {};
+        bo.x = b[0]; bo.y = b[1]; bo.radius = b[2]; bo.hp = b[3]; bo.maxHp = 100;
+        bo.laser.charge = b[4]; bo.laser.fire = b[5]; bo.laser.angle = b[6] / 1000; bo.chPhase = cp;
+        const be = ea[ecount] || (ea[ecount] = {});
+        be.x = b[0]; be.y = b[1]; be.radius = b[2]; be.hp = b[3]; be.maxHp = 100; be.isBoss = true; be.ref = bo; be.pattern = 'aim';
+        ecount++;
         if (cp === 1 && this._prevBossPhase !== 1) pushPopup(b[0], b[1] - 34, '!! CHARGE !!', '#ff5050', 14); // telegraph the rush
         this._prevBossPhase = cp;
       } else { state.boss = null; this._prevBossPhase = 0; }
-      state.enemies = ea;
-      const me = m.me, ma = [];
-      for (let i = 0; i < me.length; i += 7)
-        ma.push({ x: me[i], y: me[i + 1], rot: me[i + 2] / 100, warning: me[i + 3], vx: me[i + 4] / 100, vy: me[i + 5] / 100, rotV: me[i + 6] / 1000, r: 28 });
-      state.meteors = ma;
-      const it = m.it, ia = [];
-      for (let i = 0; i < it.length; i += 4) ia.push({ type: SNAP_ITEMS[it[i]] || 'power', x: it[i + 1], y: it[i + 2], life: it[i + 3] });
-      state.items = ia;
-      const sh = m.sh, sa = [];
-      for (let i = 0; i < sh.length; i += 3) sa.push({ x: sh[i], y: sh[i + 1], kind: sh[i + 2] ? 'homing' : 'std', r: 3, vx: 0, vy: 0 });
-      state.shots = sa;
+      ea.length = ecount;
+      const me = m.me, ma = state.meteors, nm = me.length / 7;
+      for (let i = 0, j = 0; i < nm; i++, j += 7) {
+        const o = ma[i] || (ma[i] = {});
+        o.x = me[j]; o.y = me[j + 1]; o.rot = me[j + 2] / 100; o.warning = me[j + 3];
+        o.vx = me[j + 4] / 100; o.vy = me[j + 5] / 100; o.rotV = me[j + 6] / 1000; o.r = 28;
+      }
+      ma.length = nm;
+      const it = m.it, ia = state.items, ni = it.length / 4;
+      for (let i = 0, j = 0; i < ni; i++, j += 4) {
+        const o = ia[i] || (ia[i] = {});
+        o.type = SNAP_ITEMS[it[j]] || 'power'; o.x = it[j + 1]; o.y = it[j + 2]; o.life = it[j + 3];
+      }
+      ia.length = ni;
+      const sh = m.sh, sa = state.shots, ns = sh.length / 3;
+      for (let i = 0, j = 0; i < ns; i++, j += 3) {
+        const o = sa[i] || (sa[i] = {});
+        o.x = sh[j]; o.y = sh[j + 1]; o.kind = sh[j + 2] ? 'homing' : 'std'; o.r = 3; o.vx = 0; o.vy = 0;
+      }
+      sa.length = ns;
       this.lastSnapT = performance.now();
     },
   };
