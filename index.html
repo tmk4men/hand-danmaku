@@ -2245,7 +2245,14 @@
 
   function drawPartner() {
     if (!NET.active || !NET.partner.seen) return;
-    const px = NET.partner.x, py = NET.partner.y;
+    // The partner's position arrives only ~20-30Hz (snap px/py for the guest, `pos` for the
+    // host). Lerp the drawn position toward it each frame so the other ship glides smoothly
+    // instead of stepping/jittering — the "movement not showing" feel on the offense screen.
+    const pt = NET.partner;
+    if (pt.rx === undefined) { pt.rx = pt.x; pt.ry = pt.y; }
+    pt.rx += (pt.x - pt.rx) * 0.4;
+    pt.ry += (pt.y - pt.ry) * 0.4;
+    const px = pt.rx, py = pt.ry;
     drawSprite(SHIP_SPRITE, PARTNER_PAL, px, py, 2.4);
     ctx.strokeStyle = '#ffd066'; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(px, py, 14, 0, TAU); ctx.stroke();
@@ -4952,16 +4959,15 @@
   // it. Here we only: move our own tank, dead-reckon hazards smoothly between
   // snapshots, and run LOCAL hit/graze detection against that shared field.
   function updateGuest(dt) {
-    // If the host's snapshots stall (disconnect, host paused/auto-paused, lag, or
-    // the host hasn't started yet) DON'T keep dead-reckoning a stale world onto the
-    // guest — freeze instead. One check covers disconnect + pause + start race.
-    if (performance.now() - NET.lastSnapT > 700) { NET.stalled = true; return; }
-    NET.stalled = false;
-    state.t++; state.themeT++;
-    if (state.shake > 0) state.shake--;
-    if (state.graze.boost > 0) state.graze.boost--;
+    // The shared world (enemies/bullets/boss/meteors) is host-authoritative and arrives via
+    // snapshots. If those stall (disconnect, host paused/auto-paused, lag, start race) we must
+    // HOLD that field — but the defender's OWN ship is driven by local hand input, so it has to
+    // keep moving AND keep broadcasting its position, or the offense player sees it freeze.
+    const stalled = performance.now() - NET.lastSnapT > 700;
+    NET.stalled = stalled;
+    state.t++; state.themeT++;   // always advances → the ~30Hz `pos` broadcast keeps firing
 
-    // own ship to hand target
+    // own ship to hand target — runs every tick, stall or not
     const p = state.player, sk = currentSkin();
     const k = 0.25 * skinSpeed();
     state.smoothX += (p.tx - state.smoothX) * k;
@@ -4969,6 +4975,12 @@
     p.x = clamp(state.smoothX, 12, VW - 12);
     p.y = clamp(state.smoothY, 12, VH - 12);
     p.hitR = 4 * skinHitMul();
+
+    // Past here everything depends on the shared field, so hold it while snapshots are stalled
+    // (don't dead-reckon ghosts or take hits from a frozen field). The own ship already moved.
+    if (stalled) return;
+    if (state.shake > 0) state.shake--;
+    if (state.graze.boost > 0) state.graze.boost--;
     if (p.invuln > 0) p.invuln--;
     if (p.bombFx > 0) p.bombFx--;
     if (p.dashCd > 0) p.dashCd--;
