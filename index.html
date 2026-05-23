@@ -2146,7 +2146,7 @@
         case 'nova':   if (this.isHost()) hostNova(m.x, m.y); break;          // host: guest's overload nova
         case 'shield': if (this.isHost()) state.hostShieldT = DEF.SHIELD_DUR; break; // host: guest deployed a shield on us
         case 'heal':   if (this.isHost()) hostReceiveHeal(); break;           // host: +1 life from guest
-        case 'damage': if (this.isHost()) playerHit(); break;                 // host: guest's exposed hit costs a life
+        case 'damage': if (this.isHost()) coopRemoteHit(); break;             // host: partner's hit costs a SHARED life
         case 'gameover': if (this.isGuest() && state.running) gameOver(); break; // guest: host went down
       }
     },
@@ -3717,7 +3717,7 @@
       pushPopup(p.x, p.y - 20, 'GUARD +3s', '#7fffd4', 10);
       SFX.pickup();
     } else if (type === 'life') {
-      state.lives = Math.min(state.lives + 1, 7);
+      state.lives = Math.min(state.lives + 1, lifeCap());
       state.score += 1000;
       pushPopup(p.x, p.y - 20, '1 UP!', '#ffffff', 14);
       state.shake = Math.max(state.shake, 8);
@@ -3736,7 +3736,7 @@
       state.score += 150;
       // Small chance to actually restore a life when crit
       if (state.lives <= 2 && gameRand() < 0.25) {
-        state.lives = Math.min(state.lives + 1, 7);
+        state.lives = Math.min(state.lives + 1, lifeCap());
         pushPopup(p.x, p.y - 20, 'TOOLBOX +REPAIR', '#c8a878', 12);
         SFX.pickupLife();
       } else {
@@ -3805,7 +3805,7 @@
 
   function applyPerk(perk) {
     switch (perk.id) {
-      case 'life':  state.lives = Math.min(state.lives + 1, 7); break;
+      case 'life':  state.lives = Math.min(state.lives + 1, lifeCap()); break;
       case 'bomb':  state.bombs = Math.min(state.bombs + 1, 6); break;
       case 'power': state.power = Math.min(state.power + 1, 3); state.powerFlash = 30; break;
       case 'coins': shop.coins += 5; saveShop(); coinAmt.textContent = shop.coins; break;
@@ -5175,6 +5175,21 @@
     if (state.lives <= 0) gameOver();
   }
 
+  // Co-op SHARED LIVES: the partner reported a hit (its `damage` message). It already gated the
+  // send by its OWN i-frames, so spend a shared life directly here — do NOT re-gate on the host
+  // ship's invuln (that would let the partner's hits be swallowed while the host is briefly safe).
+  function coopRemoteHit() {
+    state.lives--;
+    state.hitsTaken++;
+    state.shake = Math.max(state.shake, 16);
+    state.combo.count = 0;
+    state.combo.timer = 0;
+    if (NET.partner.seen) for (let i = 0; i < 24; i++) pushParticle(NET.partner.x, NET.partner.y, '#ff6666');
+    SFX.playerHit();
+    updateHud();
+    if (state.lives <= 0) gameOver();
+  }
+
   // ---------- Co-op DEFENDER (guest) role ----------
   // Co-op = the normal single-player game with TWO real players. The guest plays
   // the DEFENCE role: it does not shoot, and instead of dying in one hit it is a
@@ -5443,7 +5458,7 @@
 
   // Host received the guest's one-time heal: +1 shared life.
   function hostReceiveHeal() {
-    state.lives = Math.min(state.lives + 1, 7);
+    state.lives = Math.min(state.lives + 1, lifeCap());
     state.player.invuln = Math.max(state.player.invuln, 30);
     pushPopup(state.player.x, state.player.y - 30, 'HEAL +1 (P2)', '#7fffd4', 14);
     SFX.grazeMax();
@@ -6688,7 +6703,7 @@
     { id: 'wave',   name: 'WAVE',   slot: 'main', cost: 1000, fireMul: 1.2, color: '#5fe6c8',
       descJa: '左右に蛇行して広く薙ぐ波動弾', desc: 'Weaving bolts that rake a wide path',
       icon: '<svg viewBox="0 0 16 16"><path d="M2 8 Q5 2 8 8 T14 8" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round"/></svg>' },
-    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 4.0, color: '#ff9f43',
+    { id: 'missile', name: 'MISSILE', slot: 'main', cost: 1100, fireMul: 5.0, color: '#ff9f43',
       descJa: '低速の追尾ミサイル・Lvで威力UP（弾数は控えめ）', desc: 'Slow homing rockets — leveling boosts damage',
       icon: '<svg viewBox="0 0 16 16"><path d="M8 1 C10 4 10 7 10 10 H6 C6 7 6 4 8 1 Z" fill="currentColor"/><path d="M6 9 L4 13 L6 11 Z M10 9 L12 13 L10 11 Z" fill="currentColor"/><circle cx="8" cy="6" r="1.1" fill="#06081a"/></svg>' },
     // ----- SUB-slot -----
@@ -6759,7 +6774,7 @@
     { id: 'repair', name: 'REPAIR', cost: 600, color: '#ffffff',
       descJa: 'ライフを1回復（満タン時は無敵+スコア）', desc: 'Restore 1 life (invuln if full)',
       icon: '<svg viewBox="0 0 16 16"><rect x="6.5" y="2.5" width="3" height="11" fill="currentColor"/><rect x="2.5" y="6.5" width="11" height="3" fill="currentColor"/></svg>',
-      apply: (p) => { if (state.lives < 7) { state.lives = Math.min(7, state.lives + 1); pushPopup(p.x, p.y - 28, 'REPAIR +1', '#ffffff', 14); state.shake = Math.max(state.shake, 8); SFX.pickupLife(); } else { p.invuln = Math.max(p.invuln, 120); state.score += 800; pushPopup(p.x, p.y - 28, 'FULL +800', '#ffffff', 11); SFX.grazeMax(); } showGesture('THUMB', 'REPAIR', '#ffffff'); } },
+      apply: (p) => { if (state.lives < lifeCap()) { state.lives = Math.min(lifeCap(), state.lives + 1); pushPopup(p.x, p.y - 28, 'REPAIR +1', '#ffffff', 14); state.shake = Math.max(state.shake, 8); SFX.pickupLife(); } else { p.invuln = Math.max(p.invuln, 120); state.score += 800; pushPopup(p.x, p.y - 28, 'FULL +800', '#ffffff', 11); SFX.grazeMax(); } showGesture('THUMB', 'REPAIR', '#ffffff'); } },
     { id: 'barrier', name: 'BARRIER', cost: 700, color: '#7fffd4',
       descJa: '約3秒間の無敵バリア', desc: '~3s invulnerable barrier',
       icon: '<svg viewBox="0 0 16 16"><path d="M8 1 L14 4 V8 C14 12 11 14 8 15 C5 14 2 12 2 8 V4 Z" fill="none" stroke="currentColor" stroke-width="1.4"/></svg>',
@@ -6815,6 +6830,7 @@
   function skinSprite(sk = currentSkin()) { return (sk && sk.sprite) || SHIP_SPRITE; }
   function s10Unlocked()   { try { return localStorage.getItem('hd_unlock_s10') === '1'; } catch { return false; } }
   function skinLifeBonus() { const lv = shipLevel(); return (currentSkin().lifeBonus || 0) + (lv >= 3 ? 1 : 0) + (lv >= 5 ? 1 : 0); }
+  function lifeCap() { return NET.active ? 10 : 7; }   // co-op shares one pool between 2 players → higher cap
   function currentMainWeapon() { return WEAPONS.find(w => w.id === shop.weaponMain) || WEAPONS[0]; }
   function currentSubWeapon()  { return shop.weaponSub === 'none' ? null : (WEAPONS.find(w => w.id === shop.weaponSub) || null); }
   function skinPreview(skin) {
@@ -7790,7 +7806,9 @@
     pauseBtn.classList.remove('paused');
     state.t = 0;
     state.score = 0;
-    state.lives = 5 + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + skinLifeBonus();
+    // Co-op shares ONE life pool between two players, so it starts with more than solo (and has a
+    // higher cap). NET.active is already set by startCoop() before start() runs.
+    state.lives = (NET.active ? 8 : 5) + ((loadout.life  && shop.starters.life  > 0) ? 1 : 0) + skinLifeBonus();
     state.maxLives = state.lives;   // meteor damage = half of this
     state.bombs = 2 + ((loadout.bomb  && shop.starters.bomb  > 0) ? 1 : 0);
     state.guard.remaining = 300;
